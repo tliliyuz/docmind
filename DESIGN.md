@@ -667,8 +667,8 @@ async def chat(question, conversation_id, kb_id, deep_thinking):
 ### Phase 1：骨架搭建（3-4 天）
 - [x] 项目初始化（FastAPI + Vue3 脚手架）
 - [x] 前端环境搭建（npm 依赖与配置）
-- [ ] Git 初始化与 .gitignore 配置
-- [ ] MySQL 表建好（SQLAlchemy models）
+- [x] Git 初始化与 .gitignore 配置
+- [x] MySQL 表建好（SQLAlchemy models）
 - [ ] ChromaDB 连接 & collection 管理
 - [ ] JWT 认证（注册/登录）
 - [ ] 前端登录页 + 路由骨架

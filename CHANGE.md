@@ -1,5 +1,88 @@
 # DocMind 变更日志
 
+## 2026-05-11 — Phase 1: 数据库连接 & ORM 模型 & Alembic 迁移
+
+### 操作概述
+
+按照 `DESIGN.md` §4 表结构和 §6 项目结构，完成 MySQL 数据库连接配置、全部 6 张表的 SQLAlchemy 模型、Alembic 异步迁移环境和首次迁移脚本。
+
+### 环境变量配置
+
+- **`.env`** — 从项目根目录移至 `backend/.env`，pydantic-settings 自动从 CWD 读取
+- **`config.py`** — `Settings(BaseSettings)` 声明全部字段，`.env` 变量自动映射覆盖默认值，提供 `mysql_url` 计算属性拼接异步连接串
+
+### 数据库连接 (`core/database.py`)
+
+- `engine` — `create_async_engine(settings.mysql_url, pool_size=10, max_overflow=20)`
+- `async_session` — `async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)`
+- `Base` — `DeclarativeBase` 所有 ORM 模型基类
+
+### SQLAlchemy 模型（6 张表，对齐 DESIGN.md §4.2）
+
+| 模型 | 表名 | 关键字段 |
+|---|---|---|
+| `User` | `users` | id, username(unique), password_hash, role(Enum: user/admin), created_at, updated_at |
+| `KnowledgeBase` | `knowledge_bases` | id, name, description, user_id, chunk_count, doc_count, created_at, updated_at |
+| `Document` | `documents` | id, kb_id(索引), filename, file_type, file_size, status(Enum: uploading→failed), chunk_count, error_msg, created_at, updated_at |
+| `Chunk` | `chunks` | id, doc_id(索引), kb_id(索引), chroma_id, content, chunk_index, token_count, metadata(JSON), created_at |
+| `Conversation` | `conversations` | id, user_id(索引), kb_id, title, message_count, created_at, updated_at |
+| `Message` | `messages` | id, conversation_id(索引), role(Enum: user/assistant/system), content, thinking_content, token_count, feedback(Enum: like/dislike), created_at |
+
+- 全部使用 SQLAlchemy 2.0 Mapped 类型注解写法
+- Enum 使用 SQL 原生 ENUM 类型
+- `created_at` 使用 `server_default=func.current_timestamp()`
+- `updated_at` 额外设置 `onupdate=func.current_timestamp()`
+- `models/__init__.py` 导入全部模型供 Alembic 发现
+
+### 依赖注入 (`dependencies.py`)
+
+- `get_db()` — `AsyncGenerator[AsyncSession]`，每次请求获取独立 session，成功自动 commit，异常自动 rollback
+
+### Alembic 异步迁移环境
+
+- **`alembic.ini`** — 基本配置（URL 由 env.py 运行时从 config.py 读取，避免硬编码）
+- **`alembic/env.py`** — 异步引擎 + 自动发现模型，支持 offline（生成 SQL）和 online（直连 DB）两种模式
+- **首次迁移** — `alembic/versions/7588fa83e017_初始化建表.py`，包含全部 6 张表的 DDL（用户手动执行 `alembic upgrade head` 成功）
+- 注意：`alembic revision --autogenerate` 因 aiomysql 连接在事件循环关闭后清理报错（`RuntimeError: Event loop is closed`），迁移脚本已生成但需手动执行 upgrade
+
+### FastAPI 入口 (`main.py`)
+
+- `lifespan` 上下文管理器（当前为空，后续注册资源初始化）
+- CORS 中间件（开发阶段允许 localhost:5173）
+- `/api/health` 健康检查路由
+
+### 版本修正
+
+- **`requirements.txt`** — 版本号对齐 DESIGN.md §10（fastapi 0.115, uvicorn 0.32, aiomysql 0.2, python-jose 3.3, celery 5.4, alembic 1.14 等）
+
+### 修复
+
+- **`dependencies.py`** — 导入路径 `from core.database` → `from app.core.database`（绝对导入）
+- **`main.py`** — 导入路径 `from config` → `from app.config`（绝对导入）
+
+### 验证
+
+- `.env` 配置正确加载（DeepSeek + DashScope 凭证）
+- 6 个模型全部导入成功，表结构打印验证通过
+- Alembic `--autogenerate` 检测到 6 张表 + 4 个索引，生成迁移脚本后由用户手动 `alembic upgrade head` 完成建表
+
+### 统计
+
+| 操作 | 数量 |
+|:---|:---|
+| 新增/重写文件 | 13 |
+| 模型 | 6 张表 |
+| 迁移脚本 | 1 |
+
+### 后续步骤（按 DESIGN.md Phase 1）
+
+- [x] MySQL 表建好（SQLAlchemy models） ✅
+- [ ] ChromaDB 连接 & collection 管理
+- [ ] JWT 认证（注册/登录）
+- [ ] 前端登录页 + 路由骨架
+
+---
+
 ## 2026-05-10 — Phase 1: 项目初始化（目录脚手架）
 
 ### 操作概述
@@ -169,3 +252,44 @@ git push -u origin main             # 推送至远程
 - 默认分支: `main`
 - 首次提交: `568de74` (仅 README.md)
 - 待提交: `.gitignore`, `DESIGN.md`, `CHANGE.md`, `backend/`, `frontend/`（脚手架文件）
+
+---
+
+## 2026-05-10 — Phase 1: 脚手架提交 & 分支拆分
+
+### 操作概述
+
+提交全部脚手架文件到 main，并创建前后端独立开发分支。
+
+### 操作记录
+
+```
+git add .gitignore CHANGE.md DESIGN.md backend/ frontend/
+git commit -m "feat: project scaffold — FastAPI backend + Vue3 frontend"
+git push origin main
+
+git branch dev-backend
+git branch dev-frontend
+git push origin dev-backend dev-frontend
+```
+
+### 提交详情
+
+- Commit: `90993f7`
+- 文件数: 83 files changed
+- 内容: 后端 50 + 前端 26 + 根目录 7 个文件
+
+### 分支策略
+
+```
+main          ← 稳定主分支（受保护）
+├── dev-backend   ← 后端开发分支
+└── dev-frontend  ← 前端开发分支
+```
+
+### 后续步骤（按 DESIGN.md Phase 1）
+
+- [ ] MySQL 表建好（SQLAlchemy models）
+- [ ] ChromaDB 连接 & collection 管理
+- [ ] JWT 认证（注册/登录）
+- [ ] 前端登录页 + 路由骨架

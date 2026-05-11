@@ -1,0 +1,30 @@
+"""分块表 — 存储分块文本和 ChromaDB 引用"""
+
+from datetime import datetime
+from sqlalchemy import BigInteger, DateTime, Integer, String, Text, func
+from sqlalchemy.dialects.mysql import JSON
+from sqlalchemy.orm import Mapped, mapped_column
+
+from ..core.database import Base
+
+
+class Chunk(Base):
+    __tablename__ = "chunks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    doc_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    kb_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    chroma_id: Mapped[str] = mapped_column(
+        String(256), nullable=False, comment="ChromaDB 中的 chunk id"
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="在原文档中的顺序"
+    )
+    token_count: Mapped[int] = mapped_column(Integer, default=0)
+    metadata_: Mapped[dict | None] = mapped_column(
+        "metadata", JSON, comment="页码、段落标题等"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
