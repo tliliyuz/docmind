@@ -118,7 +118,8 @@ docmind/
 
 - [x] Phase 1 — SQLAlchemy 模型 + Alembic 迁移 + DB 连接 + FastAPI 入口 + 前端环境
 - [x] Phase 1 — ChromaDB 连接 & collection 创建
-- [ ] Phase 1 剩余 — JWT 认证、前端登录页 + 路由
+- [x] Phase 1 — JWT 认证（注册/登录 + 中间件 + 异常类全覆盖）
+- [ ] Phase 1 剩余 — 前端登录页 + 路由
 - [ ] Phase 2 — 文档入库
 - [ ] Phase 3 — 核心问答
 - [ ] Phase 4 — 会话记忆
@@ -130,9 +131,16 @@ docmind/
 |:---|:---|
 | `config.py` | Settings 单例，pydantic-settings 自动从 `backend/.env` 加载 |
 | `core/database.py` | `create_async_engine` + `async_sessionmaker` + `Base` 基类 |
-| `dependencies.py` | `get_db()` — 异步 session 依赖注入，自动 commit/rollback |
+| `core/chroma_client.py` | ChromaDB PersistentClient + `docmind` collection（hnsw:space=cosine） |
+| `core/security.py` | JWT 令牌（python-jose）+ bcrypt 密码哈希 |
+| `core/exceptions.py` | 统一异常类，覆盖 API.md §1.3 全部 20 个错误码 |
+| `dependencies.py` | `get_db()` / `get_current_user()` — FastAPI 依赖注入 |
 | `models/*.py` | 6 张表：User / KnowledgeBase / Document / Chunk / Conversation / Message |
-| `main.py` | FastAPI app + CORS(localhost:5173) + `/api/health` |
+| `schemas/auth.py` | RegisterRequest / LoginRequest / UserResponse / TokenResponse |
+| `services/auth_service.py` | 注册（查重+哈希+入库）、登录（验证+签发 JWT） |
+| `api/auth.py` | POST /api/auth/register + POST /api/auth/login |
+| `middleware/auth_middleware.py` | 纯 ASGI JWT 验证中间件，公开路由白名单 + OPTIONS 放行 |
+| `main.py` | FastAPI app + CORS + AuthMiddleware + auth_router + `/api/health` |
 | `frontend/` | Vite + Vue 3 环境搭好，`main.js` + `App.vue` 可运行，其余文件均为空占位 |
 
 ---

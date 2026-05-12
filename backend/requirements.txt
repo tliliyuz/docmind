@@ -6,6 +6,7 @@ pydantic==2.*
 pydantic-settings==2.*
 python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
+bcrypt==4.0.*
 python-multipart==0.0.*
 chromadb==0.5.*
 langchain==0.3.*

@@ -5,7 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.auth import router as auth_router
 from .config import settings
+from .middleware.auth_middleware import AuthMiddleware
 
 
 @asynccontextmanager
@@ -23,7 +25,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — 开发阶段允许前端跨域
+# CORS — 开发阶段允许前端跨域（最先添加 = 最外层）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -31,6 +33,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# JWT 认证中间件
+app.add_middleware(AuthMiddleware)
+
+# 路由注册
+app.include_router(auth_router)
 
 
 @app.get("/api/health")

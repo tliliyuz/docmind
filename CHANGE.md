@@ -1,5 +1,45 @@
 # DocMind 变更日志
 
+## 2026-05-12 — Phase 1: JWT 认证（注册/登录 + 中间件 + 异常类）
+
+### 新增
+
+- **`core/exceptions.py`** — 统一异常类体系，覆盖 API.md §1.3 全部 20 个错误码
+  - E1xxx 知识库（3）、E2xxx 文档（5）、E3xxx 会话（2）、E4xxx 问答（5）、E5xxx 认证（5）、E9xxx 系统（4）
+  - 基类 `AppException(HTTPException)` 携带统一响应格式 `{code, error: {code, message, detail}}`
+- **`core/security.py`** — JWT + 密码哈希（bcrypt 直调，未使用 passlib 以避免兼容性问题）
+  - `hash_password` / `verify_password` / `create_access_token` / `decode_access_token`
+- **`schemas/auth.py`** — RegisterRequest / LoginRequest / UserResponse / TokenResponse
+- **`services/auth_service.py`** — register（查重+创建） / login（验证+签发 token）
+- **`api/auth.py`** — POST /api/auth/register + POST /api/auth/login
+- **`middleware/auth_middleware.py`** — 纯 ASGI 中间件，从 Authorization Bearer 提取 JWT，验证后写入 request.state；OPTIONS 放行；公开路由白名单
+- **`dependencies.py`** — 新增 `get_current_user(request)` 从 request.state 读取已认证用户
+- **`main.py`** — 注册 AuthMiddleware + auth_router
+
+### 修改
+
+- **`requirements.txt`** — 新增 `bcrypt==4.0.*`（pin 版本兼容 passlib 替代方案）
+
+### 验证
+
+| 场景 | 结果 |
+|:---|:---|
+| 注册 | 201 Created，返回用户信息 |
+| 登录 | 200 OK，返回 access_token（HS256，24h）+ expires_in |
+| 重复注册 | 409 Conflict，E5001「用户名已存在」 |
+| 密码错误 | 401 Unauthorized，E5002「用户名或密码错误」 |
+| 无 Token | 401 Unauthorized，E5004「Token 无效或格式错误」 |
+| 有效 Token | 中间件放行，进入路由（返回 404 因路由未实现） |
+
+### 修复
+
+- **错误响应格式** — 外层 `"code": 0` 改为实际错误码（如 `"code": "E5001"`），去掉嵌套的 `error` 包裹层
+  - `API.md` §1.2 — 错误响应示例从 `{code: 0, error: {code: "E1001", ...}}` 改为 `{code: "E1001", message: "...", detail: "..."}`
+  - `core/exceptions.py` — `AppException` 响应体同步改为扁平结构
+  - `middleware/auth_middleware.py` — 两处 `JSONResponse` 同步修正
+
+---
+
 ## 2026-05-12 — Phase 1: ChromaDB 连接 & collection 创建
 
 ### 新增
