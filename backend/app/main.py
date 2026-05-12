@@ -10,7 +10,10 @@ from .config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动/关闭时的资源管理"""
+    """应用生命周期：启动时初始化 ChromaDB"""
+    from .core.chroma_client import init_chroma
+
+    init_chroma()
     yield
 
 

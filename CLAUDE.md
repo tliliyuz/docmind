@@ -49,6 +49,7 @@ docmind/
 │   │   ├── core/               # 基础设施（database/chroma/security/sse/storage/exceptions）
 │   │   └── middleware/         # JWT 验证中间件
 │   ├── alembic/                # 数据库迁移（异步引擎，URL 从 config.py 运行时读取）
+│   ├── chroma_data/            # ChromaDB 持久化目录（chroma.sqlite3，启动时自动创建）
 │   └── knowledge_samples/      # 示例知识库文档
 ├── frontend/src/
 │   ├── views/                  # 页面（ChatPage / LoginPage / admin）
@@ -116,7 +117,8 @@ docmind/
 ## 当前进度
 
 - [x] Phase 1 — SQLAlchemy 模型 + Alembic 迁移 + DB 连接 + FastAPI 入口 + 前端环境
-- [ ] Phase 1 剩余 — ChromaDB 连接、JWT 认证、前端登录页 + 路由
+- [x] Phase 1 — ChromaDB 连接 & collection 创建
+- [ ] Phase 1 剩余 — JWT 认证、前端登录页 + 路由
 - [ ] Phase 2 — 文档入库
 - [ ] Phase 3 — 核心问答
 - [ ] Phase 4 — 会话记忆

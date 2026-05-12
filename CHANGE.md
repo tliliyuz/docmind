@@ -1,5 +1,24 @@
 # DocMind 变更日志
 
+## 2026-05-12 — Phase 1: ChromaDB 连接 & collection 创建
+
+### 新增
+
+- **`core/chroma_client.py`** — ChromaDB PersistentClient 连接管理
+  - `init_chroma()` — 初始化 PersistentClient，获取或创建 `docmind` collection
+  - `get_collection()` / `get_client()` — 获取全局单例
+  - Collection 使用 `hnsw:space=cosine` 余弦相似度
+  - 持久化目录：`CHROMA_PERSIST_DIR`（.env 配置，默认 `./chroma_data`）
+- **`main.py`** — lifespan 启动时调用 `init_chroma()` 初始化 ChromaDB
+
+### 验证
+
+- Collection `docmind` 创建成功，count = 0
+- `chroma.sqlite3` 持久化文件生成在 `backend/chroma_data/`
+- FastAPI 启动正常，`/api/health` 返回 200
+
+---
+
 ## 2026-05-11 — 设计文档更新: Embedding 方案切换为 DashScope
 
 ### 修改
