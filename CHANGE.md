@@ -1,5 +1,15 @@
 # DocMind 变更日志
 
+## 2026-05-11 — 设计文档更新: Embedding 方案切换为 DashScope
+
+### 修改
+
+- **CLAUDE.md** — 技术栈行: `text-embedding-3-small` → `DashScope text-embedding-v3`，LLM 标注为 DeepSeek
+- **DESIGN.md §2** — 技术选型表 Embedding 行: `OpenAI text-embedding-3-small / 1536维` → `DashScope text-embedding-v3 / 1024维，中文优化`
+- **DESIGN.md §9** — .env 模板 Embedding 段: URL 改为 `dashscope.aliyuncs.com/api/v1`，MODEL 改为 `text-embedding-v3`
+
+---
+
 ## 2026-05-11 — Phase 1: 数据库连接 & ORM 模型 & Alembic 迁移
 
 ### 操作概述
