@@ -1,5 +1,37 @@
 # DocMind 变更日志
 
+## 2026-05-12 — Phase 1 代码规范修正 & 模型外键补齐
+
+### 修改
+
+- **相对导入 → 绝对导入** — `core/database.py`、`core/chroma_client.py`、`main.py`、`models/__init__.py` 全部改为 `from app.xxx` 绝对路径
+- **`core/security.py`** — `datetime.utcnow()` → `datetime.now(timezone.utc)`，避免弃用 API
+- **`middleware/auth_middleware.py`** — `int(payload.get("sub"))` 增加 `KeyError/ValueError/TypeError` 异常防护，返回 401 而非 500
+- **`middleware/auth_middleware.py`** — 移除 `_PUBLIC_PATHS` 中 `/docs`、`/openapi.json` 的重复 `startswith` 判断（`in` 集合 + `startswith` 提取为 `_is_public()` 函数）
+- **`main.py`** — 注册全局异常处理器：`RequestValidationError`（422 → E9003）+ `Exception`（500 → E9001），统一响应格式 `{code, message, detail}`
+
+### 新增
+
+- **6 张模型表补充 `sa.ForeignKey(...)`** — 对齐 DATABASE.md §4 外键策略，全部 7 条外键约束：
+  | 字段 | 引用 | ondelete |
+  |:---|:---|:---|
+  | `knowledge_bases.user_id` | `users.id` | RESTRICT |
+  | `documents.kb_id` | `knowledge_bases.id` | CASCADE |
+  | `chunks.doc_id` | `documents.id` | CASCADE |
+  | `chunks.kb_id` | `knowledge_bases.id` | CASCADE |
+  | `conversations.user_id` | `users.id` | CASCADE |
+  | `conversations.kb_id` | `knowledge_bases.id` | SET NULL |
+  | `messages.conversation_id` | `conversations.id` | CASCADE |
+
+- **6 张模型表补充 `relationship`** — User ↔ KB ↔ Document ↔ Chunk / User ↔ Conversation ↔ Message 双向关联
+- **`server_default=sa.text('0')`** — `chunk_count`（KB/Document）、`doc_count`（KB）、`token_count`（Chunk/Message）、`message_count`（Conversation）添加 DB 层默认值
+
+### 数据库迁移
+
+- **`252a79df66dd`** — 添加 7 条外键约束 + 6 列 server_default 修改，已执行 `alembic upgrade head`
+
+---
+
 ## 2026-05-12 — Phase 1: JWT 认证（注册/登录 + 中间件 + 异常类）
 
 ### 新增

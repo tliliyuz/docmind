@@ -6,7 +6,7 @@
 import chromadb
 from chromadb.api import ClientAPI, Collection
 
-from ..config import settings
+from app.config import settings
 
 _client: ClientAPI | None = None
 _collection: Collection | None = None

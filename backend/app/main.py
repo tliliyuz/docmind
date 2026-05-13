@@ -2,18 +2,20 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from .api.auth import router as auth_router
-from .config import settings
-from .middleware.auth_middleware import AuthMiddleware
+from app.api.auth import router as auth_router
+from app.config import settings
+from app.middleware.auth_middleware import AuthMiddleware
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时初始化 ChromaDB"""
-    from .core.chroma_client import init_chroma
+    from app.core.chroma_client import init_chroma
 
     init_chroma()
     yield
@@ -39,6 +41,32 @@ app.add_middleware(AuthMiddleware)
 
 # 路由注册
 app.include_router(auth_router)
+
+
+# ==================== 全局异常处理器 ====================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "E9003",
+            "message": "请求参数校验失败",
+            "detail": str(exc.errors()),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "E9001",
+            "message": "服务器内部错误",
+            "detail": str(exc),
+        },
+    )
 
 
 @app.get("/api/health")

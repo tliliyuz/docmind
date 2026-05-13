@@ -65,7 +65,7 @@ docmind/
 
 ## 设计文档速查
 
-根目录下有 8 份设计文档，按需查阅：
+根目录下有 9 份设计文档，按需查阅：
 
 | 文档 | 何时读取 |
 |:---|:---|
@@ -77,6 +77,7 @@ docmind/
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | 搭环境、装依赖、查命令时 |
 | [ROADMAP.md](./ROADMAP.md) | 排期、确认当前 Phase 待办时 |
 | [TESTING.md](./TESTING.md) | 设计测试、评估检索效果、做压测时 |
+| [UIDESIGN.md](./UIDESIGN.md) | 调整页面布局、组件样式、交互细节时 |
 
 ---
 
@@ -99,6 +100,16 @@ docmind/
 - **异步优先**：所有 IO 操作用 async/await，DB session 通过 `get_db()` 依赖注入获取
 - **配置**：环境变量统一从 `config.py` 的 `settings` 单例读取，禁止硬编码。`.env` 在 `backend/` 目录下，不在项目根目录
 - **Schema**：新接口必须定义 Pydantic schema，不裸用 dict
+- **数据库模型**：
+  - 所有 `*_id` 关联字段必须声明 `sa.ForeignKey(...)`，级联策略遵循 `DATABASE.md` §4 外键策略表
+  - 模型间必须定义 `relationship`，支持 ORM 级联和跨表查询（如 `User.knowledge_bases = relationship(...)`）
+  - `default=0` 等 Python 默认值需同步考虑是否需要 `server_default=sa.text('0')`，保证直接 SQL 插入也安全
+- **异常处理**：
+  - 业务异常继承 `AppException`，由 FastAPI 自动处理
+  - 必须注册全局异常处理器统一拦截 `RequestValidationError`（422）和通用 `Exception`（500），确保响应格式始终为 `{"code", "message", "detail"}`
+- **安全与时区**：
+  - 禁止用 `datetime.utcnow()`（已弃用），统一使用 `datetime.now(timezone.utc)`
+  - JWT payload 中的字段提取必须做异常防护（如 `int(payload["sub"])` 需处理 `KeyError/ValueError`）
 
 ### 前端
 

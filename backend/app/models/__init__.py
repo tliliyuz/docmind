@@ -1,6 +1,6 @@
 """ORM 模型 — 导入所有模型确保 Alembic 能识别"""
 
-from ..core.database import Base
+from app.core.database import Base
 
 from .user import User
 from .knowledge_base import KnowledgeBase

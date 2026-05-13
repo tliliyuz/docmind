@@ -8,14 +8,16 @@ from starlette.responses import JSONResponse
 
 from app.core.security import decode_access_token
 
-# 不需要认证的公开路由
+# 不需要认证的公开路由（已完整覆盖 /docs 及其子路径）
 _PUBLIC_PATHS = {
     "/api/auth/register",
     "/api/auth/login",
     "/api/health",
-    "/docs",
-    "/openapi.json",
 }
+
+
+def _is_public(path: str) -> bool:
+    return path in _PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/openapi.json")
 
 
 class AuthMiddleware:
@@ -32,12 +34,7 @@ class AuthMiddleware:
         request = Request(scope)
 
         # OPTIONS 预检 + 公开路由跳过认证
-        if (
-            request.method == "OPTIONS"
-            or request.url.path in _PUBLIC_PATHS
-            or request.url.path.startswith("/docs")
-            or request.url.path.startswith("/openapi.json")
-        ):
+        if request.method == "OPTIONS" or _is_public(request.url.path):
             await self.app(scope, receive, send)
             return
 
@@ -70,8 +67,21 @@ class AuthMiddleware:
             await response(scope, receive, send)
             return
 
-        # 将用户信息写入 request.state
-        request.state.user_id = int(payload.get("sub"))
+        # 将用户信息写入 request.state（异常防护）
+        try:
+            request.state.user_id = int(payload["sub"])
+        except (KeyError, ValueError, TypeError):
+            response = JSONResponse(
+                status_code=401,
+                content={
+                    "code": "E5004",
+                    "message": "Token 无效或格式错误",
+                    "detail": "Token payload 缺少 sub 字段或格式异常",
+                },
+            )
+            await response(scope, receive, send)
+            return
+
         request.state.username = payload.get("username")
         request.state.role = payload.get("role")
 

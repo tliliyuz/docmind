@@ -2,9 +2,9 @@
 
 from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, Enum, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..core.database import Base
+from app.core.database import Base
 
 
 class User(Base):
@@ -24,3 +24,6 @@ class User(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+    knowledge_bases = relationship("KnowledgeBase", back_populates="owner")
+    conversations = relationship("Conversation", back_populates="user")
