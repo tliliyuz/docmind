@@ -1,0 +1,215 @@
+/* ===== CSS 变量（Design Token） ===== */
+:root {
+    /* 品牌色 */
+    --dm-primary: #4F46E5;
+    --dm-primary-hover: #4338CA;
+    --dm-primary-light: #EEF2FF;
+    --dm-primary-gradient: linear-gradient(135deg, #4F46E5, #7C3AED);
+
+    /* 语义色 */
+    --dm-success: #10B981;
+    --dm-warning: #F59E0B;
+    --dm-danger: #EF4444;
+    --dm-info: #3B82F6;
+
+    /* 语义色浅色背景 */
+    --dm-success-light: #D1FAE5;
+    --dm-warning-light: #FEF3C7;
+    --dm-danger-light: #FEE2E2;
+    --dm-info-light: #DBEAFE;
+
+    /* 部门图标色 */
+    --dm-hr-color: #EF4444;
+    --dm-hr-bg: #FEE2E2;
+    --dm-it-color: #3B82F6;
+    --dm-it-bg: #DBEAFE;
+    --dm-admin-color: #10B981;
+    --dm-admin-bg: #D1FAE5;
+    --dm-biz-color: #F59E0B;
+    --dm-biz-bg: #FEF3C7;
+    --dm-finance-color: #6366F1;
+    --dm-finance-bg: #E0E7FF;
+
+    /* 中性色 */
+    --dm-bg-page: #F8FAFC;
+    --dm-bg-sidebar: #FFFFFF;
+    --dm-bg-card: #FFFFFF;
+    --dm-bg-chat: #F1F5F9;
+    --dm-text-primary: #1E293B;
+    --dm-text-secondary: #64748B;
+    --dm-text-tertiary: #94A3B8;
+    --dm-border: #E2E8F0;
+    --dm-border-light: #F1F5F9;
+
+    /* 字体族 */
+    --dm-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                      "Helvetica Neue", Arial, sans-serif;
+
+    /* 字号 */
+    --dm-text-3xl: 36px;
+    --dm-text-2xl: 28px;
+    --dm-text-xl: 24px;
+    --dm-text-lg: 20px;
+    --dm-text-base: 16px;
+    --dm-text-sm: 15px;
+    --dm-text-body: 14px;
+    --dm-text-xs: 13px;
+    --dm-text-2xs: 12px;
+    --dm-text-3xs: 11px;
+
+    /* 字重 */
+    --dm-weight-bold: 700;
+    --dm-weight-semibold: 600;
+    --dm-weight-medium: 500;
+    --dm-weight-normal: 400;
+
+    /* 行高 */
+    --dm-leading-title: 1.2;
+    --dm-leading-body: 1.5;
+    --dm-leading-chat: 1.7;
+
+    /* 间距 */
+    --dm-space-1: 4px;
+    --dm-space-2: 8px;
+    --dm-space-3: 12px;
+    --dm-space-4: 16px;
+    --dm-space-5: 20px;
+    --dm-space-6: 24px;
+    --dm-space-8: 32px;
+    --dm-space-10: 40px;
+    --dm-space-12: 48px;
+
+    /* 圆角 */
+    --dm-radius-xs: 4px;
+    --dm-radius-sm: 6px;
+    --dm-radius-md: 10px;
+    --dm-radius-lg: 14px;
+    --dm-radius-xl: 20px;
+    --dm-radius-full: 50%;
+
+    /* 阴影 */
+    --dm-shadow-none: none;
+    --dm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --dm-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --dm-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+    --dm-shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.25);
+    --dm-shadow-primary: 0 4px 12px rgba(79, 70, 229, 0.25);
+    --dm-shadow-primary-lg: 0 8px 20px rgba(79, 70, 229, 0.3);
+    --dm-shadow-sidebar: 2px 0 8px rgba(0, 0, 0, 0.04);
+    --dm-shadow-input: 0 4px 20px rgba(0, 0, 0, 0.06);
+    --dm-shadow-input-focus: 0 4px 20px rgba(79, 70, 229, 0.1);
+
+    /* 布局 */
+    --dm-sidebar-width-admin: 260px;
+    --dm-sidebar-width-chat: 280px;
+    --dm-header-height: 64px;
+    --dm-chat-max-width: 900px;
+    --dm-content-max-width: 1200px;
+
+    /* 过渡 */
+    --dm-transition-fast: 0.15s ease;
+    --dm-transition-normal: 0.2s ease;
+    --dm-transition-slow: 0.3s ease;
+
+    /* 登录页 */
+    --dm-gradient-login: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #4F46E5 100%);
+
+    /* 其他 */
+    --dm-bg-code: #1E293B;
+    --dm-text-code: #E2E8F0;
+    --dm-welcome-logo-size: 64px;
+    --dm-sidebar-logo-size: 36px;
+
+    /* Element Plus 主题覆盖 */
+    --el-color-primary: #4F46E5;
+    --el-color-primary-light-3: #7C3AED;
+    --el-color-primary-light-5: #A78BFA;
+    --el-color-primary-light-7: #C4B5FD;
+    --el-color-primary-light-8: #DDD6FE;
+    --el-color-primary-light-9: #EEF2FF;
+    --el-border-radius-base: 6px;
+    --el-font-size-base: 14px;
+    --el-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                      "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ===== 全局重置 ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--dm-font-family);
+    background: var(--dm-bg-page);
+    color: var(--dm-text-primary);
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    height: 100vh;
+    display: flex;
+}
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--dm-border);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--dm-text-tertiary);
+}
+
+/* ===== 组件基础样式 ===== */
+
+/* 标准输入框 */
+.form-input {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--dm-border);
+    border-radius: var(--dm-radius-md);
+    font-size: var(--dm-text-body);
+    color: var(--dm-text-primary);
+    background: var(--dm-bg-page);
+    outline: none;
+    transition: all var(--dm-transition-normal);
+}
+
+.form-input:focus {
+    border-color: var(--dm-primary);
+    background: var(--dm-bg-card);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+}
+
+.form-input::placeholder {
+    color: var(--dm-text-tertiary);
+}
+
+/* 带图标前缀的输入框 */
+.input-group {
+    position: relative;
+}
+
+.input-group .prefix-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--dm-text-tertiary);
+    font-size: var(--dm-text-body);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.input-group .input-with-icon {
+    padding-left: 40px;
+}

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.2.0",
     "axios": "^1.7.0",
     "element-plus": "^2.9.0",
     "markdown-it": "^14.1.0",

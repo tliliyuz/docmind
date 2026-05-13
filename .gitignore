@@ -32,3 +32,16 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+#doc
+API.md/
+ARCHITECTURE.md/
+CHANGE.md/
+CLAUDE.md/
+DATABASE.md/
+DEVELOPMENT.md/
+FRONTEND.md/
+PRD.md/
+ROADMAP.md/
+TESTING.md/
+UIDESIGN.md/
