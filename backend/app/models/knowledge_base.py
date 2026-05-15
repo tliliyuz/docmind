@@ -1,7 +1,7 @@
 """知识库表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -15,6 +15,12 @@ class KnowledgeBase(Base):
     description: Mapped[str | None] = mapped_column(Text)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        Enum("active", "deleting", name="kb_status"),
+        default="active",
+        server_default=text("'active'"),
+        comment="active（正常）/ deleting（异步清理中，随后物理删除行）"
     )
     chunk_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")

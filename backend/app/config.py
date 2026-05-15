@@ -24,6 +24,11 @@ class Settings(BaseSettings):
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./chroma_data"
+    CHROMA_BATCH_SIZE: int = 100
+
+    # Embedding
+    EMBED_BATCH_SIZE: int = 20
+    DEBUG_CHUNK_FULL: bool = False
 
     # LLM (OpenAI 兼容)
     LLM_BASE_URL: str = "https://api.openai.com/v1"

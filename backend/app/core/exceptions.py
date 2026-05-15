@@ -32,11 +32,6 @@ class KnowledgeBaseNameExistsException(AppException):
         super().__init__("E1002", "知识库名称已存在", 409, f"名称 '{name}' 已被使用")
 
 
-class KnowledgeBaseDeleteFailedException(AppException):
-    def __init__(self, detail: str = ""):
-        super().__init__("E1003", "知识库删除失败（关联文档未清空）", 400, detail)
-
-
 # ==================== 文档错误 E2xxx ====================
 
 class DocumentNotFoundException(AppException):
@@ -62,6 +57,46 @@ class DocumentParseFailedException(AppException):
 class DocumentIngestFailedException(AppException):
     def __init__(self, detail: str = ""):
         super().__init__("E2005", "文档入库失败", 500, detail)
+
+
+class StorageErrorException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2006", "存储错误", 500, detail)
+
+
+class VectorStoreErrorException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2007", "向量存储错误", 500, detail)
+
+
+class EmbeddingTimeoutException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2008", "Embedding 超时 / 限流", 502, detail)
+
+
+class ParserErrorException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2009", "解析器错误", 400, detail)
+
+
+class ReprocessFailedException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2010", "重新处理失败", 400, detail)
+
+
+class DocumentProcessingError(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2011", "文档正在处理中", 409, detail)
+
+
+class ForceOverrideConflictException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2012", "旧文档仍在处理中，无法覆盖", 409, detail)
+
+
+class DocumentNameExistsException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E2013", "文档名称已存在", 409, detail)
 
 
 # ==================== 会话错误 E3xxx ====================
