@@ -32,7 +32,7 @@ class TestRegisterAPI:
 
         assert response.status_code == 201
         body = response.json()
-        assert body["code"] == 0
+        assert body["code"] == "0"
         assert body["message"] == "注册成功"
         assert body["data"]["username"] == "newuser"
         assert body["data"]["role"] == "user"
@@ -100,7 +100,7 @@ class TestLoginAPI:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["code"] == 0
+        assert body["code"] == "0"
         assert body["message"] == "登录成功"
         assert body["data"]["access_token"] == "fake-token"
         assert body["data"]["token_type"] == "bearer"
@@ -113,7 +113,7 @@ class TestLoginAPI:
 
             response = await async_client.post(
                 "/api/auth/login",
-                json={"username": "testuser", "password": "wrong"}
+                json={"username": "testuser", "password": "wrongpw"}
             )
 
         assert response.status_code == 401
@@ -122,17 +122,14 @@ class TestLoginAPI:
 
     @pytest.mark.asyncio
     async def test_login_empty_username(self, async_client):
-        """空用户名通过 Pydantic 校验（无 min_length 约束），到达 mock 的 login，返回成功"""
-        with patch("app.api.auth.login", new_callable=AsyncMock) as mock_login:
-            mock_login.return_value = _make_token_response()
+        """空用户名被 LoginRequest min_length=2 拒绝"""
+        response = await async_client.post(
+            "/api/auth/login",
+            json={"username": "", "password": "correct"}
+        )
 
-            response = await async_client.post(
-                "/api/auth/login",
-                json={"username": "", "password": "correct"}
-            )
-
-        assert response.status_code == 200
-        assert response.json()["code"] == 0
+        assert response.status_code == 422
+        assert response.json()["code"] == "E9003"
 
     @pytest.mark.asyncio
     async def test_login_missing_password(self, async_client):

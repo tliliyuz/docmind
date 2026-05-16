@@ -1,7 +1,7 @@
 """用户表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, String, func
+from sqlalchemy import BigInteger, DateTime, Enum, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -14,7 +14,9 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     role: Mapped[str] = mapped_column(
-        Enum("user", "admin", name="user_role"), default="user"
+        Enum("user", "admin", name="user_role"),
+        default="user",
+        server_default=text("'user'"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()

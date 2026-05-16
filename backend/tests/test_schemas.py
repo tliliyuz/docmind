@@ -43,10 +43,10 @@ class TestLoginRequest:
         req = LoginRequest(username="test", password="123456")
         assert req.username == "test"
 
-    def test_empty_username_accepted(self):
-        """LoginRequest 对 username 无 min_length 约束，空字符串通过 Pydantic 校验"""
-        req = LoginRequest(username="", password="123456")
-        assert req.username == ""
+    def test_empty_username_rejected(self):
+        """LoginRequest username 设 min_length=2，空字符串应被拒绝"""
+        with pytest.raises(ValidationError):
+            LoginRequest(username="", password="123456")
 
     def test_missing_username(self):
         with pytest.raises(ValidationError):

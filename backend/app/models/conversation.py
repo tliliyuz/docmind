@@ -19,7 +19,9 @@ class Conversation(Base):
         BigInteger, ForeignKey("knowledge_bases.id", ondelete="SET NULL"),
         comment="关联的知识库"
     )
-    title: Mapped[str] = mapped_column(String(256), default="新对话")
+    title: Mapped[str] = mapped_column(
+        String(256), default="新对话", server_default=text("'新对话'")
+    )
     message_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )

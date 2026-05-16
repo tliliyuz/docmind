@@ -30,6 +30,7 @@ class Document(Base):
     status: Mapped[DocumentStatus] = mapped_column(
         Enum(DocumentStatus, name="document_status"),
         default=DocumentStatus.UPLOADED,
+        server_default=text("'uploaded'"),
     )
     chunk_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
