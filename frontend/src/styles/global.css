@@ -4,6 +4,7 @@
     --dm-primary: #4F46E5;
     --dm-primary-hover: #4338CA;
     --dm-primary-light: #EEF2FF;
+    --dm-primary-hover-light: #DDD6FE;
     --dm-primary-gradient: linear-gradient(135deg, #4F46E5, #7C3AED);
 
     /* 语义色 */
@@ -95,6 +96,7 @@
     --dm-shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.25);
     --dm-shadow-primary: 0 4px 12px rgba(79, 70, 229, 0.25);
     --dm-shadow-primary-lg: 0 8px 20px rgba(79, 70, 229, 0.3);
+    --dm-logo-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
     --dm-shadow-sidebar: 2px 0 8px rgba(0, 0, 0, 0.04);
     --dm-shadow-input: 0 4px 20px rgba(0, 0, 0, 0.06);
     --dm-shadow-input-focus: 0 4px 20px rgba(79, 70, 229, 0.1);

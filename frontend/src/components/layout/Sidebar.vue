@@ -157,7 +157,7 @@ function handleLogout() {
 }
 
 .new-chat-btn:hover {
-  background: #DDD6FE;
+  background: var(--dm-primary-hover-light);
   border-color: var(--dm-primary);
 }
 

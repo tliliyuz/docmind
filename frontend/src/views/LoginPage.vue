@@ -164,7 +164,7 @@ async function handleSubmit() {
   justify-content: center;
   color: white;
   font-size: var(--dm-text-2xl);
-  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+  box-shadow: var(--dm-logo-shadow);
   margin: 0 auto;
 }
 
