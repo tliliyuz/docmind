@@ -31,14 +31,14 @@ class Settings(BaseSettings):
     DEBUG_CHUNK_FULL: bool = False
 
     # LLM (OpenAI 兼容)
-    LLM_BASE_URL: str = "https://api.openai.com/v1"
+    LLM_BASE_URL: str = "https://api.deepseek.com"
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_MODEL: str = "deepseek-v4-pro"
 
     # Embedding
-    EMBEDDING_BASE_URL: str = "https://api.openai.com/v1"
+    EMBEDDING_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
     EMBEDDING_API_KEY: str = ""
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_MODEL: str = "text-embedding-v3"
 
     # Rerank (可选)
     RERANK_API_KEY: str = ""
