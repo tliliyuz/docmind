@@ -37,12 +37,18 @@ async def create_kb(
     return KnowledgeBaseResponse.model_validate(kb)
 
 
-async def get_kb(db: AsyncSession, kb_id: int) -> KnowledgeBase:
-    """获取知识库，不存在时抛出 KnowledgeBaseNotFoundException"""
+async def get_kb(
+    db: AsyncSession, kb_id: int, user_id: int | None = None, role: str | None = None
+) -> KnowledgeBase:
+    """获取知识库，不存在时抛出 KnowledgeBaseNotFoundException。
+    传入 user_id 时校验所有权：非 owner 且非 admin 抛出 PermissionDeniedException。
+    """
     result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
     kb = result.scalar_one_or_none()
     if kb is None:
         raise KnowledgeBaseNotFoundException(kb_id)
+    if user_id is not None and kb.user_id != user_id and role != "admin":
+        raise PermissionDeniedException()
     return kb
 
 

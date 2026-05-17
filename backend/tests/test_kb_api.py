@@ -267,6 +267,22 @@ class TestGetKB:
         assert body["message"] == "知识库不存在"
 
     @pytest.mark.asyncio
+    async def test_get_permission_denied(self, async_client, auth_headers):
+        """非 owner 且非 admin 查看他人知识库时被拒绝"""
+        with patch("app.api.knowledge_base.get_kb", new_callable=AsyncMock) as mock:
+            mock.side_effect = PermissionDeniedException()
+
+            response = await async_client.get(
+                "/api/knowledge-bases/2",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 403
+        body = response.json()
+        assert body["code"] == "E5005"
+        assert body["message"] == "无权限执行此操作"
+
+    @pytest.mark.asyncio
     async def test_get_no_auth(self, async_client):
         response = await async_client.get("/api/knowledge-bases/1")
         assert response.status_code == 401

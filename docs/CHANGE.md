@@ -1,5 +1,24 @@
 # DocMind 变更日志
 
+## 2026-05-17 — 代码审查问题修复 + 权限标注修正
+
+### 修复
+- `services/knowledge_base_service.py` — `get_kb` 新增可选 `user_id`/`role` 参数，传入时校验所有权（非 owner 且非 admin 拒绝访问，E5005）
+- `api/knowledge_base.py` — `GET /{kb_id}` 传入 `current_user` 至 `get_kb`，修复详情接口缺少 owner 校验的安全漏洞
+- `tests/test_kb_api.py` — 新增 `test_get_permission_denied` 用例，补齐 A2.8 越权访问测试
+- `docs/ARCHITECTURE.md` — §7.2 移除 `rank-bm25` 过期待办描述（依赖已于 2026-05-15 移除）
+
+### 修改
+- `docs/ARCHITECTURE.md` — 文档元信息 v0.3→v0.4，日期 2026-05-14→2026-05-17
+- `backend/docs/API.md` — v0.4→v0.7；§3 + §9 GET `/{id}` 权限修正为「所有者/admin」；§3 + §9 5 个文档子资源接口权限从 `user` 修正为 `user（所有者/admin）`（POST upload/batch-upload、GET documents 列表/详情、DELETE document）
+- `backend/docs/DATABASE.md` — 文档元信息 v0.3→v0.4，日期 2026-05-14→2026-05-17
+- `docs/TEST_CASES.md` — Phase 2 说明更新：标注 §3.1/§3.2 已补充详细用例并全部通过
+
+### 测试结果
+- 后端：96/96 全部通过（新增 1 个越权测试，无回归）
+
+---
+
 ## 2026-05-17 — Phase 1 模型测试补齐（U4.1-U4.3）
 
 ### 新增

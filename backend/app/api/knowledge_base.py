@@ -46,7 +46,7 @@ async def get_knowledge_base(
     current_user: dict = Depends(get_current_user),
 ):
     """获取知识库详情"""
-    kb = await get_kb(db, kb_id)
+    kb = await get_kb(db, kb_id, current_user["user_id"], current_user["role"])
     return {"code": "0", "message": "ok", "data": KnowledgeBaseResponse.model_validate(kb).model_dump()}
 
 
