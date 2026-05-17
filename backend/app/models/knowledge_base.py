@@ -1,7 +1,7 @@
 """知识库表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -9,6 +9,9 @@ from app.core.database import Base
 
 class KnowledgeBase(Base):
     __tablename__ = "knowledge_bases"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="idx_user_name"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)

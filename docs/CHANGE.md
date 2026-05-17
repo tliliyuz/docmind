@@ -1,5 +1,30 @@
 # DocMind 变更日志
 
+## 2026-05-16 — Phase 2 知识库 CRUD 实现
+
+### 新增
+- 知识库 CRUD 接口（POST/GET/PUT/DELETE `/api/knowledge-bases`）
+- `idx_user_name` 唯一索引（user_id, name），保证用户级知识库名称唯一
+- `KnowledgeBaseCreate/Update/Response/ListData/DeleteData` Pydantic Schema
+- `create_kb/get_kb/list_kbs/update_kb/delete_kb/check_kb_active` 服务层函数
+- 同名冲突捕获 IntegrityError → E1002
+- DELETE 仅标记 status=deleting + 返回 202，不做物理删除/ChromaDB 清理
+- 列表分页返回 `{total, page, page_size, items}`
+- 所有响应 data 中均包含 status 字段
+- 权限校验：非 owner 且非 admin 拒绝修改/删除（E5005）
+- `check_kb_active()` 供后续上传/检索/reprocess 调用
+
+### 数据库迁移
+| 迁移文件 | 版本链 | 变更 |
+|:---|:---|:---|
+| `687b64790b37_添加idx_user_name唯一索引.py` | `04b3e0425da8` → `687b64790b37` | `knowledge_bases` 添加 `idx_user_name (user_id, name)` 唯一索引 |
+
+### 测试结果
+- 后端：44/44 全部通过（无回归）
+- API 手工验证：创建/列表/详情/更新/删除/同名冲突/权限拒绝 全部通过
+
+---
+
 ## 2026-05-16 — 文档规范修复 + 代码合规修复
 
 ### 背景
