@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.3 |
+| 文档版本 | v0.4 |
 | 最后更新 | 2026-05-17 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 2 文档状态枚举完成，KB CRUD 已完成） |
+| 状态 | 进行中（Phase 2 KB CRUD 已完成，U4.1-U4.3 模型测试已补齐） |
 
 ---
 
@@ -67,13 +67,13 @@
 
 ### 2.4 后端 — 用户模型测试
 
-> 本节未在本轮实现，待 Phase 2 DB 集成测试时补齐。
+> 本节测试直接连接开发库 MySQL，通过 engine.dispose() 清理池避免 Windows 事件循环残留。
 
 | ID | 测试用例 | 被测对象 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U4.1 | User 默认 role | `User` | 创建时不指定 role | `role` 默认值为 `"user"` | ⏭️ | — | Phase 2 集成测试时实现 |
-| U4.2 | User username unique | `User` | 重复 username | DB 层抛出 IntegrityError | ⏭️ | — | Phase 2 集成测试时实现 |
-| U4.3 | User relationship | `User` | 访问 knowledge_bases | 返回 list，可为空 | ⏭️ | — | Phase 2 集成测试时实现 |
+| U4.1 | User 默认 role | `User` | 创建时不指定 role，flush 后验证 | `role` 默认值为 `"user"` | ✅ | 2026-05-17 | — |
+| U4.2 | User username unique | `User` | 重复 username | DB 层抛出 IntegrityError | ✅ | 2026-05-17 | savepoint 隔离，engine.dispose() 清理池 |
+| U4.3 | User FK 关联 | `User` / `KnowledgeBase` | 通过 FK 查 KB | 未创建时为空，创建后可查到 | ✅ | 2026-05-17 | 直接查 KB 表避免 Windows ORM 懒加载 MissingGreenlet |
 
 ### 2.5 后端 — 认证 API 接口测试
 
@@ -284,7 +284,7 @@
 | `services/auth_service.py` | ≥ 80% | ✅ 100% | 7 个测试全覆盖 |
 | `api/auth.py` (接口测试) | ≥ 90% | ✅ 100% | 14 个测试全覆盖 |
 | `schemas/auth.py` | ≥ 85% | ✅ 100% | 10 个测试全覆盖 |
-| `models/` | ≥ 70% | ⏭️ | Phase 2 DB 集成测试时覆盖 |
+| `models/` | ≥ 70% | ✅ 已覆盖 | U4.1-U4.3 已实现 |
 | 前端 `utils/` | ≥ 80% | ⬜ | sse.js / markdown.js 待 Phase 3 |
 | 前端组件 | ≥ 60% | ✅ 100% | LoginPage(9) + AppLayout(3) 全通过 |
 

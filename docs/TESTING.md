@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.3 |
-| 最后更新 | 2026-05-16 |
+| 文档版本 | v0.4 |
+| 最后更新 | 2026-05-17 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -85,7 +85,7 @@ describe('parseSSEEvent', () => {
 
 ### 3.1 后端 API 接口测试
 
-使用 FastAPI TestClient + httpx，**走真实路由链路**，但不依赖真实数据库（使用 SQLite 内存库或 Mock session）。
+使用 FastAPI TestClient + httpx，**走真实路由链路**。API 接口测试使用 Mock session 隔离外部依赖；模型层测试（约束校验、关联查询）直接连接开发库 MySQL，测试数据操作后清理。
 
 **覆盖范围**：
 - 正常请求 → 正确响应码 + `{code, message, data}` 格式

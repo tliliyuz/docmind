@@ -1,5 +1,23 @@
 # DocMind 变更日志
 
+## 2026-05-17 — Phase 1 模型测试补齐（U4.1-U4.3）
+
+### 新增
+- `backend/tests/test_models.py` — 用户模型测试（U4.1 默认 role / U4.2 username 唯一约束 / U4.3 FK 关联验证），含 `dispose_engine_after` autouse fixture 解决 Windows pool 清理
+- `backend/tests/conftest.py` — 新增 `db_session` fixture
+
+### 修改
+- `backend/pytest.ini` — 新增 `asyncio_default_fixture_loop_scope = session`，避免 Windows ProactorEventLoop 提前关闭导致连接池残留异常
+- `docs/TESTING.md` v0.3→v0.4 — §3.1 修正：API 接口测试用 Mock session，模型层测试可直接连开发库 MySQL
+- `docs/TEST_CASES.md` v0.3→v0.4 — U4.1-U4.3 状态 ⏭️→✅，models/ 覆盖率 ✅ 已覆盖
+- `docs/DEVELOPMENT.md` v0.4→v0.5 — 项目结构 tests/ 节新增 `test_models.py`
+- `CLAUDE.md` — 通用约束新增：新建文件须汇报用户、变更记录只能写入 `docs/CHANGE.md`
+
+### 测试结果
+- 后端：95/95 全部通过（新增 3 个模型测试，无回归）
+
+---
+
 ## 2026-05-17 — Phase 2 文档状态枚举
 
 ### 新增

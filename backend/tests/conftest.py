@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.main import app
 from app.dependencies import get_db
 from app.core.security import create_access_token
+from app.core.database import async_session
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -52,3 +53,10 @@ def other_user_auth_headers():
     """生成其他用户的 JWT 认证 header"""
     token = create_access_token(3, "otheruser", "user")
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def db_session():
+    """真实数据库 session — 连接开发库，测试结束后自动关闭（未提交数据由 DB 回滚）"""
+    async with async_session() as session:
+        yield session

@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.4 |
-| 最后更新 | 2026-05-16 |
+| 文档版本 | v0.5 |
+| 最后更新 | 2026-05-17 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -124,6 +124,7 @@ docmind/
 │   │   ├── test_auth_service.py       # 认证业务逻辑单元测试
 │   │   ├── test_auth_api.py           # 认证接口集成测试
 │   │   ├── test_schemas.py            # Pydantic Schema 校验测试
+│   │   ├── test_models.py             # ORM 模型测试（约束/默认值/关联）
 │   │   ├── test_kb_api.py             # 知识库 CRUD 接口测试
 │   │   ├── test_document_api.py       # 文档上传/删除接口测试
 │   │   ├── test_retriever.py          # 检索器单元测试（向量+BM25）
