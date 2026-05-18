@@ -1,5 +1,43 @@
 # DocMind 变更日志
 
+## 2026-05-18 — DocumentStatus ENUM 映射修复
+
+### 修复
+- `backend/app/models/document.py` — `status` 列的 `Enum(DocumentStatus)` 新增 `values_callable=lambda obj: [e.value for e in obj]`，修复 SQLAlchemy 默认使用枚举**成员名**（`UPLOADED` 大写）而 MySQL ENUM 列实际存储**成员值**（`'uploaded'` 小写）的映射错误
+- 根因：`alembic/versions/42097bdbd61a` 通过 raw SQL `ALTER TABLE ... ENUM('uploaded','parsing',...)` 创建了小写值，但 SQLAlchemy ORM 层 `Enum(DocumentStatus)` 默认按成员名（大写）校验，导致 `LookupError: 'uploaded' is not among the defined enum values`
+
+### 修改
+- `docs/ROADMAP.md` — v0.6；§3.1 文档上传/批量上传/重新处理/列表详情/删除/文件存储标记 ✅（API 层全部完成，Celery 异步管道在 §3.2 待实现）
+
+## 2026-05-18 — Phase 2 文档 API 接口测试
+
+### 新增
+- `backend/tests/test_document_api.py` — 47 个文档 API 接口测试（7 个 TestClass），覆盖全部 7 个端点：
+  - 上传（11 用例）：正常/重复文件名/force 覆盖/force 冲突/处理中冲突/不支持格式/超大文件/知识库不存在/越权/未认证/admin 权限
+  - 批量上传（4 用例）：全部成功/部分失败/知识库不存在/未认证
+  - 列表（11 用例）：正常/状态筛选/文件名搜索/排序/分页/空列表/知识库不存在/越权/未认证/page_size=0/page_size>100
+  - 详情（5 用例）：正常/文档不存在/知识库不存在/越权/未认证
+  - 分块（5 用例）：正常/空数据/分页/文档不存在/未认证
+  - 重新处理（5 用例）：正常/无效状态(E2010)/文档不存在/越权/未认证
+  - 删除（5 用例）：正常(202)/已在删除中/文档不存在/越权/未认证
+
+### 修改
+- `docs/TEST_CASES.md` — v0.4→v0.5；§3.3 更新：A3.1-A3.19 全部标记 ✅ + 补充 A3.11-A3.19 扩展用例；§7 覆盖率表新增 `api/document.py` 行
+- `docs/ROADMAP.md` — Phase 2 测试节：文档上传/删除 API 接口测试标记 ✅
+
+### 测试结果
+- 后端：143/143 全部通过（无回归，新增 47 用例）
+
+## 2026-05-18 — Phase 2 文档上传 API 开发
+
+### 新增
+- `backend/app/api/document.py` — 7 个文档 API 端点：上传（POST multipart + force 覆盖）、批量上传（POST batch-upload 部分成功返回）、列表（GET 支持 status/filename 筛选 + sort_by/order 排序 + 分页）、详情（GET）、分块列表（GET 分页 + 预览截断）、删除（DELETE 标记 deleting → 202）、重新处理（POST 仅 partial_failed/failed 允许）
+- `backend/app/services/document_service.py` — 文档业务服务完整实现：文件类型/大小校验、KB 所有权校验、同名文档检查（含 force 覆盖逻辑：终态允许覆盖 → 标记旧文档 deleting、处理中拒绝 E2011/E2012）、批量上传部分成功模式、Chunk metadata_ 属性名适配、Celery 任务分发入口预留 TODO
+- `backend/app/core/storage.py` — 文件存储服务：`StorageBackend` 抽象基类（save/read/delete）+ `LocalStorage` 本地磁盘实现，目录结构 `uploads/{kb_id}/{doc_id}/{uuid}_{sanitized_filename}`，含安全文件名处理（移除路径分隔符/空字节/控制字符）
+
+### 测试结果
+- 后端：96/96 全部通过（无回归）
+
 ## 2026-05-18 — BM25 方案切换为 rank-bm25
 
 ### 修改
