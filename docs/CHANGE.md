@@ -1,5 +1,18 @@
 # DocMind 变更日志
 
+## 2026-05-18 — BM25 方案切换为 rank-bm25
+
+### 修改
+- `docs/ARCHITECTURE.md` — v0.4→v0.5；§1 技术选型关键词检索方案从「自定义 BM25」更新为 `rank-bm25 (BM25Okapi)`；§6 对比表同步更新；§7.2 完整重写选型理由：自定义 BM25 → rank-bm25，说明 tokenizer 参数支持中文分词及向量化性能优势；§9.3 风险描述从「IDF 计算偏差」更新为「IDF 静默衰减」
+- `docs/ROADMAP.md` — Phase 2 BM25 关键词检索说明更新为 `rank-bm25 (BM25Okapi) + jieba 分词`
+- `docs/DEVELOPMENT.md` — §5 注脚同步更新
+- `backend/requirements.txt` — 加回 `rank-bm25==0.2.*`（此前于 2026-05-15 移除）
+
+### 决策说明
+- 此前认为 `rank-bm25`「基于空格分词，中文无分词能力」的判断不成立：库构造函数接受 `tokenizer` 参数，传入 `jieba.lcut` 后内部以多进程对语料分词，中文分词问题不存在
+- 库仅 260 行单文件 + numpy 依赖，小且稳定；BM25 核心公式几十年未变，2022 年停止更新不构成弃用理由
+- 自定义实现需重新处理 NumPy 向量化、IDF 负值 floor、batch_scores 等细节，造轮子性价比低
+
 ## 2026-05-17 — 代码审查问题修复 + 权限标注修正
 
 ### 修复

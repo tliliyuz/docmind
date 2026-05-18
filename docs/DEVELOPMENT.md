@@ -336,7 +336,7 @@ pytest-cov==5.*
 httpx==0.28.*
 ```
 
-> 注：BM25 关键词检索使用 `jieba` 分词 + 自定义 BM25 实现（见 [ARCHITECTURE.md §7.2](ARCHITECTURE.md#72-bm25-实现方案)）。
+> 注：BM25 关键词检索使用 `rank-bm25` (BM25Okapi) + `jieba` 中文分词（见 [ARCHITECTURE.md §7.2](ARCHITECTURE.md#72-bm25-实现方案)）。
 
 ---
 

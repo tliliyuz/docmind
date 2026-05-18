@@ -136,7 +136,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
 | ⬜ | 向量检索 | ChromaDB 语义检索 |
-| ⬜ | BM25 关键词检索 | jieba 分词 + 自定义 BM25 |
+| ⬜ | BM25 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 |
 | ⬜ | RRF 多路融合 | k=60 合并两路结果 |
 | ⬜ | NoopReranker | 占位实现，截取 top_k |
 | ⬜ | Prompt 组装 | 拼接检索结果 + 用户问题 |

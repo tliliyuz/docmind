@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.4 |
-| 最后更新 | 2026-05-17 |
+| 文档版本 | v0.5 |
+| 最后更新 | 2026-05-18 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -23,7 +23,7 @@
 | 缓存 | Redis | 会话缓存 + Celery broker |
 | 异步入库 | Redis + Celery | 文档入库异步任务队列 |
 | 文档解析 | Unstructured + PyPDF2 + python-docx | 多格式文档统一提取纯文本 |
-| 关键词检索 | jieba 分词 + 自定义 BM25 | 替代 rank-bm25（见 §7.2） |
+| 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 | 成熟库，支持自定义 tokenizer（见 §7.2） |
 | 文件存储 | 本地磁盘（可扩展至 OSS） | 抽象 StorageBackend 接口，当前本地实现 |
 | 流式输出 | SSE (Server-Sent Events) | 实时推送 LLM 生成内容 |
 | 前端框架 | Vue 3 + Vite | Composition API + SFC |
@@ -321,7 +321,7 @@ async def chat(question, conversation_id, kb_id, deep_thinking):
 | 通道 | 技术 | 优势 | 劣势 |
 |:---|:---|:---|:---|
 | 向量检索 | Embedding + ChromaDB | 语义理解强 | 精确匹配弱（如订单号） |
-| BM25 关键词 | jieba 分词 + 自定义 BM25 | 精确匹配强 | 不理解语义 |
+| BM25 关键词 | rank-bm25 (BM25Okapi) + jieba 分词 | 精确匹配强 | 不理解语义 |
 
 **融合策略：RRF (Reciprocal Rank Fusion)**
 
@@ -372,19 +372,25 @@ collection.delete(where={"kb_id": kb_id})
 
 ### 7.2 BM25 实现方案
 
-**当前决策**：使用 **jieba 中文分词 + 自定义 BM25 实现**，弃用 `rank-bm25` 库。
+**当前决策**：使用 **`rank-bm25` (BM25Okapi) + jieba 中文分词**。
 
-**原因**：
-- `rank-bm25` 库年久失修，最近一次更新已超过 2 年
-- 该库基于空格分词，对中文文本无分词能力，检索效果差
-- 自定义实现轻量且可控，核心公式简洁
+**选型理由**：
 
-> `rank-bm25==0.2.*` 已于 2026-05-15 从 `requirements.txt` 移除。
+- `rank-bm25` 构造函数接受 `tokenizer` 参数，传入 `jieba.lcut` 即可完美支持中文分词，并非文档此前判断的「仅空格分词」
+- 库源码仅 260 行单文件，仅依赖 `numpy`，体积极小且无供应链风险
+- 三种 BM25 变体（Okapi/Plus/L）均经过广泛验证，公式正确性有保障
+- NumPy 向量化计算，性能远超纯 Python 循环实现
+- 内置 `get_batch_scores()` 方法，适合知识库范围内的局部检索
+- BM25 公式已稳定数十年，最后更新 2022-02 不构成弃用理由
 
 **实现要点**：
-- 使用 jieba 对每篇文档分块做分词
-- 维护语料级别的 IDF 统计
-- BM25 标准公式：`score(D,Q) = Σ IDF(qi) * (f(qi,D) * (k1+1)) / (f(qi,D) + k1 * (1-b + b*|D|/avgdl))`
+
+- 以 `jieba.lcut` 作为 tokenizer 初始化 `BM25Okapi`，对每个分块文本做中文分词
+- 每个知识库独立维护一个 BM25Okapi 实例（以知识库内所有 chunk 为语料）
+- 查询时用同一 jieba tokenizer 分词后调 `get_scores()` 获取 BM25 分数
+- 语料变更（文档新增/删除）时重建对应知识库的 BM25Okapi 实例
+
+**IDF 静默衰减风险**：`rank-bm25` 的 IDF 基于语料初始化时固定，文档删除后不会自动衰减已不在语料中的词的 IDF。但对于 RAG 场景，IDF 偏差影响有限——BM25 结果仅作为 RRF 融合的一路信号，最终排序由双路融合 + Rerank 共同决定。
 
 ### 7.3 Rerank 策略
 
@@ -482,9 +488,9 @@ class OSSStorage(StorageBackend): ...      # 后续扩展
 
 ### 9.3 BM25 实现
 
-- 使用 jieba 分词 + 自定义 BM25，弃用 rank-bm25
-- **风险**：自定义 BM25 初期可能存在 IDF 计算偏差
-- **缓解**：在回归测试集上对比向量检索单路 vs BM25 单路 vs RRF 双路融合的 Recall@5，确保 BM25 贡献正向
+- 使用 rank-bm25 (BM25Okapi) + jieba 中文分词
+- **风险**：IDF 基于初始化时语料固定，文档删除后不自动衰减；语料变更需重建实例
+- **缓解**：BM25 仅作为 RRF 融合的一路信号，非最终排序依据；Rerank 阶段可修正排序偏差
 
 ### 9.4 LLM 幻觉与溯源准确性
 
