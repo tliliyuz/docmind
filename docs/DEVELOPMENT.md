@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.5 |
-| 最后更新 | 2026-05-17 |
+| 文档版本 | v0.6 |
+| 最后更新 | 2026-05-19 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -99,12 +99,14 @@ docmind/
 │   │   ├── ingest/                    # 入库任务模块
 │   │   │   ├── __init__.py
 │   │   │   ├── celery_app.py          # Celery 配置
+│   │   │   ├── lock.py                # Celery 幂等锁（Redis SET NX）
 │   │   │   └── tasks.py               # 入库任务（ingest_document）
 │   │   │
 │   │   ├── core/                      # 基础设施
 │   │   │   ├── __init__.py
 │   │   │   ├── database.py            # 数据库连接 & session
 │   │   │   ├── chroma_client.py       # ChromaDB 连接
+│   │   │   ├── redis_client.py        # Redis 客户端（懒加载单例）
 │   │   │   ├── security.py            # JWT & 密码哈希
 │   │   │   ├── sse.py                 # SSE 发送工具
 │   │   │   ├── storage.py             # 文件存储抽象（当前本地，后续 OSS）
@@ -127,6 +129,7 @@ docmind/
 │   │   ├── test_models.py             # ORM 模型测试（约束/默认值/关联）
 │   │   ├── test_kb_api.py             # 知识库 CRUD 接口测试
 │   │   ├── test_document_api.py       # 文档上传/删除接口测试
+│   │   ├── test_idempotent_lock.py    # Celery 幂等锁单元测试
 │   │   ├── test_retriever.py          # 检索器单元测试（向量+BM25）
 │   │   ├── test_rrf.py                # RRF 融合算法测试
 │   │   ├── test_chat_api.py           # 问答 SSE 接口测试

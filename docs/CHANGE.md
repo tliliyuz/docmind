@@ -1,5 +1,25 @@
 # DocMind 变更日志
 
+## 2026-05-19 — Phase 3.2 Celery 幂等锁开发
+
+### 新增
+- `backend/app/core/redis_client.py` — Redis 客户端懒加载单例（`get_redis()`），供锁/缓存/会话等模块复用
+- `backend/app/ingest/lock.py` — Celery 幂等锁模块，基于 Redis `SET NX EX 600` 实现：
+  - `acquire_idempotency_lock()` — 获取锁（原子操作，已锁定返回 False → E2011）
+  - `release_idempotency_lock()` — 释放锁（幂等，DELETE 不存在 key 无异常）
+  - `check_idempotency_lock()` — 检查锁状态
+  - Key 格式：`idempotency_key:{doc_id}:{task_type}`（如 `123:ingest`）
+- `backend/app/ingest/celery_app.py` — Celery 应用配置（broker/backend 从 settings 读取，json 序列化，soft_time_limit=600s，time_limit=900s）
+- `backend/tests/test_idempotent_lock.py` — 幂等锁单元测试（16 用例，Mock Redis），覆盖 key 格式/获取成功/重复拒绝/自定义 TTL/释放/检查/完整生命周期
+
+### 修改
+- `docs/DEVELOPMENT.md` — v0.5→v0.6；结构树补充 `core/redis_client.py`、`ingest/lock.py`、`tests/test_idempotent_lock.py`
+- `docs/TEST_CASES.md` — v0.5→v0.6；U6.1/U6.2 标记 ✅（2026-05-19），被测模块更正为 `lock.py`
+- `docs/ROADMAP.md` — §3.2 Celery 幂等锁标记 ✅
+
+### 测试结果
+- 后端：159/159 全部通过（16 新增 + 143 原有，无回归）
+
 ## 2026-05-18 — DocumentStatus ENUM 映射修复
 
 ### 修复
