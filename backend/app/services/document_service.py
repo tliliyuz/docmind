@@ -33,6 +33,7 @@ from app.schemas.document import (
     DocumentResponse,
     DocumentUploadResponse,
 )
+from app.ingest.tasks import delete_document, ingest_document
 from app.services.knowledge_base_service import check_kb_active
 
 # 允许的文件类型
@@ -138,7 +139,8 @@ async def upload_document(
     except Exception:
         raise StorageErrorException(f"文件保存失败：{filename}")
 
-    # TODO Phase 2 Celery: 分发入队任务 ingest_document(doc.id)
+    # 分发 Celery 入库任务
+    ingest_document.delay(doc.id)
 
     return DocumentUploadResponse.model_validate(doc)
 
@@ -333,7 +335,8 @@ async def delete_document(
     await db.flush()
     await db.refresh(doc)
 
-    # TODO Phase 2 Celery: 分发删除任务 delete_document(doc_id)
+    # 分发 Celery 异步删除任务
+    delete_document.delay(doc.id)
 
     return DocumentDeleteResponse(doc_id=doc.id, status=doc.status)
 
@@ -362,6 +365,7 @@ async def reprocess_document(
     await db.flush()
     await db.refresh(doc)
 
-    # TODO Phase 2 Celery: 分发入库任务 ingest_document(doc.id)
+    # 分发 Celery 入库任务（重新处理）
+    ingest_document.delay(doc.id)
 
     return DocumentReprocessResponse(doc_id=doc.id, status=doc.status)

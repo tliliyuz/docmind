@@ -21,3 +21,6 @@ celery_app.conf.update(
     task_soft_time_limit=600,
     task_time_limit=900,
 )
+
+# 注册任务模块（导入即注册 @celery_app.task 装饰的任务）
+import app.ingest.tasks  # noqa: E402, F401
