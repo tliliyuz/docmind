@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.6 |
+| 文档版本 | v0.7 |
 | 最后更新 | 2026-05-19 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -123,6 +123,7 @@ docmind/
 │   │   ├── __init__.py
 │   │   ├── conftest.py                # pytest fixtures（async client, test DB session）
 │   │   ├── test_security.py           # JWT & 密码哈希单元测试
+│   │   ├── test_storage.py            # 文件存储服务单元测试（本地存储 put/get/delete + 路径生成）
 │   │   ├── test_auth_service.py       # 认证业务逻辑单元测试
 │   │   ├── test_auth_api.py           # 认证接口集成测试
 │   │   ├── test_schemas.py            # Pydantic Schema 校验测试
@@ -130,6 +131,10 @@ docmind/
 │   │   ├── test_kb_api.py             # 知识库 CRUD 接口测试
 │   │   ├── test_document_api.py       # 文档上传/删除接口测试
 │   │   ├── test_idempotent_lock.py    # Celery 幂等锁单元测试
+│   │   ├── test_ingest_tasks.py        # Celery 入库流水线集成测试（阶段状态机/batch checkpoint/容错判定）
+│   │   ├── test_parser.py             # 文档解析器单元测试（PDF/DOCX/MD/TXT + 容错阈值）
+│   │   ├── test_chunker.py            # 文本分块策略单元测试
+│   │   ├── test_embedder.py           # Embedding 向量化单元测试（批次级 checkpoint）
 │   │   ├── test_retriever.py          # 检索器单元测试（向量+BM25）
 │   │   ├── test_rrf.py                # RRF 融合算法测试
 │   │   ├── test_chat_api.py           # 问答 SSE 接口测试

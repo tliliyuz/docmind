@@ -1,5 +1,48 @@
 # DocMind 变更日志
 
+## 2026-05-20 — 跨文档一致性修复（4 处）
+
+### 修复
+- `docs/ROADMAP.md` — v0.6→v0.7；§3.2 删除 "Unstructured + "（实际代码仅使用 PyPDF2 + python-docx，无 unstructured 依赖）
+- `docs/ARCHITECTURE.md` — v0.7→v0.8；修复重复的 §4.6 编号：
+  - `§4.6 chunk_count 事务更新` → `§4.7`
+  - `§4.7 文档解析容错` → `§4.8`
+  - `§4.8 Celery 配置要点` → `§4.9`
+- `docs/TEST_CASES.md` — v0.7→v0.8；§7 覆盖率表新增 `ingest/lock.py`（16 用例 ✅）和 `rag/parser.py`（32 用例 ✅）两行
+- `docs/PRD.md` — v0.2→v0.3；§5 验收标准从 TODO 补全为量化指标表（Recall@5≥0.85 / P50≤3s / 综合分≥4.0 等 9 项），与 ROADMAP §7.1 / TESTING.md §5-§8 对齐
+
+## 2026-05-20 — 架构文档实现状态标记重构
+
+### 修改
+- `docs/ARCHITECTURE.md` — v0.6→v0.7；修复 13 处跨文档不一致：
+  - 新增「当前实现状态说明」章节，定义 `[Implemented]`/`[Planned: Phase X]`/`[Target Architecture]` 三种标记
+  - §1 技术选型表新增「状态」列，标注每项技术当前实现阶段
+  - §2 拆分为 2.1 目标架构 [Target Architecture] + 2.2 当前实现 [Phase 2] 双图
+  - §3.1 模块总览表新增「状态」列
+  - §4.2 分块策略补全分隔符优先级、token_count 回写说明，结构感知分块标记 [Planned: Phase 3]
+  - §4.5 新增 KB/文档异步删除章节，标注实现程度
+  - §5 问答流程标记 [Target Architecture]，新增 §5.1 Phase 3 实际流程 + §5.2 伪代码含阶段标注及 history 变量说明
+  - §7.3 Rerank 策略修正 NoopReranker 阶段（Phase 1-2 → Phase 3）
+  - §8 会话记忆策略标记 [Planned: Phase 4]
+- `backend/docs/DATABASE.md` — v0.4→v0.5；修正 reprocess 触发条件描述（"任一终态"→"仅 partial_failed / failed"）
+
+## 2026-05-19 — Phase 2 3.2 文档解析开发
+
+### 新增
+- `backend/app/rag/parser.py` — 文档解析器，支持 PDF（PyPDF2 逐页）、DOCX（python-docx）、MD/TXT 格式解析，含 `ParsedPage`/`ParseResult` 数据结构，部分容错机制（单页失败跳过）
+- `backend/app/ingest/tasks.py` — Celery 入库流水线任务：
+  - `ingest_document(doc_id)` — 主入库任务，幂等锁获取 → 状态机流转 → 解析阶段调用 → 容错判定（<20% 继续 / 20-50% partial_failed / >50% failed）
+  - `delete_document(doc_id)` — 异步删除任务骨架（待后续实现）
+- `backend/tests/test_parser.py` — 解析器单元测试（32 用例），覆盖 ParsedPage/ParseResult 数据类、TXT/MD 解析、PDF 逐页解析（Mock）、DOCX 段落提取（Mock）、容错阈值判定、parse_document 入口分发
+
+### 修改
+- `backend/app/ingest/celery_app.py` — 末尾导入 `app.ingest.tasks` 注册 Celery 任务
+- `backend/app/services/document_service.py` — `upload_document()`/`reprocess_document()`/`delete_document()` 注入 Celery 任务调度（替换 TODO 占位符），修复 delete_document 函数内导入为文件顶部导入
+- `docs/DEVELOPMENT.md` — v0.6→v0.7；补充 `test_parser.py` 到项目结构树
+
+### 测试结果
+- 后端：191/191 全部通过（32 新增 + 159 原有，无回归）
+
 ## 2026-05-19 — Phase 3.2 Celery 幂等锁开发
 
 ### 新增

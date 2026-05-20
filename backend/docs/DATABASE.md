@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.4 |
-| 最后更新 | 2026-05-17 |
+| 文档版本 | v0.5 |
+| 最后更新 | 2026-05-20 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -134,7 +134,7 @@ uploaded → parsing → chunking → embedding → vector_storing → completed
               ↓         ↓          ↓            ↓
           success_with_warnings / partial_failed
 
-**任一终态 → reprocess → parsing（重新入库）**
+**仅 `partial_failed` / `failed` → reprocess → parsing（重新入库）**
 `completed` / `success_with_warnings` / `partial_failed` / `failed` = 终态（`TERMINAL_STATUSES`）
 `deleting` = 异步清理中，清理完成后物理删除行（非终态，行删除后不存在）
 ```

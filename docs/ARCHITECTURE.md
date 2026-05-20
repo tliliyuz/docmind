@@ -2,42 +2,59 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.5 |
-| 最后更新 | 2026-05-18 |
+| 文档版本 | v0.8 |
+| 最后更新 | 2026-05-20 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
 ---
 
+## 当前实现状态说明
+
+本文档包含已实现能力、当前阶段设计、最终目标架构三类内容，使用以下标记区分：
+
+| 标记 | 含义 |
+|:---|:---|
+| `[Implemented]` | 当前已实现并可用 |
+| `[Planned: Phase X]` | 计划在 Phase X 实现 |
+| `[Target Architecture]` | 最终目标态，非当前状态 |
+
+**当前开发进度**：Phase 2（文档入库），详见 [ROADMAP.md §3](ROADMAP.md#3-phase-2文档入库34-天)。
+
+---
+
 ## 1. 技术选型
 
-| 层面 | 技术 | 说明 |
-|:---|:---|:---|
-| 后端框架 | FastAPI | 异步 Python Web 框架，原生支持 SSE |
-| AI 编排 | LangChain | RAG 链路编排，但不依赖其高级封装 |
-| LLM | DeepSeek (OpenAI 兼容接口) | 支持 OpenAI / 通义千问 / DeepSeek 等互换 |
-| Embedding | DashScope text-embedding-v3 | 1024 维向量，中文优化 |
-| 向量数据库 | ChromaDB | 嵌入式运行，零配置，轻量级场景首选 |
-| 关系数据库 | MySQL + aiomysql | 业务数据持久化 |
-| 异步 ORM | SQLAlchemy 2.0 async | Mapped 类型注解 + async session |
-| 缓存 | Redis | 会话缓存 + Celery broker |
-| 异步入库 | Redis + Celery | 文档入库异步任务队列 |
-| 文档解析 | Unstructured + PyPDF2 + python-docx | 多格式文档统一提取纯文本 |
-| 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 | 成熟库，支持自定义 tokenizer（见 §7.2） |
-| 文件存储 | 本地磁盘（可扩展至 OSS） | 抽象 StorageBackend 接口，当前本地实现 |
-| 流式输出 | SSE (Server-Sent Events) | 实时推送 LLM 生成内容 |
-| 前端框架 | Vue 3 + Vite | Composition API + SFC |
-| UI 组件库 | Element Plus | 企业级 Vue 3 组件库 |
-| 状态管理 | Pinia | Vue 3 官方推荐 |
-| 前端语言 | JavaScript | SFC + JS（非 TypeScript），见 §7.4 |
-| Markdown 渲染 | markdown-it | 问答内容渲染 |
-| HTTP 客户端 | Axios | 前端请求封装 |
-| 前端路由 | Vue Router | SPA 路由管理 |
-| 图标库 | Font Awesome 6 Free | UI 图标统一方案 |
+| 层面 | 技术 | 说明 | 状态 |
+|:---|:---|:---|:---|
+| 后端框架 | FastAPI | 异步 Python Web 框架，原生支持 SSE | [Implemented] |
+| AI 编排 | LangChain | RAG 链路编排，但不依赖其高级封装 | [Implemented] |
+| LLM | DeepSeek (OpenAI 兼容接口) | 支持 OpenAI / 通义千问 / DeepSeek 等互换 | [Implemented] |
+| Embedding | DashScope text-embedding-v3 | 1024 维向量，中文优化 | [Planned: Phase 2] |
+| 向量数据库 | ChromaDB | 嵌入式运行，零配置，轻量级场景首选 | [Implemented] |
+| 关系数据库 | MySQL + aiomysql | 业务数据持久化 | [Implemented] |
+| 异步 ORM | SQLAlchemy 2.0 async | Mapped 类型注解 + async session | [Implemented] |
+| 缓存 | Redis | 会话缓存 + Celery broker | [Implemented] |
+| 异步入库 | Redis + Celery | 文档入库异步任务队列 | [Implemented] |
+| 文档解析 | PyPDF2 + python-docx | 多格式文档统一提取纯文本 | [Implemented] |
+| 智能分块 | RecursiveCharacterTextSplitter | 固定大小分块，分隔符优先级切分 | [Planned: Phase 2] |
+| 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 | 成熟库，支持自定义 tokenizer（见 §7.2） | [Planned: Phase 3] |
+| 文件存储 | 本地磁盘（可扩展至 OSS） | 抽象 StorageBackend 接口，当前本地实现 | [Implemented] |
+| 流式输出 | SSE (Server-Sent Events) | 实时推送 LLM 生成内容 | [Planned: Phase 3] |
+| 前端框架 | Vue 3 + Vite | Composition API + SFC | [Implemented] |
+| UI 组件库 | Element Plus | 企业级 Vue 3 组件库 | [Implemented] |
+| 状态管理 | Pinia | Vue 3 官方推荐 | [Implemented] |
+| 前端语言 | JavaScript | SFC + JS（非 TypeScript），见 §7.4 | [Implemented] |
+| Markdown 渲染 | markdown-it | 问答内容渲染 | [Implemented] |
+| HTTP 客户端 | Axios | 前端请求封装 | [Implemented] |
+| 前端路由 | Vue Router | SPA 路由管理 | [Implemented] |
+| 图标库 | Font Awesome 6 Free | UI 图标统一方案 | [Implemented] |
 
 ---
 
 ## 2. 系统架构概览
+
+### 2.1 目标架构 [Target Architecture]
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -53,7 +70,7 @@
 │  services/   services/  services/  services/  services/      │
 │     │              │         │        │                      │
 │  ┌──▼──────────────▼─────────▼────────▼──────────────────┐   │
-│  │                   RAG 核心                              │   │
+│  │                   RAG 核心（问答链路）                   │   │
 │  │  Intent → Rewrite → Retriever → RRF → Rerank → Prompt  │   │
 │  └────────────────────────┬───────────────────────────────┘   │
 │                           │                                   │
@@ -69,23 +86,50 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
+### 2.2 当前实现 [Phase 2 — 文档入库]
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        前端 (Vue 3)                           │
+│      LoginPage  │  admin/ (KnowledgeList + DocumentList)     │
+│                  │  Sidebar  │  AppLayout                     │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ HTTP
+┌──────────────────────────▼───────────────────────────────────┐
+│                      FastAPI 后端                             │
+│                                                              │
+│  api/auth ✅  api/kb ✅  api/doc ✅  api/chat ⬜              │
+│     │            │           │                                │
+│  auth_service  kb_service  document_service                  │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │              Celery Worker（异步入库）                  │    │
+│  │  Parser ✅ → Chunker ⬜ → Embedder ⬜ → Vector Store ⬜│    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌──────────┬─────────────┬──────────────┬────────────────┐  │
+│  │ ChromaDB │   MySQL     │    Redis     │  File Storage  │  │
+│  │ (就绪)   │  (6表就绪)   │  (锁/队列)   │  (本地存储)    │  │
+│  └──────────┴─────────────┴──────────────┴────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 3. 核心功能模块
 
 ### 3.1 模块总览：业务痛点 → 技术方案
 
-| 业务痛点 | 对应模块 | 技术方案 | 效果 |
-|:---|:---|:---|:---|
-| 文档格式五花八门（PDF/Word/MD） | **文档解析** | Unstructured + PyPDF2 + python-docx | 统一提取纯文本 |
-| 完整文档太长，无法直接检索 | **智能分块** | 固定大小 + 结构感知分块，重叠窗口保留上下文 | 检索粒度精准，不丢上下文 |
-| 关键词搜索"墨盒怎么换"找不到"打印机耗材更换" | **多路检索** | 向量检索（语义）+ BM25（关键词）+ RRF 融合 | 召回率大幅提升 |
-| 搜出来的结果排序不准 | **Rerank 重排序** | DashScope Rerank 模型精排（Phase 3 接入） | 相关文档排在前面 |
-| 用户连续提问"怎么申请"，系统不知道在问什么 | **问题重写** | LLM 结合对话历史补全指代和上下文 | 多轮对话不丢失意图 |
-| 用户问"今天天气"走知识库检索是浪费 | **意图识别** | LLM 分类：知识查询 / 闲聊 | 路由到正确处理分支 |
-| 200 页制度文档的检索结果塞给 LLM，Token 爆炸 | **Rerank 截断** | 检索 top-10 → 融合 → Rerank 后取 top-3 | 精准上下文，控制 Token |
-| 长对话 30 轮后 Token 超限 | **会话记忆** | 滑动窗口 + 旧消息 LLM 摘要压缩 | 记忆不丢，Token 受控 |
-| 大文件（100页PDF）上传后同步处理，用户等很久 | **异步入库** | Redis + Celery 异步任务 | 上传即返回，后台处理 |
+| 业务痛点 | 对应模块 | 技术方案 | 效果 | 状态 |
+|:---|:---|:---|:---|:---|
+| 文档格式五花八门（PDF/Word/MD） | **文档解析** | PyPDF2 + python-docx | 统一提取纯文本 | [Implemented] |
+| 完整文档太长，无法直接检索 | **智能分块** | 固定大小分块，重叠窗口保留上下文 | 检索粒度精准，不丢上下文 | [Planned: Phase 2] |
+| 大文件（100页PDF）上传后同步处理，用户等很久 | **异步入库** | Redis + Celery 异步任务 | 上传即返回，后台处理 | [Implemented] |
+| 关键词搜索"墨盒怎么换"找不到"打印机耗材更换" | **多路检索** | 向量检索（语义）+ BM25（关键词）+ RRF 融合 | 召回率大幅提升 | [Planned: Phase 3] |
+| 搜出来的结果排序不准 | **Rerank 重排序** | 当前 NoopReranker 占位，后续 DashScope Rerank 精排 | 相关文档排在前面 | [Planned: Phase 3] |
+| 用户连续提问"怎么申请"，系统不知道在问什么 | **问题重写** | LLM 结合对话历史补全指代和上下文 | 多轮对话不丢失意图 | [Planned: Phase 4] |
+| 用户问"今天天气"走知识库检索是浪费 | **意图识别** | LLM 分类：知识查询 / 闲聊 | 路由到正确处理分支 | [Planned: Phase 5] |
+| 长对话 30 轮后 Token 超限 | **会话记忆** | 滑动窗口 + 旧消息 LLM 摘要压缩 | 记忆不丢，Token 受控 | [Planned: Phase 4] |
 
 ### 3.2 模块树
 
@@ -184,7 +228,8 @@ MySQL chunk_count 事务更新 + kb.chunk_count 同步更新
   ```
 - **单位**：`max_chars = 800~1200`（字符估算，不用精确 token）
 - **重叠**：50 tokens ≈ 100~150 字符（按 1 token ≈ 1.5-2 中文字符）
-- **Token 估算**：Phase 2 使用字符数估算（不引入 tiktoken）；精确值回写：DashScope API 返回的 `usage.total_tokens` 写入 `chunk.token_count`
+- **Token 估算**：使用字符数估算（不引入 tiktoken）；Embedding 完成后 DashScope API 返回的 `usage.total_tokens` 回写 `chunk.token_count`
+- **[Planned: Phase 3]** 结构感知分块：Markdown 标题层级感知，Phase 2 仅做固定大小分块
 
 ---
 
@@ -210,7 +255,23 @@ MySQL chunk_count 事务更新 + kb.chunk_count 同步更新
 - **批次级 checkpoint**：失败时从当前批次恢复，不重新处理已成功的批次
 - **失败清理**：ChromaDB `add()` 非原子操作，任一 batch 失败 → 清理所有 batch 数据 → 标记 FAILED，保证 MySQL 与 ChromaDB 一致
 
-### 4.5 Celery 幂等性
+### 4.5 KB/文档异步删除
+
+> **[Implemented] 标记 deleting + 返回 202 已实现；[Planned: Phase 2] Celery Worker 异步清理 ChromaDB 向量 + 磁盘文件 + 物理 DELETE 待后续任务实现。**
+
+**删除流程**：
+```
+接口层: status = deleting → 返回 202 Accepted
+         ↓
+Celery Worker（异步）:
+  1. collection.delete(where={"doc_id": doc_id})  — 清理 ChromaDB 向量
+  2. 删除磁盘文件（uploads/{kb_id}/{doc_id}/ 目录）
+  3. DELETE FROM documents WHERE id=?  — 物理删除文档记录
+     └─ FK ON DELETE CASCADE 自动级联删除 chunks
+```
+> 当前 Celery Worker 已定义 `delete_document` 任务骨架，实际清理逻辑待后续任务实现。
+
+### 4.6 Celery 幂等性
 
 - **幂等键格式**：`idempotency_key:{doc_id}:{task_type}`（如 `123:ingest`）
 - **实现**：Redis 分布式锁 `SET key "locked" EX 600 NX`
@@ -223,7 +284,7 @@ MySQL chunk_count 事务更新 + kb.chunk_count 同步更新
   | 有锁 + Worker crash | 等待锁过期后自动允许重新触发 |
   | 终态 + 无锁 + reprocess | 允许重新触发（清理旧数据） |
 
-### 4.6 chunk_count 事务更新
+### 4.7 chunk_count 事务更新
 
 禁止每插入一个 chunk 更新一次 count。正确流程：
 
@@ -237,7 +298,7 @@ MySQL chunk_count 事务更新 + kb.chunk_count 同步更新
 
 任一 batch 失败 → ChromaDB 向量全清 → 抛出异常 → MySQL 回滚。
 
-### 4.7 文档解析容错
+### 4.8 文档解析容错
 
 - **策略**：部分容错，单页失败跳过并记录 warning
 - **分级判定**：
@@ -248,11 +309,11 @@ MySQL chunk_count 事务更新 + kb.chunk_count 同步更新
 | 20%~50% | `partial_failed` |
 | > 50% | `failed` |
 
-### 4.8 Celery 配置要点
+### 4.9 Celery 配置要点
 
 ```python
 # broker: Redis
-CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_BROKER_URL = "redis://localhost:6379/2"
 CELERY_RESULT_BACKEND = "redis://localhost:6379/1"
 
 # 入库任务（耗时较长，放宽超时）
@@ -263,51 +324,74 @@ def ingest_document(self, doc_id):
 
 ---
 
-## 5. 问答流程
+## 5. 问答流程 [Target Architecture]
+
+> 当前 Phase 2 尚未实现问答功能。Phase 3 将实现单轮问答核心链路（检索→RRF→NoopReranker→Prompt→LLM SSE），Phase 4 加入多轮对话（问题重写+会话记忆），Phase 5 加入意图识别。
 
 ```
 用户提问
     ↓
-[Intent] 意图识别 → 判断类型（查知识库 / 闲聊）
+[Intent] 意图识别 → 判断类型（查知识库 / 闲聊）       ← [Planned: Phase 5]
     ↓ （如果是查知识库）
-[Rewrite] 问题重写 → 结合对话历史补全上下文
+[Rewrite] 问题重写 → 结合对话历史补全上下文              ← [Planned: Phase 4]
+    ↓
+[Retrieval] 多路检索 → 向量检索 + BM25 关键词检索       ← [Planned: Phase 3]
+    ↓
+[Fusion] RRF 融合排序 → 合并两路结果                     ← [Planned: Phase 3]
+    ↓
+[Rerank] 重排序 → NoopReranker 占位，后续接入 DashScope  ← [Planned: Phase 3]
+    ↓
+[Prompt] 组装 Prompt → 拼接检索结果 + 用户问题           ← [Planned: Phase 3]
+    ↓
+[LLM] 调用 LLM → SSE 流式返回答案                        ← [Planned: Phase 3]
+```
+
+### 5.1 Phase 3 实际问答流程 [Planned: Phase 3]
+
+Phase 3 实现的是**单轮问答核心链路**，不含意图识别和问题重写：
+
+```
+用户提问
     ↓
 [Retrieval] 多路检索 → 向量检索 + BM25 关键词检索
     ↓
 [Fusion] RRF 融合排序 → 合并两路结果
     ↓
-[Rerank] 重排序 → 当前 NoopReranker 占位，Phase 3 接入 DashScope Rerank API
+[Rerank] NoopReranker → 直接截取 top_k
     ↓
-[Prompt] 组装 Prompt → 拼接检索结果 + 对话历史 + 用户问题
+[Prompt] 组装 Prompt → 拼接检索结果 + 用户问题
     ↓
 [LLM] 调用 LLM → SSE 流式返回答案
 ```
 
-### 5.1 问答核心逻辑（伪代码）
+### 5.2 问答核心逻辑（伪代码，含阶段标注）
 
 ```python
 # chat_service.py 核心流程
 async def chat(question, conversation_id, kb_id, deep_thinking):
-    # 1. 意图识别
+    # 1. 意图识别 — [Planned: Phase 5]
     intent = await intent_classifier.classify(question)
 
-    # 2. 问题重写（多轮对话上下文补全）
+    # 2. 问题重写（多轮对话上下文补全）— [Planned: Phase 4]
+    # 注意：history 变量仅在 Phase 4 实现多轮对话后才可用，
+    # Phase 3 单轮问答中 prompt_builder.build() 的 history 参数传入空列表
     if conversation_id:
         history = await get_conversation_history(conversation_id)
         question = await question_rewriter.rewrite(question, history)
 
-    # 3. 多路检索
+    # 3. 多路检索 — [Planned: Phase 3]
     vector_results = await vector_retriever.search(question, kb_id, top_k=10)
     bm25_results = await bm25_retriever.search(question, kb_id, top_k=10)
     merged = rrf_fusion(vector_results, bm25_results)
 
-    # 4. 重排序
+    # 4. 重排序 — [Planned: Phase 3]（NoopReranker 占位）
     reranked = await reranker.rerank(question, merged, top_k=5)
 
-    # 5. 拼 Prompt
+    # 5. 拼 Prompt — [Planned: Phase 3]
+    # Phase 3 单轮: history=[]，Phase 4 多轮: history 含历史消息
     prompt = prompt_builder.build(question, reranked, history)
 
-    # 6. 调用 LLM，SSE 流式输出
+    # 6. 调用 LLM，SSE 流式输出 — [Planned: Phase 3]
     async for chunk in llm.stream(prompt):
         yield sse_event("message", chunk)
 
@@ -396,8 +480,8 @@ collection.delete(where={"kb_id": kb_id})
 
 | 阶段 | 方案 | 说明 |
 |:---|:---|:---|
-| Phase 1-2 | **NoopReranker（跳过）** | 先跑通核心链路，仅用 RRF 融合排序 |
-| Phase 3 | **DashScope Rerank API** | 中文场景首选，阿里通义千问的 Rerank 模型对中文长文本效果好，有免费额度 |
+| Phase 3 | **NoopReranker（占位）** | 先跑通核心链路，直接截取 top_k |
+| Phase 3+ | **DashScope Rerank API** | 中文场景首选，阿里通义千问的 Rerank 模型对中文长文本效果好，有免费额度 |
 
 **接口设计**：
 
@@ -463,7 +547,7 @@ class OSSStorage(StorageBackend): ...      # 后续扩展
 
 ---
 
-## 8. 会话记忆策略
+## 8. 会话记忆策略 [Planned: Phase 4]
 
 - **滑动窗口**：保留最近 N 轮对话（默认 10 轮）
 - **摘要压缩**：超过窗口的旧消息用 LLM 生成摘要
