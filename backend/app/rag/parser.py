@@ -32,6 +32,7 @@ class ParseResult:
     pages: list[ParsedPage] = field(default_factory=list)
     total_pages: int = 0
     failed_pages: int = 0
+    source_type: str = ""  # pdf / docx / md / txt，用于日志单位判断
 
     @property
     def failure_rate(self) -> float:
@@ -70,6 +71,7 @@ def parse_document(file_path: str, file_type: str | None = None) -> ParseResult:
             pages=[ParsedPage(page_number=1, content="", success=False, error=f"文件不存在: {file_path}")],
             total_pages=1,
             failed_pages=1,
+            source_type=file_type or "",
         )
 
     if file_type is None:
@@ -77,23 +79,27 @@ def parse_document(file_path: str, file_type: str | None = None) -> ParseResult:
 
     try:
         if file_type == "pdf":
-            return _parse_pdf(file_path)
+            result = _parse_pdf(file_path)
         elif file_type == "docx":
-            return _parse_docx(file_path)
+            result = _parse_docx(file_path)
         elif file_type in ("md", "txt"):
-            return _parse_text(file_path)
+            result = _parse_text(file_path)
         else:
             return ParseResult(
                 pages=[ParsedPage(page_number=1, content="", success=False, error=f"不支持的文件类型: {file_type}")],
                 total_pages=1,
                 failed_pages=1,
+                source_type=file_type,
             )
+        result.source_type = file_type
+        return result
     except Exception as e:
         logger.exception(f"文档解析异常: {file_path}")
         return ParseResult(
             pages=[ParsedPage(page_number=1, content="", success=False, error=str(e))],
             total_pages=1,
             failed_pages=1,
+            source_type=file_type or "",
         )
 
 

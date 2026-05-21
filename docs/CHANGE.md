@@ -1,12 +1,86 @@
 # DocMind 变更日志
 
-## 2026-05-21 — 代码质量修复文档同步
+## 2026-05-21 — delete_document Celery 异步任务实现
 
 ### 修改
-- `docs/ARCHITECTURE.md` — v0.9→v0.10；§4.8 解析容错策略按格式展开（PDF 逐页/DOCX 逐段/MD TXT 整体）；新增空文档边界说明
-- `backend/docs/API.md` — v0.7→v0.8；E2009 补充「无有效内容」场景
-- `CLAUDE.md` — 后端约束新增 3 条：页码回溯实现、Token 估算算法、Celery 任务 DB 模式
-- `docs/DEVELOPMENT.md` — v0.8→v0.9；§3.1 Celery Worker 处追加 `asyncio.run()` 禁用说明
+- `backend/app/ingest/tasks.py` — `delete_document` 骨架 → 完整实现：
+  - 新增 `_delete_document_async()` 异步函数：幂等锁 → ChromaDB 向量清理 → 磁盘文件删除 → MySQL 物理 DELETE（FK CASCADE 清 chunks）
+  - 新增 `local_storage` import
+
+### 测试结果
+- 现有 293 测试全部通过（API 层 delete 测试已覆盖，Celery 层通过 mock 隔离）
+
+## 2026-05-21 — Phase 2 入库流水线 6 项质量修复
+
+### 修复
+- **数据一致性：MySQL-ChromaDB 事务断点恢复**
+  - `tasks.py`：新增 `RESUMABLE_STAGES` + 阶段检测，`chunking_done`/`embedding`/`vector_storing` 阶段跳过解析分块
+  - `tasks.py`：chunk 插入前 `delete(Chunk).where(doc_id=...)` 幂等去重，避免重试时重复写入
+  - `tasks.py`：Embedding 循环从 `doc.last_success_batch` 续传，checkpoint 真正被利用
+  - `tasks.py`：`vector_storing` 恢复时先清理 ChromaDB 残留向量
+  - 新增 `_load_chunk_rows()` 辅助函数
+- **数据一致性：kb.chunk_count 原子更新**
+  - `tasks.py`：改为 `update(KB).values(chunk_count=KB.chunk_count + N)` 数据库端原子操作
+- **Token 回写防御性改进**
+  - `tasks.py`：构建时同步写入 `token_map: dict[int, int]`（chunk_id → token_count），回写时用 map 替代索引隐式假设
+- **Embedder 响应格式防御性校验**
+  - `embedder.py`：`_parse_embed_response` 逐条检查 `embedding` key，缺失时抛 `ValueError`
+- **错误信息单位判断修正**
+  - `parser.py`：`ParseResult` 新增 `source_type` 字段
+  - `tasks.py`：`_build_error_msg` 改用 `source_type == "docx"` 区分「段/页」
+- **代码清理**
+  - `embedder.py`：删除未使用的 `embed_chunks_batched`（tasks.py 需逐批写 checkpoint，无法直接复用）
+  - `test_embedder.py`：移除 `TestEmbedChunksBatched` 测试类（4 用例）
+
+### 修改
+- `docs/TEST_CASES.md` — v0.13→v0.14；全量回归 293 ✅
+
+### 测试结果
+- 后端：293/293 全部通过（零回归）
+
+## 2026-05-21 — 文件存储服务测试补全
+
+### 新增
+- `backend/tests/test_storage.py` — 文件存储服务单元测试（37 用例）：
+  - `TestSanitizeFilename`（16）: 普通文件名 / 路径分隔符 / 空字节 / 控制字符 / 中文保留 / basename 剥离 / 首尾空白点号 / 空文件名→unnamed
+  - `TestGenerateStoredFilename`（4）: 8位uuid格式 / 危险字符安全化 / uuid唯一性 / 16进制校验
+  - `TestLocalStorage`（17）: save 文件写入+目录创建+seek重置 / read bytes/空文件/不存在抛异常 / delete 幂等+空目录自动清理+多级目录清理+同目录有其他文件保留 / 中文路径 / kb_id隔离
+
+### 修改
+- `docs/TEST_CASES.md` — v0.12→v0.13；§3.4 U6.7-U6.11 标记 ✅；§7 覆盖率表新增 `core/storage.py` 行
+- `docs/ROADMAP.md` — v0.9→v0.10；§3.5 文件存储服务测试标记 ✅
+
+### 测试结果
+- 后端：297/297 全部通过（37 新增 + 260 原有，零回归）
+
+## 2026-05-21 — Phase 2 Embedding 向量化 + ChromaDB 入库完成
+
+### 新增
+- `backend/app/rag/embedder.py` — Embedding 向量化模块，DashScope text-embedding-v3 API 调用：
+  - `embed_chunks(texts)` — 单批次调用，max_retries=5 指数退避（1s→2s→4s→8s→16s）
+  - `embed_chunks_batched(texts, batch_size)` — 分批调用，支持批次级 checkpoint
+  - `EmbedResult` dataclass：embeddings(1024 维) + token_counts + total_tokens
+  - `_parse_embed_response()` — API 响应解析，按文本数等比例分配 token 计数
+- `backend/tests/test_embedder.py` — Embedding 模块单元测试（30 用例）：
+  - `TestEmbedResult`（3）: 默认值 / 正常创建 / asdict 序列化
+  - `TestBuildEmbedUrl`（2）: URL 格式 / 无连续斜杠
+  - `TestBuildPayload`（4）: model + input_texts / text_type=document / 空列表 / 单文本
+  - `TestSafetyTruncate`（3）: 短文本 / 超长截断 / 默认 max_len
+  - `TestParseEmbedResponse`（5）: 2 条解析 / 等比例分配 / total_tokens=0 / 空列表 / 单文本
+  - `TestEmbedChunks`（4）: 空列表 / 正常调用 / 请求体格式 / 1024 维验证
+  - `TestEmbedRetry`（5）: 500 重试 / 网络异常重试 / 全部失败抛 RuntimeError / 指数退避延迟 / 4xx 重试
+  - `TestEmbedChunksBatched`（4）: 单批 / 自动分批 / 空列表 / 顺序正确
+
+### 修改
+- `backend/app/ingest/tasks.py` — 入库流水线完整实现（步骤 7-9）：
+  - 步骤 7 Embedding：加载 MySQL chunks → 分批调用 `embed_chunks()` → 每批成功更新 `last_success_batch`
+  - 步骤 8 ChromaDB：`collection.add()` 批量写入（batch_size=100），失败时 `collection.delete(where={doc_id})` 全清 + 标记 FAILED
+  - 步骤 9 终态判定：token_count 回写（API 实际值覆盖估算值）→ `doc.chunk_count` + `kb.chunk_count` 事务更新 → `completed` / `success_with_warnings`
+  - 新增 import：`embed_chunks`、`get_collection`、`KnowledgeBase`、`select`、`update`
+- `docs/ROADMAP.md` — v0.8→v0.9；§3.2 标记 Embedding/ChromaDB/chunk_count/状态机为 ✅
+
+### 测试结果
+- 后端：260/260 全部通过（30 新增 + 230 原有，零回归）
 
 ## 2026-05-21 — 入库流水线代码质量修复（6 项）
 

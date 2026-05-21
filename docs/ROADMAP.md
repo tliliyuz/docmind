@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.8 |
-| 最后更新 | 2026-05-20 |
+| 文档版本 | v0.10 |
+| 最后更新 | 2026-05-21 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -79,10 +79,10 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | Celery 幂等锁 | Redis `SET idempotency_key:{doc_id}:{task_type} EX 600 NX`，处理中拒绝重复入队 | 约束二 |
 | ✅ | 文档解析 | PyPDF2 + python-docx，部分容错（<20% warning / 20-50% partial / >50% failed） | 决策 #8 |
 | ✅ | 智能分块 | `RecursiveCharacterTextSplitter`（800-1200 chars，分隔符优先级 `\n\n`→`\n`→`。！？`），字符估算 token | 决策 #1、#2 |
-| ⬜ | Embedding 向量化 | DashScope text-embedding-v3，batch_size=20，max_retries=5 指数退避，批次级 checkpoint | 决策 #7 |
-| ⬜ | ChromaDB 批量写入 | batch_size=100，禁止单条循环；失败时全清 + 回滚 | 决策 #3 |
-| ⬜ | chunk_count 事务更新 | 全部 batch 成功后一次性事务更新 `documents.chunk_count` + `kb.chunk_count` | 决策 #4 |
-| ⬜ | 阶段化状态机 | 每阶段更新 `current_stage` + `last_success_batch`，Worker crash 后可断点恢复 | 决策 #9 |
+| ✅ | Embedding 向量化 | DashScope text-embedding-v3，batch_size=20，max_retries=5 指数退避，批次级 checkpoint + token 回写 | 决策 #7 |
+| ✅ | ChromaDB 批量写入 | batch_size=100，禁止单条循环；失败时 `collection.delete(where={doc_id})` 全清 + 标记 FAILED | 决策 #3 |
+| ✅ | chunk_count 事务更新 | 全部 batch 成功后一次性事务更新 `documents.chunk_count` + `kb.chunk_count`，token_count 回写覆盖估算值 | 决策 #4 |
+| ✅ | 阶段化状态机 | `uploaded → parsing → chunking → embedding → vector_storing → completed`，每阶段更新 `current_stage` + `last_success_batch` | 决策 #9 |
 
 ### 3.3 前端
 
@@ -114,8 +114,9 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | 文档上传 API 接口测试 | 接口测试 | POST `/api/documents` multipart 上传 + force 覆盖 + 唯一性冲突（47 用例全部通过）|
 | ✅ | 文档删除 API 接口测试 | 接口测试 | DELETE 异步清理流程 + 状态流转（含批量上传/分块/reprocess）|
 | ✅ | 文档状态枚举与状态机测试 | 单元测试 | `DocumentStatus` 10 状态 + `TERMINAL_STATUSES` + `is_terminal()` |
-| ⬜ | Celery 入库流水线单元测试 | 单元测试 | 幂等锁 / 解析容错 / 分块逻辑 / batch checkpoint |
-| ⬜ | 文件存储服务测试 | 单元测试 | `storage.py` 本地存储 put/get/delete + 路径生成 |
+| ✅ | Celery 入库流水线单元测试 | 单元测试 | 幂等锁(16) / 解析容错(34) / 分块逻辑(37) / Embedding(30) — 全量 260 通过 ✅ |
+| ✅ | Embedding 模块测试 | 单元测试 | `embedder.py` API 调用 / 重试 / 批量处理 / 响应解析（30 用例） |
+| ✅ | 文件存储服务测试 | 单元测试 | `storage.py` 本地存储 save/read/delete + 空目录清理 + sanitize_filename 安全处理（37 用例） |
 | ⬜ | 前端知识库管理页组件测试 | 组件测试 | 网格渲染、新建/编辑弹窗、删除确认 |
 | ⬜ | 前端文档管理页组件测试 | 组件测试 | 表格渲染、筛选、分页、拖拽上传 |
 | ⬜ | 前端文档状态轮询测试 | 组件测试 | 非终态轮询、终态停止、超时处理 |
