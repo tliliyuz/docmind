@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.3 |
-| 最后更新 | 2026-05-16 |
+| 文档版本 | v0.4 |
+| 最后更新 | 2026-05-22 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -57,14 +57,29 @@
 
 ### 2.1 路由表
 
+> **权限模型**：后端 API 区分两种视角——user 管理自己的资源，admin 跨用户管理全部资源。前端路由对齐此模型。
+
+**用户视角路由**（所有登录用户可访问）：
+
 | 路径 | 页面 | 权限 | 说明 |
 |:---|:---|:---|:---|
 | `/` | → `/chat` | 公开 | 根路径重定向到问答页 |
 | `/login` | LoginPage | 公开 | 已登录者访问自动重定向到 `/chat` |
-| `/chat` | ChatPage | 需登录 | 核心问答页，默认首页 |
-| `/admin/knowledge` | KnowledgeList | 需管理员 | 知识库管理 |
-| `/admin/documents` | DocumentList | 需管理员 | 文档管理（跨库）|
-| `/admin/conversations` | ConversationList | 需管理员 | 会话管理 |
+| `/chat` | ChatPage | 需登录 | 核心问答页，默认首页（Phase 3 完整实现） |
+| `/knowledge-bases` | KnowledgeList | 需登录 | 我的知识库列表（Phase 2.3.3 实现） |
+| `/knowledge-bases/:id` | KnowledgeDetail | 需登录（所有者/admin） | 知识库详情：KB 信息 + 文档上传/管理（Phase 2.3.3 实现） |
+
+**管理员视角路由**（仅 admin 可访问，后端接口 Phase 5 实现）：
+
+| 路径 | 页面 | 权限 | 说明 |
+|:---|:---|:---|:---|
+| `/admin/knowledge` | AdminKnowledgeList | 需管理员 | 全部知识库（跨用户），后端接口 Phase 5 |
+| `/admin/documents` | AdminDocumentList | 需管理员 | 全部文档（跨库），后端接口 Phase 5 |
+| `/admin/conversations` | AdminConversationList | 需管理员 | 全部会话（跨用户），后端接口 Phase 4-5 |
+| `/admin/stats` | AdminStats | 需管理员 | 系统概览统计，后端接口 Phase 5 |
+
+**兜底**：
+
 | `*` | → `/chat` | - | 兜底重定向 |
 
 ### 2.2 路由守卫逻辑
@@ -144,17 +159,16 @@
 │  历史会话列表                  │  MessageList               │
 │  • 鼠标悬停显示重命名/删除      │  • WelcomeScreen（空态）     │
 │  • 点击切换会话                │  • User Bubble              │
-│  • 右键菜单（可选）             │  • Assistant Bubble         │
-│  ─────────────────────────────┤    - thinking box           │
-│  用户头像 + 退出按钮             │    - markdown content       │
-│  • 点击头像→个人资料（预留）     │                             │
-│  • 点击退出→提示+跳转登录页      │                             │
-│                               │    - sources box            │
-│                               │  ─────────────────────────  │
-│                               │  ChatInput                   │
-│                               │  • 输入框 + 发送按钮          │
-│                               │  • 深度思考开关               │
-│                               │  • 快捷键：Enter 发送          │
+│  ─────────────────────────────┤  • Assistant Bubble         │
+│  [所有用户] 我的知识库           │    - thinking box           │
+│  • 点击进入 /knowledge-bases   │    - markdown content       │
+│  ─────────────────────────────┤                             │
+│  [admin] 管理后台              │    - sources box            │
+│  • 知识库管理 / 文档管理 / …   │  ─────────────────────────  │
+│  ─────────────────────────────┤  ChatInput                   │
+│  用户头像 + 退出按钮             │  • 输入框 + 发送按钮          │
+│  • 点击头像→个人资料（预留）     │  • 深度思考开关               │
+│  • 点击退出→提示+跳转登录页      │  • 快捷键：Enter 发送          │
 └───────────────────────────────┴─────────────────────────────┘
 ```
 
@@ -201,7 +215,9 @@
 | 重新生成 | 每条助手消息 hover 显示「重新生成」按钮，重新发送上一条问题 |
 | 长消息 | 默认展开，无截断 |
 
-### 4.5 会话侧边栏行为（Sidebar）
+### 4.5 侧边栏导航行为
+
+#### 4.5.1 会话区域
 
 | 操作 | 行为 |
 |:---|:---|
@@ -212,7 +228,25 @@
 | 删除 | 确认弹窗 `ElMessageBox.confirm`，确认后删除并清空当前会话（如果是当前打开的）|
 | 会话分组 | 按时间分组：今天 / 昨天 / 近 7 天 / 更早 |
 
-### 4.5.1 用户栏行为
+#### 4.5.2 知识库导航（所有用户可见）
+
+| 操作 | 行为 |
+|:---|:---|
+| 点击「我的知识库」| 跳转 `/knowledge-bases`，显示当前用户的知识库列表 |
+| 高亮状态 | 当路由在 `/knowledge-bases` 或 `/knowledge-bases/:id` 时，该项高亮 |
+
+#### 4.5.3 管理后台导航（仅 admin 可见）
+
+> **注意**：管理后台的后端接口排期至 Phase 5。Phase 2.3.3 仅完成前端页面，接口联调待 Phase 5。
+
+| 操作 | 行为 |
+|:---|:---|
+| 点击「知识库管理」| 跳转 `/admin/knowledge`（全部知识库，跨用户） |
+| 点击「文档管理」| 跳转 `/admin/documents`（全部文档，跨库） |
+| 点击「会话管理」| 跳转 `/admin/conversations`（Phase 4 实现） |
+| 点击「系统概览」| 跳转 `/admin/stats`（Phase 5 实现） |
+
+#### 4.5.4 用户栏行为
 
 | 操作 | 行为 |
 |:---|:---|
@@ -228,7 +262,10 @@
 
 ---
 
-## 5. 知识库管理页（KnowledgeList）
+## 5. 知识库管理页（KnowledgeList — `/knowledge-bases`）
+
+> **权限**：所有登录用户。用户只能看到和管理自己的知识库。
+> **对应后端**：`GET/POST /api/knowledge-bases`（已实现）
 
 ### 5.1 页面布局
 
@@ -240,10 +277,10 @@
 
 | 元素 | 交互 |
 |:---|:---|
-| 卡片整体 | hover 边框高亮 + 阴影上浮，点击进入知识库详情 |
-| 图标 | 根据名称关键词自动匹配部门色（HR 红 / IT 蓝 / 行政绿等）|
+| 卡片整体 | hover 边框高亮 + 阴影上浮，点击进入 `/knowledge-bases/:id`（知识库详情页） |
+| 图标 | 根据名称关键词自动匹配部门色（HR 红 / IT 蓝 / 行政绿等） |
 | 文档数/分块数 | 实时显示 |
-| 操作菜单 | 编辑名称描述 / 删除（确认弹窗）|
+| 操作菜单 | 编辑名称描述 / 删除（确认弹窗） |
 
 ### 5.3 新建知识库弹窗
 
@@ -258,22 +295,102 @@
 失败：表单错误提示
 ```
 
+### 5.4 编辑/删除
+
+| 操作 | 行为 |
+|:---|:---|
+| 编辑 | 弹窗预填名称+描述 → 确认 → PUT `/api/knowledge-bases/{id}` |
+| 删除 | `ElMessageBox.confirm`（危险色） → 确认 → DELETE（202 异步） → 卡片移除 |
+
 ---
 
-## 6. 文档管理页（DocumentList）
+## 5.5 知识库详情页（KnowledgeDetail — `/knowledge-bases/:id`）
 
-### 6.1 页面布局
+> **权限**：KB 所有者或 admin。**Phase 2.3.3 新增页面**，此前文档未定义。
+> **对应后端**：`GET /api/knowledge-bases/{id}` + 文档接口族（`/api/knowledge-bases/{kb_id}/documents/**`）
 
-Element Plus 表格展示所有文档，支持：
-- 按知识库筛选
-- 按状态筛选（多选，默认仅显示非终态 + 最近终态）
+### 5.5.1 页面布局
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  页面标题栏                                                   │
+│  ← 返回知识库列表    KB 名称 + 描述    [编辑] [删除]            │
+├─────────────────────────────────────────────────────────────┤
+│  KB 统计卡片行                                                │
+│  [文档总数: 15] [分块总数: 340] [创建时间: 2026-05-11]         │
+├─────────────────────────────────────────────────────────────┤
+│  文档上传区域（见 §6.2）                                       │
+│  ┌ - - - - - - - - - - - - - - - - - - - - - - - - - - ┐  │
+│  │     📁  拖拽文件到此处，或点击选择文件                      │  │
+│  │     支持 pdf / docx / md / txt，单文件 ≤ 50MB              │  │
+│  └ - - - - - - - - - - - - - - - - - - - - - - - - - - ┘  │
+├─────────────────────────────────────────────────────────────┤
+│  文档表格（见 §6.1）                                          │
+│  [状态筛选] [文件名搜索] [排序]                                │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │ 文件名 │ 类型 │ 大小 │ 状态 │ 分块数 │ 上传时间 │ 操作    │  │
+│  └───────────────────────────────────────────────────────┘  │
+│  分页器                                                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.5.2 交互流程
+
+```
+进入 /knowledge-bases/:id
+    ↓
+GET /api/knowledge-bases/{id} → 显示 KB 信息 + 统计
+GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表
+    ↓
+用户上传文档 / 管理文档（见 §6）
+```
+
+---
+
+## 5.6 管理员知识库列表（AdminKnowledgeList — `/admin/knowledge`）
+
+> **权限**：admin。**后端接口 Phase 5 实现**，Phase 2.3.3 仅完成前端页面。
+> **对应后端**：`GET /api/admin/knowledge-bases`（Phase 5）
+
+与用户视角的区别：
+- 可查看**全部用户**的知识库（含 `username` 字段）
+- 可按 `user_id` 筛选
+- 不可创建/编辑（admin 只读管理）
+- 删除操作会标记 `deleting` 并展示原 owner
+
+---
+
+## 6. 文档管理（KnowledgeDetail 页面内 — `/knowledge-bases/:id`）
+
+> **权限**：KB 所有者或 admin。文档管理是知识库详情页的内嵌功能，不是独立页面。
+> **对应后端**：`POST/GET/DELETE /api/knowledge-bases/{kb_id}/documents/**`（已实现）
+
+### 6.1 文档表格
+
+Element Plus 表格，位于知识库详情页内，展示该 KB 下的所有文档。支持：
+- 按状态筛选（多选下拉，默认显示全部）
 - 按文件名模糊搜索
 - 按 `created_at` 排序（默认倒序）
+- 分页（20 条/页）
+
+**表格列**：
+
+| 列 | 说明 |
+|:---|:---|
+| 文件名 | 显示文件名，点击可展开详情 |
+| 类型 | pdf / docx / md / txt |
+| 大小 | 格式化显示（KB/MB） |
+| 状态 | 状态标签（见 §6.5） |
+| 分块数 | `chunk_count`（终态文档显示实际值，非终态显示 `-`） |
+| 上传时间 | `created_at` 格式化 |
+| 操作 | 查看分块 / reprocess（仅 partial_failed/failed）/ 删除 |
 
 ### 6.2 上传交互
 
+文档上传入口在知识库详情页（`/knowledge-bases/:id`）内，上传自动归属该 KB。
+
 ```
-用户进入知识库详情页
+用户在知识库详情页
     ↓
 拖拽文件到上传区 或 点击选择文件
     ↓
@@ -282,11 +399,13 @@ Element Plus 表格展示所有文档，支持：
   - 大小（≤ 50MB）
     ↓
 通过 multipart/form-data 上传
+  POST /api/knowledge-bases/{kb_id}/documents
   - axios onUploadProgress 显示实时进度（百分比 + 速度 + 剩余时间）
     ↓
 立即在文档列表新增一行，status = uploaded
     ↓
-开始轮询 GET /documents/{id}（非终态 2s 间隔，终态停止，5 分钟超时）
+开始轮询 GET /api/knowledge-bases/{kb_id}/documents/{id}
+  （非终态 2s 间隔，终态停止，5 分钟超时）
     ↓
 status 变为终态（completed / success_with_warnings / partial_failed / failed）
 → 停止轮询，更新列表行
@@ -332,30 +451,34 @@ const TERMINAL_STATUSES = [
 
 | 状态 | 标签样式 | 图标 | 用户可见行为 |
 |:---|:---|:---|:---|
-| `uploaded` | 灰色 / 信息色（`--dm-info`） | `fa-upload` | 等待处理 |
-| `parsing` | 蓝色 / 信息色 | `fa-spinner fa-spin` | 解析中 |
-| `chunking` | 蓝色 / 信息色 | `fa-spinner fa-spin` | 分块中 |
-| `embedding` | 蓝色 / 信息色 | `fa-spinner fa-spin` | 向量化中 |
-| `vector_storing` | 蓝色 / 信息色 | `fa-spinner fa-spin` | 写入向量库 |
-| `completed` | 绿色 / 成功色（`--dm-success`） | `fa-check-circle` | 可查看分块，不可重处理 |
-| `success_with_warnings` | 浅绿色 | `fa-check-circle` + warning 角标 | 部分警告但可用，不可重处理 |
-| `partial_failed` | 橙色 / 警告色（`--dm-warning`） | `fa-exclamation-triangle` | 显示失败比例，**可 reprocess** |
-| `failed` | 红色 / 危险色（`--dm-danger`） | `fa-times-circle` | 显示错误原因，**可 reprocess** |
+| `uploaded` | `--dm-info` 色 | `fa-upload` | 等待处理 |
+| `parsing` | `--dm-info` 色 | `fa-spinner fa-spin` | 解析中 |
+| `chunking` | `--dm-info` 色 | `fa-spinner fa-spin` | 分块中 |
+| `embedding` | `--dm-info` 色 | `fa-spinner fa-spin` | 向量化中 |
+| `vector_storing` | `--dm-info` 色 | `fa-spinner fa-spin` | 写入向量库 |
+| `completed` | `--dm-success` 色 | `fa-check-circle` | 可查看分块，不可重处理 |
+| `success_with_warnings` | `--dm-success` 色 | `fa-check-circle` + warning 角标 | 部分警告但可用，不可重处理 |
+| `partial_failed` | `--dm-warning` 色 | `fa-exclamation-triangle` | 显示失败比例，**可 reprocess** |
+| `failed` | `--dm-danger` 色 | `fa-times-circle` | 显示错误原因，**可 reprocess** |
 | `deleting` | 灰色 | `fa-spinner fa-spin` | 清理中（完成后物理删除行） |
 
 ### 6.6 上传进度反馈
 
 ```js
 // axios onUploadProgress
-const { data } = await api.post('/documents', formData, {
-  headers: { 'Content-Type': 'multipart/form-data' },
-  onUploadProgress: (progressEvent) => {
-    const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-    const speed = (progressEvent.loaded / (Date.now() - startTime) * 1000 / 1024).toFixed(0) // KB/s
-    // 显示：百分比 + 上传速度 + 预估剩余时间
-    uploadState.value = { percent, speed, eta: computeEta(progressEvent) }
+const { data } = await api.post(
+  `/knowledge-bases/${kbId}/documents`,
+  formData,
+  {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (progressEvent) => {
+      const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+      const speed = (progressEvent.loaded / (Date.now() - startTime) * 1000 / 1024).toFixed(0) // KB/s
+      // 显示：百分比 + 上传速度 + 预估剩余时间
+      uploadState.value = { percent, speed, eta: computeEta(progressEvent) }
+    }
   }
-})
+)
 ```
 
 **上传状态阶段**：
@@ -367,28 +490,64 @@ const { data } = await api.post('/documents', formData, {
 
 知识库无文档时显示：
 - 图标 + 「暂无文档」
-- 「上传第一个文档」引导按钮，跳转到上传区域
+- 「上传第一个文档」引导按钮
 
 ### 6.8 分块预览
 
-文档详情页底部展示分块列表（分页，20条/页）：
+文档详情展开面板（表格行内展开或弹窗）展示分块列表（分页，20 条/页）：
 - 默认返回 `preview`（截断 200 字符）
 - 点击展开可查看完整 `content`
 - 显示 chunk_index + token_count + 页码等 metadata
 
+### 6.9 reprocess（重新处理）
+
+仅 `partial_failed` / `failed` 状态文档显示「重新处理」按钮：
+```
+点击「重新处理」
+    ↓
+POST /api/knowledge-bases/{kb_id}/documents/{id}/reprocess
+    ↓
+成功：文档状态重置为 parsing，重新开始轮询
+失败：ElMessage.error 显示错误
+```
+
 ---
 
-## 7. 管理后台交互
+## 7. 管理后台交互（admin 专属）
+
+> **实现状态**：管理后台后端接口均排期至 Phase 5。Phase 2.3.3 仅完成前端页面开发，使用 mock 数据或空状态展示。
 
 ### 7.1 管理员导航
 
-Sidebar 底部增加「管理后台」入口，仅 `role === 'admin'` 可见：
-- 知识库管理
-- 文档管理
-- 会话管理
-- 系统概览（统计卡片）
+Sidebar「管理后台」分组，仅 `role === 'admin'` 可见：
+- 知识库管理 → `/admin/knowledge`（全部知识库，跨用户）
+- 文档管理 → `/admin/documents`（全部文档，跨库）
+- 会话管理 → `/admin/conversations`（Phase 4-5 实现）
+- 系统概览 → `/admin/stats`（统计卡片）
 
-### 7.2 系统概览页
+### 7.2 Admin 文档管理页（`/admin/documents`）
+
+> **后端接口**：`GET /api/admin/documents`（Phase 5 实现）
+
+与 KB 内文档表格的区别：
+- 数据源为全部文档（跨库跨用户）
+- 额外显示 `kb_name` 列和 `username` 列（或通过 `kb_id` 关联）
+- 可按 `kb_id` 筛选
+- 不可上传（上传入口在 KB 详情页内），仅查看/筛选
+
+### 7.3 Admin 知识库管理页（`/admin/knowledge`）
+
+> **后端接口**：`GET /api/admin/knowledge-bases`（Phase 5 实现）
+
+与用户 KB 列表（§5）的区别：
+- 可查看全部用户的知识库，含 `username` 列
+- 可按 `user_id` 筛选
+- 不可创建/编辑（admin 只读管理）
+- 删除操作标记 `deleting` 并展示原 owner
+
+### 7.4 系统概览页（`/admin/stats`）
+
+> **后端接口**：`GET /api/admin/stats`（Phase 5 实现）
 
 顶部四张统计卡片：用户总数、知识库数、文档总数、总问答数。点击卡片可下钻到对应管理页。
 
@@ -485,13 +644,15 @@ function abort() {
 
 ## 11. 已知 TODO
 
-| 模块 | 当前状态 | Phase 2 实现 | 后续 Phase |
+| 模块 | 当前状态 | Phase 2.3.3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
 | ChatPage | 占位页面 | — | Phase 3：完整问答 SSE、消息列表、来源引用 |
-| Sidebar | 空会话列表 | — | Phase 4：历史会话列表、新建对话、重命名、删除 |
-| KnowledgeList | 占位页面 | 知识库卡片网格、新建/编辑弹窗、删除确认 | — |
-| DocumentList | 占位页面 | 文档表格 + 筛选 + 上传（拖拽 + force 覆盖）+ 状态轮询 + 分块预览 | — |
-| Admin Stats | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
+| Sidebar | 空会话列表 + admin 导航 | 增加「我的知识库」入口（所有用户可见） | Phase 4：历史会话列表、新建对话、重命名、删除 |
+| KnowledgeList (`/knowledge-bases`) | 占位页面 | 知识库卡片网格、新建/编辑弹窗、删除确认 | — |
+| KnowledgeDetail (`/knowledge-bases/:id`) | **新增页面** | KB 信息+统计 + 文档上传区 + 文档表格 + 状态轮询 + 分块预览 | — |
+| AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | 前端页面完成（跨用户 KB 列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/knowledge-bases` |
+| AdminDocumentList (`/admin/documents`) | 占位页面 | 前端页面完成（跨库文档列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/documents` |
+| Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
 | 状态轮询 | 无 | 2s 间隔轮询非终态，终态停止，5 分钟超时 | Phase 5：可选升级 WebSocket |
 
 ---
