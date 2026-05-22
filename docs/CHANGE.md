@@ -1,5 +1,68 @@
 # DocMind 变更日志
 
+## 2026-05-22 — Phase 2.3.3 前端测试：组件测试编写并全部通过
+
+### 新增
+- **`frontend/tests/KnowledgeList.test.js`**：KnowledgeList 组件测试（11 用例）— 渲染（搜索框/新建按钮/卡片/空状态/部门图标/无描述占位）、交互（新建弹窗/卡片点击跳转）、生命周期（fetchKbList 调用）
+- **`frontend/tests/KnowledgeDetail.test.js`**：KnowledgeDetail 组件测试（12 用例）— 渲染（KB 信息/返回按钮/统计卡片/上传区域/文档表格/空状态/筛选区域/编辑删除按钮）、生命周期（挂载获取数据/卸载清除轮询）
+
+### 修改
+- **`frontend/tests/AppLayout.test.js`**：新增 3 个路由标题测试（11→14 用例）— KnowledgeList / KnowledgeDetail / AdminStats
+- **`docs/DEVELOPMENT.md` v0.11**：§2 前端测试目录新增 KnowledgeList.test.js + KnowledgeDetail.test.js
+- **`docs/TEST_CASES.md` v0.16→v0.17**：§3.5 C2.1-C2.7 更新状态（5 个 ✅ / 1 个 ⬜ C2.4 下拉菜单删除确认 / 1 个 ✅ C2.6 上传区域渲染）；§7 前端组件覆盖率更新为 49 通过
+
+---
+
+## 2026-05-22 — Phase 2.3.3 前端开发：知识库管理 + 文档管理
+
+### 新增
+- **`frontend/src/api/knowledge.js`**：知识库 CRUD + 文档管理 + 分块查询 全部 API 封装（getKnowledgeBases / createKnowledgeBase / updateKnowledgeBase / deleteKnowledgeBase / getDocuments / uploadDocument / batchUploadDocuments / reprocessDocument / deleteDocument / getDocumentChunks）
+- **`frontend/src/stores/knowledge.js`**：Pinia 知识库状态管理，含 KB CRUD、文档上传/删除/轮询、分块预览、`TERMINAL_STATUSES` 常量、`isTerminal()` 判断、`getDepartmentStyle()` 部门色匹配
+- **`frontend/src/views/KnowledgeList.vue`**：知识库列表页（`/knowledge-bases`）— 卡片网格 + 搜索 + 新建/编辑弹窗 + 删除确认 + 部门图标色自动匹配
+- **`frontend/src/views/KnowledgeDetail.vue`**：知识库详情页（`/knowledge-bases/:id`）— KB 信息+统计卡片 + 拖拽上传区 + 文档表格（筛选/排序/分页）+ 状态轮询 + 分块预览弹窗 + reprocess 按钮
+- **`frontend/src/views/admin/StatsPage.vue`**：Admin 系统概览占位页面（Phase 5 联调）
+
+### 修改
+- **`frontend/src/router/index.js`**：新增 `/knowledge-bases`、`/knowledge-bases/:id`、`/admin/stats` 三条路由
+- **`frontend/src/components/layout/AppLayout.vue`**：pageTitle 映射增加 KnowledgeList / KnowledgeDetail / AdminStats
+- **`frontend/src/components/layout/Sidebar.vue`**：所有用户增加「我的知识库」导航入口（路由高亮适配 KB 详情子路由）
+- **`frontend/src/views/admin/KnowledgeList.vue`**：从空占位更新为 Phase 2 规格占位页（统计卡片 + Phase 5 联调提示）
+- **`frontend/src/views/admin/DocumentList.vue`**：从空占位更新为 Phase 2 规格占位页
+
+## 2026-05-22 — 文档体系对齐：前后端权限模型 + 路由结构统一
+
+### 修改
+- **API.md v0.9→v0.10**：§7 补充 `GET /api/admin/knowledge-bases` 接口规格；所有 admin 接口标注「Phase 5 实现」状态；§9 权限速查表增加实现状态列
+- **FRONTEND.md v0.3→v0.4**：§2.1 路由表重构（区分用户视角 `/knowledge-bases/**` 和管理员视角 `/admin/**`）；§4.1 Sidebar 增加「我的知识库」入口；§5 重写为用户 KB 列表 + 新增 §5.5 KB 详情页规格 + §5.6 Admin KB 列表；§6 重写为 KB 内文档管理（上传自动归属 KB）+ §7 管理后台补充完整页面规格；§11 TODO 更新
+- **ROADMAP.md v0.10→v0.11**：§3.3 前端任务拆分更新（新增 KnowledgeDetail 页面、Sidebar 导航更新、Admin 占位页）；§6 Phase 5 补充 Admin 后端接口实现 + 前端联调任务
+- **问题修复**：解决 #18（文档上传 KB 上下文缺失）、#19（KB 管理页权限不一致）、#20（Admin KB 接口缺失）、#21（KB 详情页缺失）、#22（Sidebar 导航设计错误）、#23（Admin 接口文档有但未标注实现状态）、#24（Admin router 未注册但文档未提及）
+
+---
+
+## 2026-05-22 — UI 配色二轮调整：纯黑白体系 + 加强边界感
+
+### 修改
+- **去除蓝色点睛色**（`global.css`）：`--dm-primary` 系列从蓝色 `#2563EB` 切换为黑色 `#1A1A1A`，Logo、激活态、链接全部统一黑白
+- **加强层次边界**（`global.css`）：页面底色 `#FAFAFA`→`#F2F2F2`；边框 `#E8E8E8`→`#E0E0E0`；阴影整体加重（sm/md/lg/xl 透明度 +2-3%）
+- **Element Plus 主题同步**：`--el-color-primary` 系列从蓝色系切换为灰度系（`#1A1A1A`/`#404040`/`#737373`/...）
+- **登录卡片增加边界**（`LoginPage.vue`）：卡片新增 `1px solid` 边框；Tab 切换容器底色 `#E8E8E8` 让白色激活态更跳；激活 Tab 阴影加重
+- **底部链接增强**：`toggle-tip` 链接改用 `--dm-weight-semibold` 加粗
+
+### 文档同步
+- **`frontend/docs/UIDESIGN.md` v0.5→v0.6**：CSS 变量、Element Plus 覆盖、UnoCSS 配置全部同步纯黑白
+
+## 2026-05-22 — UI 配色体系重构：极简黑白风格
+
+### 修改
+- **Design Token 全局重写**（`frontend/src/styles/global.css`）：配色从 Indigo/Slate 体系（`#4F46E5`/`#F8FAFC`）切换为黑白灰极简体系（`#1A1A1A`/`#FAFAFA`），点睛色 `#2563EB`。移除所有渐变（`--dm-primary-gradient`、`--dm-gradient-login`），品牌色阴影改为中性柔和阴影
+- **登录页去渐变**（`LoginPage.vue`）：背景从紫色渐变改为纯色 `#FAFAFA`；Logo 图标从渐变改为纯色 `#2563EB`；提交按钮从渐变改为纯黑 `#1A1A1A`
+- **侧边栏极简化**（`Sidebar.vue`）：Logo 图标纯色 `#2563EB`；新建对话按钮从填充风格改为白底描边风格；用户头像从渐变改为纯黑
+- **布局数值微调**：侧边栏 `260px→260px`（聊天）/`260px→240px`（管理）；顶栏 `64px→56px`；聊天最大宽度 `900px→768px`；圆角统一放大 2px（`6→8px`, `10→12px`, `14→16px`）；阴影整体更柔和
+- **Element Plus 主题同步**：`--el-color-primary` 系列从 Indigo 切换为 Blue
+
+### 文档同步
+- **`frontend/docs/UIDESIGN.md` v0.4→v0.5**：CSS 变量、组件样式示例、Element Plus 覆盖、UnoCSS 配置全部同步到新配色；消息气泡用户侧改为黑底白字、AI 侧无背景；头像/Logo 改为纯色；移除所有渐变引用
+
 ## 2026-05-22 — Windows Celery Worker 启动修复
 
 ### 修复

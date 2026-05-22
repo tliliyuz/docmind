@@ -27,6 +27,15 @@
         </div>
       </div>
 
+      <!-- 我的知识库（所有用户可见） -->
+      <nav class="kb-nav">
+        <div class="section-label">知识库</div>
+        <router-link to="/knowledge-bases" class="nav-item" active-class="active">
+          <i class="fas fa-database"></i>
+          <span>我的知识库</span>
+        </router-link>
+      </nav>
+
       <!-- 管理后台导航（仅 admin 可见） -->
       <nav v-if="authStore.isAdmin" class="admin-nav">
         <div class="section-label">管理后台</div>
@@ -110,13 +119,13 @@ function handleLogout() {
 .sidebar-logo-icon {
   width: var(--dm-sidebar-logo-size);
   height: var(--dm-sidebar-logo-size);
-  background: var(--dm-primary-gradient);
-  border-radius: var(--dm-radius-md);
+  background: var(--dm-primary);
+  border-radius: var(--dm-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: var(--dm-text-base);
+  font-size: var(--dm-text-sm);
   flex-shrink: 0;
 }
 
@@ -142,12 +151,12 @@ function handleLogout() {
   width: 100%;
   height: 38px;
   padding: 0 14px;
-  background: var(--dm-primary-light);
-  color: var(--dm-primary);
-  border: 1px solid var(--dm-primary-light);
+  background: var(--dm-bg-card);
+  color: var(--dm-text-primary);
+  border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-body);
-  font-weight: var(--dm-weight-semibold);
+  font-weight: var(--dm-weight-medium);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -157,8 +166,8 @@ function handleLogout() {
 }
 
 .new-chat-btn:hover {
-  background: var(--dm-primary-hover-light);
-  border-color: var(--dm-primary);
+  background: var(--dm-bg-page);
+  border-color: var(--dm-text-primary);
 }
 
 /* ===== 中间区域 ===== */
@@ -194,6 +203,13 @@ function handleLogout() {
 
 .conv-list-empty .empty-text {
   font-size: var(--dm-text-xs);
+}
+
+/* ===== 知识库导航 ===== */
+.kb-nav {
+  border-top: 1px solid var(--dm-border-light);
+  margin-top: var(--dm-space-3);
+  padding-top: var(--dm-space-1);
 }
 
 /* ===== 管理导航 ===== */
@@ -252,7 +268,7 @@ function handleLogout() {
   width: 32px;
   height: 32px;
   border-radius: var(--dm-radius-full);
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: var(--dm-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;

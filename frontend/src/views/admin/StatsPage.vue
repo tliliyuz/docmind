@@ -3,8 +3,8 @@
     <!-- 页面标题栏 -->
     <div class="detail-header">
       <div class="detail-header-left">
-        <h1 class="detail-title">知识库管理</h1>
-        <p class="detail-desc">查看所有用户的知识库（跨用户管理）</p>
+        <h1 class="detail-title">系统概览</h1>
+        <p class="detail-desc">DocMind 平台运行概览统计</p>
       </div>
     </div>
 
@@ -12,15 +12,24 @@
     <div class="stat-cards-row">
       <div class="stat-card">
         <div class="stat-icon primary">
-          <i class="fas fa-database"></i>
+          <i class="fas fa-users"></i>
         </div>
         <div>
           <div class="stat-value">--</div>
-          <div class="stat-label">知识库总数</div>
+          <div class="stat-label">用户总数</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon success">
+          <i class="fas fa-database"></i>
+        </div>
+        <div>
+          <div class="stat-value">--</div>
+          <div class="stat-label">知识库数</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon warning">
           <i class="fas fa-file-alt"></i>
         </div>
         <div>
@@ -29,12 +38,12 @@
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon warning">
-          <i class="fas fa-users"></i>
+        <div class="stat-icon danger">
+          <i class="fas fa-comments"></i>
         </div>
         <div>
           <div class="stat-value">--</div>
-          <div class="stat-label">用户数</div>
+          <div class="stat-label">总问答数</div>
         </div>
       </div>
     </div>
@@ -42,7 +51,7 @@
     <!-- 占位提示 -->
     <div class="empty-state">
       <i class="fas fa-tools empty-icon"></i>
-      <div class="empty-title">管理后台 — 知识库管理</div>
+      <div class="empty-title">管理后台 — 系统概览</div>
       <div class="empty-desc">后端接口排期至 Phase 5 实现，当前为前端占位页面</div>
     </div>
   </div>
@@ -76,7 +85,7 @@
 
 .stat-cards-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--dm-space-5);
   margin-bottom: var(--dm-space-8);
 }
@@ -105,6 +114,7 @@
 .stat-icon.primary { background: var(--dm-primary-light); color: var(--dm-primary); }
 .stat-icon.success { background: var(--dm-success-light); color: var(--dm-success); }
 .stat-icon.warning { background: var(--dm-warning-light); color: var(--dm-warning); }
+.stat-icon.danger  { background: var(--dm-danger-light);  color: var(--dm-danger); }
 
 .stat-value {
   font-size: var(--dm-text-xl);

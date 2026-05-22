@@ -22,9 +22,12 @@ const route = useRoute()
 const pageTitle = computed(() => {
   const titles = {
     Chat: '智能问答',
+    KnowledgeList: '我的知识库',
+    KnowledgeDetail: '知识库详情',
     AdminKnowledge: '知识库管理',
     AdminDocuments: '文档管理',
-    AdminConversations: '会话管理'
+    AdminConversations: '会话管理',
+    AdminStats: '系统概览'
   }
   return titles[route.name] || 'DocMind'
 })

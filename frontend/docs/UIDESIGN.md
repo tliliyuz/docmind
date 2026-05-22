@@ -3,8 +3,8 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.4
-> 日期: 2026-05-16
+> 版本: v0.6
+> 日期: 2026-05-22
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考
 > 说明: 所有样式基于 Vue 3 + Element Plus 项目
 
@@ -16,12 +16,11 @@
 
 ```css
 :root {
-    /* ===== 品牌色 ===== */
-    --dm-primary: #4F46E5;
-    --dm-primary-hover: #4338CA;
-    --dm-primary-light: #EEF2FF;
-    --dm-primary-hover-light: #DDD6FE;
-    --dm-primary-gradient: linear-gradient(135deg, #4F46E5, #7C3AED);
+    /* ===== 品牌/强调色（纯黑白） ===== */
+    --dm-primary: #1A1A1A;
+    --dm-primary-hover: #000000;
+    --dm-primary-light: #F5F5F5;
+    --dm-primary-hover-light: #EBEBEB;
 
     /* ===== 语义色 ===== */
     --dm-success: #10B981;
@@ -30,37 +29,40 @@
     --dm-info: #3B82F6;
 
     /* ===== 语义色浅色背景 ===== */
-    --dm-success-light: #D1FAE5;
-    --dm-warning-light: #FEF3C7;
-    --dm-danger-light: #FEE2E2;
-    --dm-info-light: #DBEAFE;
+    --dm-success-light: #ECFDF5;
+    --dm-warning-light: #FFFBEB;
+    --dm-danger-light: #FEF2F2;
+    --dm-info-light: #EFF6FF;
 
     /* ===== 部门图标色 ===== */
-    --dm-hr-color: #EF4444;
-    --dm-hr-bg: #FEE2E2;
-    --dm-it-color: #3B82F6;
-    --dm-it-bg: #DBEAFE;
-    --dm-admin-color: #10B981;
-    --dm-admin-bg: #D1FAE5;
-    --dm-biz-color: #F59E0B;
-    --dm-biz-bg: #FEF3C7;
-    --dm-finance-color: #6366F1;
-    --dm-finance-bg: #E0E7FF;
+    --dm-hr-color: #DC2626;
+    --dm-hr-bg: #FEF2F2;
+    --dm-it-color: #2563EB;
+    --dm-it-bg: #EFF6FF;
+    --dm-admin-color: #059669;
+    --dm-admin-bg: #ECFDF5;
+    --dm-biz-color: #D97706;
+    --dm-biz-bg: #FFFBEB;
+    --dm-finance-color: #7C3AED;
+    --dm-finance-bg: #F5F3FF;
 
-    /* ===== 中性色 ===== */
-    --dm-bg-page: #F8FAFC;
-    --dm-bg-sidebar: #FFFFFF;
+    /* ===== 中性色（黑白灰体系） ===== */
+    --dm-bg-page: #F2F2F2;
+    --dm-bg-sidebar: #F5F5F5;
     --dm-bg-card: #FFFFFF;
-    --dm-bg-chat: #F1F5F9;
-    --dm-text-primary: #1E293B;
-    --dm-text-secondary: #64748B;
-    --dm-text-tertiary: #94A3B8;
-    --dm-border: #E2E8F0;
-    --dm-border-light: #F1F5F9;
+    --dm-bg-chat: #FFFFFF;
+    --dm-bg-input: #F5F5F5;
+    --dm-text-primary: #1A1A1A;
+    --dm-text-secondary: #737373;
+    --dm-text-tertiary: #A3A3A3;
+    --dm-border: #E0E0E0;
+    --dm-border-light: #EBEBEB;
 
     /* ===== 字体族 ===== */
     --dm-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                      "Helvetica Neue", Arial, sans-serif;
+                      "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    --dm-font-mono: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code",
+                    "Consolas", "Monaco", monospace;
 
     /* ===== 字号 ===== */
     --dm-text-3xl: 36px;
@@ -98,30 +100,26 @@
 
     /* ===== 圆角 ===== */
     --dm-radius-xs: 4px;
-    --dm-radius-sm: 6px;
-    --dm-radius-md: 10px;
-    --dm-radius-lg: 14px;
+    --dm-radius-sm: 8px;
+    --dm-radius-md: 12px;
+    --dm-radius-lg: 16px;
     --dm-radius-xl: 20px;
     --dm-radius-full: 50%;
 
-    /* ===== 阴影 ===== */
-    --dm-shadow-none: none;
-    --dm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-    --dm-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
-    --dm-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
-    --dm-shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.25);
-    --dm-shadow-primary: 0 4px 12px rgba(79, 70, 229, 0.25);
-    --dm-shadow-primary-lg: 0 8px 20px rgba(79, 70, 229, 0.3);
-    --dm-logo-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
-    --dm-shadow-sidebar: 2px 0 8px rgba(0, 0, 0, 0.04);
-    --dm-shadow-input: 0 4px 20px rgba(0, 0, 0, 0.06);
-    --dm-shadow-input-focus: 0 4px 20px rgba(79, 70, 229, 0.1);
+    /* ===== 阴影（柔和中性） ===== */
+    --dm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+    --dm-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --dm-shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.10);
+    --dm-shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.15);
+    --dm-shadow-sidebar: none;
+    --dm-shadow-input: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --dm-shadow-input-focus: 0 0 0 3px rgba(0, 0, 0, 0.08);
 
     /* ===== 布局 ===== */
-    --dm-sidebar-width-admin: 260px;
-    --dm-sidebar-width-chat: 280px;
-    --dm-header-height: 64px;
-    --dm-chat-max-width: 900px;
+    --dm-sidebar-width-admin: 240px;
+    --dm-sidebar-width-chat: 260px;
+    --dm-header-height: 56px;
+    --dm-chat-max-width: 768px;
     --dm-content-max-width: 1200px;
 
     /* ===== 过渡 ===== */
@@ -129,25 +127,22 @@
     --dm-transition-normal: 0.2s ease;
     --dm-transition-slow: 0.3s ease;
 
-    /* ===== 登录页 ===== */
-    --dm-gradient-login: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #4F46E5 100%);
-
     /* ===== 其他 ===== */
-    --dm-bg-code: #1E293B;
-    --dm-text-code: #E2E8F0;
-    --dm-welcome-logo-size: 64px;
-    --dm-sidebar-logo-size: 36px;
+    --dm-bg-code: #1A1A1A;
+    --dm-text-code: #E5E5E5;
+    --dm-welcome-logo-size: 56px;
+    --dm-sidebar-logo-size: 32px;
 }
 
 /* Element Plus 主题覆盖 */
 :root {
-    --el-color-primary: #4F46E5;
-    --el-color-primary-light-3: #7C3AED;
-    --el-color-primary-light-5: #A78BFA;
-    --el-color-primary-light-7: #C4B5FD;
-    --el-color-primary-light-8: #DDD6FE;
-    --el-color-primary-light-9: #EEF2FF;
-    --el-border-radius-base: 6px;
+    --el-color-primary: #1A1A1A;
+    --el-color-primary-light-3: #404040;
+    --el-color-primary-light-5: #737373;
+    --el-color-primary-light-7: #A3A3A3;
+    --el-color-primary-light-8: #D4D4D4;
+    --el-color-primary-light-9: #EBEBEB;
+    --el-border-radius-base: 8px;
     --el-font-size-base: 14px;
     --el-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                       "Helvetica Neue", Arial, sans-serif;
@@ -279,7 +274,7 @@ body {
 
 .btn-primary:hover:not(:disabled) {
     background: var(--dm-primary-hover);
-    box-shadow: var(--dm-shadow-primary);
+    box-shadow: var(--dm-shadow-sm);
 }
 
 .btn-primary:disabled {
@@ -294,10 +289,10 @@ body {
 .submit-btn {
     width: 100%;
     height: 46px;
-    background: var(--dm-primary-gradient);
+    background: var(--dm-text-primary);
     color: white;
     border: none;
-    border-radius: var(--dm-radius-md);          /* 10px */
+    border-radius: var(--dm-radius-sm);          /* 8px */
     font-size: var(--dm-text-sm);                /* 15px */
     font-weight: var(--dm-weight-semibold);
     cursor: pointer;
@@ -309,14 +304,13 @@ body {
 }
 
 .submit-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: var(--dm-shadow-primary-lg);
+    background: #000;
+    box-shadow: var(--dm-shadow-md);
 }
 
 .submit-btn:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
 }
 ```
 
@@ -585,16 +579,15 @@ body {
 
 ```css
 .welcome-logo {
-    width: var(--dm-welcome-logo-size);          /* 64px */
+    width: var(--dm-welcome-logo-size);          /* 56px */
     height: var(--dm-welcome-logo-size);
-    background: var(--dm-primary-gradient);
-    border-radius: var(--dm-radius-lg);          /* 14px */
+    background: var(--dm-primary);
+    border-radius: var(--dm-radius-lg);          /* 16px */
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
     font-size: var(--dm-text-2xl);               /* 28px */
-    box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
 }
 ```
 
@@ -602,15 +595,15 @@ body {
 
 ```css
 .sidebar-logo-icon {
-    width: var(--dm-sidebar-logo-size);          /* 36px */
+    width: var(--dm-sidebar-logo-size);          /* 32px */
     height: var(--dm-sidebar-logo-size);
-    background: var(--dm-primary-gradient);
-    border-radius: var(--dm-radius-md);          /* 10px */
+    background: var(--dm-primary);
+    border-radius: var(--dm-radius-sm);          /* 8px */
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
-    font-size: var(--dm-text-base);              /* 16px */
+    font-size: var(--dm-text-sm);                /* 15px */
     flex-shrink: 0;
 }
 ```
@@ -646,16 +639,16 @@ body {
 }
 
 .message-bubble.user {
-    background: var(--dm-primary);
+    background: var(--dm-text-primary);
     color: white;
-    border: 1px solid var(--dm-primary);
+    border: 1px solid var(--dm-text-primary);
     margin-left: auto;
 }
 
 .message-bubble.assistant {
-    background: var(--dm-bg-card);
+    background: transparent;
     color: var(--dm-text-primary);
-    border: 1px solid var(--dm-border);
+    border: none;
 }
 ```
 
@@ -674,12 +667,12 @@ body {
 }
 
 .message-avatar.user {
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: var(--dm-text-primary);
     color: white;
 }
 
 .message-avatar.assistant {
-    background: var(--dm-primary-gradient);
+    background: var(--dm-primary);
     color: white;
 }
 ```
@@ -766,7 +759,7 @@ body {
     padding: 6px 0;
     font-size: var(--dm-text-2xs);
     color: var(--dm-text-secondary);
-    border-bottom: 1px solid rgba(79, 70, 229, 0.1);
+    border-bottom: 1px solid var(--dm-border-light);
 }
 
 .source-item:last-child {
@@ -877,7 +870,7 @@ body {
 
 .progress-fill {
     height: 100%;
-    background: var(--dm-primary-gradient);
+    background: var(--dm-primary);
     border-radius: 3px;
     transition: width 0.3s ease;
 }
@@ -1133,7 +1126,7 @@ body {
     width: 32px;
     height: 32px;
     border-radius: var(--dm-radius-full);        /* 50% */
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: var(--dm-text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1293,7 +1286,7 @@ body {
 | p | margin: 8px 0，行高 1.7 |
 | strong | font-weight: 600 |
 | code（行内） | 背景 rgba(0,0,0,0.06)，padding: 2px 6px，圆角 4px，等宽字体 |
-| pre > code | 背景 #1E293B，文字 #E2E8F0，padding: 16px，圆角 6px |
+| pre > code | 背景 #1A1A1A，文字 #E5E5E5，padding: 16px，圆角 6px |
 | blockquote | 左边框 3px solid var(--dm-primary)，背景 var(--dm-primary-light) |
 | li | 列表项，配合 br 换行 |
 | 链接 | var(--dm-primary)，hover 下划线 |
@@ -1317,13 +1310,13 @@ app.use(ElementPlus)
 ```css
 /* styles/element-override.css */
 :root {
-  --el-color-primary: #4F46E5;
-  --el-color-primary-light-3: #7C3AED;
-  --el-color-primary-light-5: #A78BFA;
-  --el-color-primary-light-7: #C4B5FD;
-  --el-color-primary-light-8: #DDD6FE;
-  --el-color-primary-light-9: #EEF2FF;
-  --el-border-radius-base: 6px;
+  --el-color-primary: #1A1A1A;
+  --el-color-primary-light-3: #404040;
+  --el-color-primary-light-5: #737373;
+  --el-color-primary-light-7: #A3A3A3;
+  --el-color-primary-light-8: #D4D4D4;
+  --el-color-primary-light-9: #EBEBEB;
+  --el-border-radius-base: 8px;
   --el-font-size-base: 14px;
 }
 ```
@@ -1335,19 +1328,19 @@ app.use(ElementPlus)
 export default {
   theme: {
     colors: {
-      'dm-primary': '#4F46E5',
-      'dm-primary-hover': '#4338CA',
-      'dm-primary-light': '#EEF2FF',
+      'dm-primary': '#1A1A1A',
+      'dm-primary-hover': '#000000',
+      'dm-primary-light': '#F5F5F5',
       'dm-success': '#10B981',
       'dm-warning': '#F59E0B',
       'dm-danger': '#EF4444',
-      'dm-bg-page': '#F8FAFC',
-      'dm-bg-sidebar': '#FFFFFF',
+      'dm-bg-page': '#F2F2F2',
+      'dm-bg-sidebar': '#F5F5F5',
       'dm-bg-card': '#FFFFFF',
-      'dm-text-primary': '#1E293B',
-      'dm-text-secondary': '#64748B',
-      'dm-text-tertiary': '#94A3B8',
-      'dm-border': '#E2E8F0',
+      'dm-text-primary': '#1A1A1A',
+      'dm-text-secondary': '#737373',
+      'dm-text-tertiary': '#A3A3A3',
+      'dm-border': '#E0E0E0',
     }
   }
 }

@@ -27,9 +27,27 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
+    path: '/knowledge-bases',
+    name: 'KnowledgeList',
+    component: () => import('@/views/KnowledgeList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/knowledge-bases/:id',
+    name: 'KnowledgeDetail',
+    component: () => import('@/views/KnowledgeDetail.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin/knowledge',
     name: 'AdminKnowledge',
     component: () => import('@/views/admin/KnowledgeList.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  {
+    path: '/admin/stats',
+    name: 'AdminStats',
+    component: () => import('@/views/admin/StatsPage.vue'),
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {

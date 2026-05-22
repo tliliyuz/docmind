@@ -141,15 +141,16 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--dm-gradient-login);
+  background: var(--dm-bg-page);
 }
 
 .login-card {
   width: 420px;
   padding: var(--dm-space-10) var(--dm-space-8);
   background: var(--dm-bg-card);
+  border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-xl);
-  box-shadow: var(--dm-shadow-xl);
+  box-shadow: var(--dm-shadow-lg);
   text-align: center;
 }
 
@@ -157,14 +158,13 @@ async function handleSubmit() {
 .welcome-logo {
   width: var(--dm-welcome-logo-size);
   height: var(--dm-welcome-logo-size);
-  background: var(--dm-primary-gradient);
+  background: var(--dm-primary);
   border-radius: var(--dm-radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-size: var(--dm-text-2xl);
-  box-shadow: var(--dm-logo-shadow);
   margin: 0 auto;
 }
 
@@ -185,7 +185,7 @@ async function handleSubmit() {
 /* 切换 Tab */
 .tab-switch {
   display: flex;
-  background: var(--dm-bg-page);
+  background: #E8E8E8;
   border-radius: var(--dm-radius-sm);
   padding: 4px;
   margin-bottom: var(--dm-space-5);
@@ -199,15 +199,15 @@ async function handleSubmit() {
   font-size: var(--dm-text-body);
   color: var(--dm-text-secondary);
   cursor: pointer;
-  border-radius: var(--dm-radius-xs);
+  border-radius: 6px;
   transition: all var(--dm-transition-fast);
 }
 
 .tab-btn.active {
   background: var(--dm-bg-card);
-  color: var(--dm-primary);
+  color: var(--dm-text-primary);
   font-weight: var(--dm-weight-semibold);
-  box-shadow: var(--dm-shadow-sm);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
 }
 
 /* 表单 */
@@ -221,10 +221,10 @@ async function handleSubmit() {
 .submit-btn {
   width: 100%;
   height: 46px;
-  background: var(--dm-primary-gradient);
+  background: var(--dm-text-primary);
   color: white;
   border: none;
-  border-radius: var(--dm-radius-md);
+  border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-sm);
   font-weight: var(--dm-weight-semibold);
   cursor: pointer;
@@ -237,14 +237,13 @@ async function handleSubmit() {
 }
 
 .submit-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: var(--dm-shadow-primary-lg);
+  background: #000;
+  box-shadow: var(--dm-shadow-md);
 }
 
 .submit-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
-  transform: none;
 }
 
 /* 错误提示 */
@@ -268,9 +267,9 @@ async function handleSubmit() {
 }
 
 .toggle-tip a {
-  color: var(--dm-primary);
+  color: var(--dm-text-primary);
   text-decoration: none;
-  font-weight: var(--dm-weight-medium);
+  font-weight: var(--dm-weight-semibold);
 }
 
 .toggle-tip a:hover {
