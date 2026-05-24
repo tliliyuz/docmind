@@ -38,6 +38,15 @@ vi.mock('element-plus', async () => {
   }
 })
 
+// Mock Auth Store
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    user: { id: 1, username: 'testuser', role: 'user' },
+    isAdmin: false,
+    isLoggedIn: true,
+  }),
+}))
+
 // Mock Knowledge Store
 const mockDocList = []
 const mockKbData = { value: null }
@@ -90,10 +99,13 @@ const elStubs = {
   'el-pagination': true,
   'el-loading': true,
   'el-tooltip': true,
+  'el-radio-group': true,
+  'el-radio': true,
 }
 
 const mockKb = {
   id: 1,
+  user_id: 1,
   name: 'HR制度库',
   description: '人事相关文档',
   doc_count: 15,

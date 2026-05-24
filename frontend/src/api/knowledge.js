@@ -7,6 +7,11 @@ export function getKnowledgeBases(params = {}) {
   return api.get('/knowledge-bases', { params })
 }
 
+/** 获取公开知识库列表（跨用户，仅 public+active） */
+export function getPublicKnowledgeBases(params = {}) {
+  return api.get('/knowledge-bases/public', { params })
+}
+
 /** 获取知识库详情 */
 export function getKnowledgeBase(id) {
   return api.get(`/knowledge-bases/${id}`)

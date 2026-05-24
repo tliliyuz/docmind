@@ -33,6 +33,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/knowledge-bases/public',
+    name: 'PublicKnowledgeList',
+    component: () => import('@/views/PublicKnowledgeList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/knowledge-bases/:id',
     name: 'KnowledgeDetail',
     component: () => import('@/views/KnowledgeDetail.vue'),

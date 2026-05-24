@@ -27,12 +27,16 @@
         </div>
       </div>
 
-      <!-- 我的知识库（所有用户可见） -->
+      <!-- 知识库导航（所有用户可见） -->
       <nav class="kb-nav">
         <div class="section-label">知识库</div>
         <router-link to="/knowledge-bases" class="nav-item" active-class="active">
           <i class="fas fa-database"></i>
           <span>我的知识库</span>
+        </router-link>
+        <router-link to="/knowledge-bases/public" class="nav-item" active-class="active">
+          <i class="fas fa-globe"></i>
+          <span>公共知识库</span>
         </router-link>
       </nav>
 

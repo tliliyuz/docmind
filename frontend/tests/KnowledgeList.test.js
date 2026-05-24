@@ -70,6 +70,8 @@ const elStubs = {
   'el-table-column': true,
   'el-pagination': true,
   'el-loading': true,
+  'el-radio-group': true,
+  'el-radio': true,
 }
 
 function getComponent() {

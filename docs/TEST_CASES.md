@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.19 |
+| 文档版本 | v0.20 |
 | 最后更新 | 2026-05-24 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 2.5 后端完成，前端待实施） |
+| 状态 | 进行中（Phase 2.5 全部完成） |
 
 ---
 
@@ -248,10 +248,10 @@
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C5.1 | PublicKnowledgeList 渲染 | `PublicKnowledgeList` | 卡片网格 | 公共 KB 卡片正确渲染 | ⬜ | — | Phase 2.5 前端 |
-| C5.2 | PublicKnowledgeList 无新建按钮 | `PublicKnowledgeList` | 新建按钮 | 无新建/编辑/删除按钮 | ⬜ | — | Phase 2.5 前端 |
-| C5.3 | PublicKnowledgeList 显示 owner | `PublicKnowledgeList` | 卡片 | 显示 owner 用户名 | ⬜ | — | Phase 2.5 前端 |
-| C5.4 | PublicKnowledgeList 空状态 | `PublicKnowledgeList` | 无 public KB | 显示空状态提示 | ⬜ | — | Phase 2.5 前端 |
+| C5.1 | PublicKnowledgeList 渲染 | `PublicKnowledgeList` | 卡片网格 | 公共 KB 卡片正确渲染 | ✅ | 2026-05-24 | 10 用例全部通过 |
+| C5.2 | PublicKnowledgeList 无新建按钮 | `PublicKnowledgeList` | 新建按钮 | 无新建/编辑/删除按钮 | ✅ | 2026-05-24 | — |
+| C5.3 | PublicKnowledgeList 显示 owner | `PublicKnowledgeList` | 卡片 | 显示 owner 用户名 + 公开标识 | ✅ | 2026-05-24 | — |
+| C5.4 | PublicKnowledgeList 空状态 | `PublicKnowledgeList` | 无 public KB | 显示空状态提示 | ✅ | 2026-05-24 | — |
 
 ### 4.5 后端 — 文档接口权限矩阵测试
 

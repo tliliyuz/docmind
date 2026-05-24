@@ -11,12 +11,17 @@
           <p class="detail-desc">{{ store.currentKb?.description || '暂无描述' }}</p>
         </div>
       </div>
-      <div class="detail-header-actions">
+      <div class="detail-header-actions" v-if="isOwner">
         <button class="ghost-btn" @click="openEditDialog">
           <i class="fas fa-pen" style="margin-right: 4px;"></i> 编辑
         </button>
         <button class="ghost-btn danger" @click="confirmDeleteKb">
           <i class="fas fa-trash" style="margin-right: 4px;"></i> 删除
+        </button>
+      </div>
+      <div class="detail-header-actions" v-else>
+        <button class="btn-primary" @click="goToChat">
+          <i class="fas fa-comments" style="margin-right: 6px;"></i> 开始问答
         </button>
       </div>
     </div>
@@ -52,8 +57,9 @@
       </div>
     </div>
 
-    <!-- 文档上传区域 -->
+    <!-- 文档上传区域（仅 owner 可见） -->
     <div
+      v-if="isOwner"
       class="upload-area"
       :class="{ 'upload-dragover': dragOver }"
       @dragover.prevent="dragOver = true"
@@ -87,8 +93,8 @@
       </div>
     </div>
 
-    <!-- 文档表格区域 -->
-    <div class="doc-table-section">
+    <!-- 文档表格区域（仅 owner 可见） -->
+    <div class="doc-table-section" v-if="isOwner">
       <div class="doc-table-toolbar">
         <h2 class="section-title">文档列表</h2>
         <div class="doc-table-filters">
@@ -264,6 +270,18 @@
             show-word-limit
           />
         </el-form-item>
+        <el-form-item label="可见性" prop="visibility">
+          <el-radio-group v-model="editFormData.visibility">
+            <el-radio value="private">
+              <i class="fas fa-lock" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              私有 — 仅自己和管理员可见
+            </el-radio>
+            <el-radio value="public">
+              <i class="fas fa-globe" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              公开 — 所有用户可查看和检索
+            </el-radio>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
@@ -314,12 +332,19 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useKnowledgeStore, TERMINAL_STATUSES, isTerminal } from '@/stores/knowledge'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const store = useKnowledgeStore()
+const authStore = useAuthStore()
 
 const kbId = computed(() => Number(route.params.id))
+
+/** 当前用户是否为 KB 所有者 */
+const isOwner = computed(() => {
+  return store.currentKb?.user_id === authStore.user?.id
+})
 
 // ==================== 页面加载 ====================
 const pageLoading = ref(false)
@@ -328,13 +353,16 @@ async function loadPage() {
   pageLoading.value = true
   try {
     await store.fetchKbDetail(kbId.value)
-    await reloadDocList()
-    // 对非终态文档启动轮询
-    store.docList.forEach(doc => {
-      if (!isTerminal(doc.status)) {
-        store.startPolling(kbId.value, doc.id)
-      }
-    })
+    // 仅 owner 加载文档列表；非 owner 访问公开 KB 时无文档查看权限（PRD §5.4）
+    if (isOwner.value) {
+      await reloadDocList()
+      // 对非终态文档启动轮询
+      store.docList.forEach(doc => {
+        if (!isTerminal(doc.status)) {
+          store.startPolling(kbId.value, doc.id)
+        }
+      })
+    }
   } catch {
     ElMessage.error('知识库不存在或无权访问')
     router.push('/knowledge-bases')
@@ -479,7 +507,7 @@ const editDialogVisible = ref(false)
 const editSubmitting = ref(false)
 const editFormRef = ref(null)
 
-const editFormData = reactive({ name: '', description: '' })
+const editFormData = reactive({ name: '', description: '', visibility: 'private' })
 const editFormRules = {
   name: [
     { required: true, message: '请输入知识库名称', trigger: 'blur' },
@@ -490,6 +518,7 @@ const editFormRules = {
 function openEditDialog() {
   editFormData.name = store.currentKb?.name || ''
   editFormData.description = store.currentKb?.description || ''
+  editFormData.visibility = store.currentKb?.visibility || 'private'
   editDialogVisible.value = true
 }
 
@@ -498,7 +527,7 @@ async function handleEditSubmit() {
   if (!valid) return
   editSubmitting.value = true
   try {
-    await store.updateKb(kbId.value, { name: editFormData.name, description: editFormData.description })
+    await store.updateKb(kbId.value, { name: editFormData.name, description: editFormData.description, visibility: editFormData.visibility })
     ElMessage.success('知识库已更新')
     editDialogVisible.value = false
   } catch (err) {
@@ -551,6 +580,11 @@ async function onChunkPageChange(page) {
     page,
     page_size: chunkPageSize
   })
+}
+
+// ==================== 导航 ====================
+function goToChat() {
+  router.push(`/chat?kb_id=${kbId.value}`)
 }
 
 // ==================== 行展开（预留） ====================
@@ -678,6 +712,28 @@ onUnmounted(() => {
   display: flex;
   gap: var(--dm-space-2);
   flex-shrink: 0;
+}
+
+/* 主按钮 */
+.btn-primary {
+  height: 38px;
+  padding: 0 18px;
+  background: var(--dm-primary);
+  color: white;
+  border: none;
+  border-radius: var(--dm-radius-sm);
+  font-size: var(--dm-text-body);
+  font-weight: var(--dm-weight-semibold);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dm-space-2);
+  transition: all var(--dm-transition-normal);
+}
+
+.btn-primary:hover {
+  background: var(--dm-primary-hover);
+  box-shadow: var(--dm-shadow-sm);
 }
 
 /* 幽灵按钮 */

@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.5 |
-| 最后更新 | 2026-05-22 |
+| 文档版本 | v0.7 |
+| 最后更新 | 2026-05-24 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -301,7 +301,7 @@
 
 | 操作 | 行为 |
 |:---|:---|
-| 编辑 | 弹窗预填名称+描述 → 确认 → PUT `/api/knowledge-bases/{id}` |
+| 编辑 | 弹窗预填名称+描述+可见性 → 确认 → PUT `/api/knowledge-bases/{id}` |
 | 删除 | `ElMessageBox.confirm`（危险色） → 确认 → DELETE（202 异步） → 卡片移除 |
 
 ---
@@ -344,9 +344,10 @@
 进入 /knowledge-bases/:id
     ↓
 GET /api/knowledge-bases/{id} → 显示 KB 信息 + 统计
-GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表
     ↓
-用户上传文档 / 管理文档（见 §6）
+判断是否 owner：
+  ├─ 是 owner → GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表
+  └─ 非 owner（访问 public KB）→ 跳过文档列表，仅显示 KB 基本信息 + 「开始问答」入口
 ```
 
 ---
@@ -686,9 +687,9 @@ function abort() {
 |:---|:---|:---|:---|
 | ChatPage | 占位页面 | — | Phase 3：完整问答 SSE、消息列表、来源引用 |
 | Sidebar | 空会话列表 + admin 导航 | 增加「我的知识库」入口（所有用户可见） | Phase 4：历史会话列表、新建对话、重命名、删除 |
-| KnowledgeList (`/knowledge-bases`) | 占位页面 | 知识库卡片网格、新建/编辑弹窗、删除确认、visibility 选择 | — |
-| PublicKnowledgeList (`/knowledge-bases/public`) | **新增页面** | 公共 KB 卡片网格（跨用户浏览，无编辑/删除/新建） | — |
-| KnowledgeDetail (`/knowledge-bases/:id`) | **新增页面** | KB 信息+统计 + 文档上传区 + 文档表格 + 状态轮询 + 分块预览；public KB 非 owner 只读 | — |
+| KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | 知识库卡片网格、新建/编辑弹窗、删除确认、visibility 选择 | — |
+| PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | 公共 KB 卡片网格（跨用户浏览，无编辑/删除/新建） | — |
+| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | KB 信息+统计 + 文档上传区 + 文档表格 + 状态轮询 + 分块预览；public KB 非 owner 只读 | — |
 | AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | 前端页面完成（跨用户 KB 列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/knowledge-bases` |
 | AdminDocumentList (`/admin/documents`) | 占位页面 | 前端页面完成（跨库文档列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/documents` |
 | Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |

@@ -78,6 +78,12 @@
         <h3 class="kb-card-name">{{ kb.name }}</h3>
         <p class="kb-card-desc">{{ kb.description || '暂无描述' }}</p>
 
+        <div class="kb-card-tags">
+          <span class="visibility-tag" :class="kb.visibility || 'private'">
+            <i :class="kb.visibility === 'public' ? 'fas fa-globe' : 'fas fa-lock'"></i>
+            {{ kb.visibility === 'public' ? '公开' : '私有' }}
+          </span>
+        </div>
         <div class="card-meta">
           <div class="card-meta-item">
             <i class="fas fa-file-alt"></i>
@@ -132,6 +138,18 @@
             show-word-limit
           />
         </el-form-item>
+        <el-form-item label="可见性" prop="visibility">
+          <el-radio-group v-model="formData.visibility">
+            <el-radio value="private">
+              <i class="fas fa-lock" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              私有 — 仅自己和管理员可见
+            </el-radio>
+            <el-radio value="public">
+              <i class="fas fa-globe" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              公开 — 所有用户可查看和检索
+            </el-radio>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -175,7 +193,8 @@ const formRef = ref(null)
 
 const formData = ref({
   name: '',
-  description: ''
+  description: '',
+  visibility: 'private'
 })
 
 const formRules = {
@@ -188,14 +207,14 @@ const formRules = {
 function openCreateDialog() {
   isEditing.value = false
   editingId.value = null
-  formData.value = { name: '', description: '' }
+  formData.value = { name: '', description: '', visibility: 'private' }
   dialogVisible.value = true
 }
 
 function openEditDialog(kb) {
   isEditing.value = true
   editingId.value = kb.id
-  formData.value = { name: kb.name, description: kb.description || '' }
+  formData.value = { name: kb.name, description: kb.description || '', visibility: kb.visibility || 'private' }
   dialogVisible.value = true
 }
 
@@ -206,10 +225,18 @@ async function handleSubmit() {
   submitting.value = true
   try {
     if (isEditing.value) {
-      await store.updateKb(editingId.value, { ...formData.value })
+      await store.updateKb(editingId.value, {
+        name: formData.value.name,
+        description: formData.value.description,
+        visibility: formData.value.visibility
+      })
       ElMessage.success('知识库已更新')
     } else {
-      await store.createKb({ ...formData.value })
+      await store.createKb({
+        name: formData.value.name,
+        description: formData.value.description,
+        visibility: formData.value.visibility
+      })
       ElMessage.success('知识库创建成功')
     }
     dialogVisible.value = false
@@ -379,6 +406,35 @@ onMounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* 卡片标签行 */
+.kb-card-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--dm-space-2);
+  margin-top: var(--dm-space-2);
+  margin-bottom: var(--dm-space-2);
+}
+
+.visibility-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--dm-radius-xs);
+  font-size: var(--dm-text-3xs);
+  font-weight: var(--dm-weight-semibold);
+}
+
+.visibility-tag.private {
+  background: var(--dm-border-light);
+  color: var(--dm-text-secondary);
+}
+
+.visibility-tag.public {
+  background: var(--dm-success-light);
+  color: var(--dm-success);
 }
 
 /* 部门图标 */

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   getKnowledgeBases,
+  getPublicKnowledgeBases,
   getKnowledgeBase,
   createKnowledgeBase,
   updateKnowledgeBase,
@@ -56,6 +57,11 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const kbLoading = ref(false)
   const kbTotal = ref(0)
 
+  /** 公开知识库列表 */
+  const publicKbList = ref([])
+  const publicKbLoading = ref(false)
+  const publicKbTotal = ref(0)
+
   const currentKb = ref(null)
 
   // ==================== 文档状态 ====================
@@ -95,6 +101,18 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     const { data } = await getKnowledgeBase(id)
     currentKb.value = data.data
     return currentKb.value
+  }
+
+  /** 获取公开知识库列表 */
+  async function fetchPublicKbList(params = {}) {
+    publicKbLoading.value = true
+    try {
+      const { data } = await getPublicKnowledgeBases(params)
+      publicKbList.value = data.data.items
+      publicKbTotal.value = data.data.total
+    } finally {
+      publicKbLoading.value = false
+    }
   }
 
   /** 创建知识库 */
@@ -287,7 +305,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   return {
     // 知识库
     kbList, kbLoading, kbTotal, currentKb,
-    fetchKbList, fetchKbDetail, createKb, updateKb, deleteKb,
+    publicKbList, publicKbLoading, publicKbTotal,
+    fetchKbList, fetchPublicKbList, fetchKbDetail, createKb, updateKb, deleteKb,
     // 文档
     docList, docLoading, docTotal,
     fetchDocList, uploadDoc, batchUploadDocs, reprocessDoc, removeDoc,

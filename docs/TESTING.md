@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.6 |
+| 文档版本 | v0.7 |
 | 最后更新 | 2026-05-24 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -427,7 +427,7 @@ class ChatUser(HttpUser):
 | Phase 2.5 | KB 权限矩阵接口测试 | 接口测试 | public KB 非 owner 可读/不可写；private KB 非 owner 拒绝；admin 全局可读 + 管理写 | ✅ |
 | Phase 2.5 | 公共 KB 列表接口测试 | 接口测试 | GET /public 分页 + 仅返回 public+active + 含 username | ✅ |
 | Phase 2.5 | 文档接口权限矩阵测试 | 接口测试 | 上传/reprocess 仅 owner；查看/分块/删除 owner + admin；18 用例全覆盖 | ✅ |
-| Phase 2.5 | 前端公共 KB 页组件测试 | 组件测试 | PublicKnowledgeList 渲染 + 无编辑/删除/新建按钮 | Phase 3 准入 |
+| Phase 2.5 | 前端公共 KB 页组件测试 | 组件测试 | PublicKnowledgeList 渲染 + 无编辑/删除/新建按钮 | ✅ |
 | Phase 3 | 检索器 + RRF 测试 | 单元测试 | 检索正确性 + RRF 排序验证 | Phase 4 准入 |
 | Phase 3 | 问答 SSE API 测试 | 接口测试 | SSE 事件序列 + 错误码 | Phase 4 准入 |
 | Phase 3 | 前端 ChatPage + SSE 解析测试 | 组件+单元测试 | 消息发送/流式渲染/停止/来源引用 | Phase 4 准入 |

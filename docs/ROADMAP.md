@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.15 |
-| 最后更新 | 2026-05-24 |
+| 文档版本 | v0.17 |
+| 最后更新 | 2026-05-25 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -161,13 +161,13 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 创建 KB 弹窗增加 visibility 选择 | 新建/编辑知识库弹窗增加 `private`/`public` 切换（Radio 或 Switch） |
-| ⬜ | KB 卡片增加 visibility 标识 | 卡片上显示 public/private 标签或图标 |
-| ⬜ | 公共知识库页面 | `PublicKnowledgeList.vue`（`/knowledge-bases/public`）：卡片网格 + 搜索 + owner 用户名展示，无新建/编辑/删除按钮 |
-| ⬜ | Sidebar 导航更新 | 新增「公共知识库」入口（所有用户可见），位于「我的知识库」下方 |
-| ⬜ | 路由更新 | 新增 `/knowledge-bases/public` 路由 |
-| ⬜ | KB 详情页适配 | 非 owner 访问 public KB 时：隐藏文档上传区、文档表格、编辑/删除按钮；显示「开始问答」入口 |
-| ⬜ | Pinia Store 更新 | `knowledge.js` 新增 `fetchPublicKbList()` action |
+| ✅ | 创建 KB 弹窗增加 visibility 选择 | 新建/编辑知识库弹窗增加 `private`/`public` 切换（Radio 或 Switch） |
+| ✅ | KB 卡片增加 visibility 标识 | 卡片上显示 public/private 标签或图标 |
+| ✅ | 公共知识库页面 | `PublicKnowledgeList.vue`（`/knowledge-bases/public`）：卡片网格 + 搜索 + owner 用户名展示，无新建/编辑/删除按钮 |
+| ✅ | Sidebar 导航更新 | 新增「公共知识库」入口（所有用户可见），位于「我的知识库」下方 |
+| ✅ | 路由更新 | 新增 `/knowledge-bases/public` 路由 |
+| ✅ | KB 详情页适配 | 非 owner 访问 public KB 时：隐藏文档上传区、文档表格、编辑/删除按钮；显示「开始问答」入口 |
+| ✅ | Pinia Store 更新 | `knowledge.js` 新增 `fetchPublicKbList()` action |
 
 ### 4.4 测试
 
@@ -176,7 +176,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | visibility 字段校验测试 | 单元测试 | `TestKnowledgeBaseCreateVisibility`（5 用例）+ `TestKnowledgeBaseUpdateVisibility`（4 用例）+ `TestKnowledgeBaseResponseVisibility`（1 用例） |
 | ✅ | KB 权限矩阵接口测试 | 接口测试 | `TestVisibilityPermissionMatrix`（6 用例）：public KB 非 owner 可读/不可写；private KB 非 owner 拒绝；admin 全局读写 |
 | ✅ | 公共 KB 列表接口测试 | 接口测试 | `TestPublicKbList`（5 用例）：分页 + 仅返回 public+active + username + 无认证访问 |
-| ⬜ | 前端公共 KB 页组件测试 | 组件测试 | PublicKnowledgeList 渲染 + 无编辑/删除/新建按钮 |
+| ✅ | 前端公共 KB 页组件测试 | 组件测试 | PublicKnowledgeList 渲染 + 无编辑/删除/新建按钮（10 用例） |
 
 ### 4.5 本阶段不做的
 
@@ -185,6 +185,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | shared（指定用户共享） | 需要 ACL 表 + 邀请机制，复杂度爆炸 |
 | 部门管理员 / 角色扩展 | 当前无真实需求 |
 | 协作编辑、版本控制 | 那是 Notion，不是知识库问答平台 |
+| Admin 在 KB 详情页的管理权限（查看文档列表/编辑/删除） | 延后到 Phase 5，随 Admin 后端接口一并实现。当前 `KnowledgeDetail.vue` 仅按 `user_id` 判断 owner，admin 访问他人 KB 时暂为只读 |
 
 ---
 
@@ -256,6 +257,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ⬜ | 意图识别 | LLM 分类：知识查询 / 闲聊，闲聊直接回复不检索 |
 | ⬜ | Admin 后端接口实现 | `GET /api/admin/knowledge-bases`（全部知识库）+ `GET /api/admin/documents`（全部文档）+ `GET /api/admin/stats`（概览统计）+ admin router 注册 |
 | ⬜ | Admin 前端联调 | `/admin/knowledge`、`/admin/documents`、`/admin/stats` 对接后端接口 |
+| ⬜ | Admin 访问 KB 详情页权限 | `KnowledgeDetail.vue` `isOwner` 逻辑扩展为 `isOwner \|\| isAdmin`：admin 访问他人 KB 时可查看文档列表、编辑 KB 元数据（含 visibility）、删除 KB/文档，但不可上传文档（PRD §5.4） |
 | ⬜ | 错误处理 | 全局异常处理 + 统一错误码 |
 | ⬜ | Refresh Token 机制 | access_token（15-30min）+ refresh_token（7天，存 MySQL/Redis），支持 Rotation（刷新后旧 token 失效）、主动吊销（改密/强制下线） |
 | ⬜ | 限流 | 简单 IP/用户级频率限制 |

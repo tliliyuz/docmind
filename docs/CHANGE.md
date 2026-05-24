@@ -1,5 +1,79 @@
 # DocMind 变更日志
 
+## 2026-05-24 — 修复：KnowledgeDetail 编辑弹窗缺少可见性选项 + 非 owner 访问公开 KB 误报错
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/views/KnowledgeDetail.vue` | ① 编辑弹窗新增 `visibility` 字段（Radio：私有/公开），对齐 KnowledgeList 的编辑弹窗；② `loadPage` 中 `reloadDocList` 改为仅 owner 调用，避免非 owner 访问公开 KB 时文档列表 API 返回 403 被误判为页面级错误 |
+
+### 根因
+
+1. KnowledgeDetail 编辑弹窗只传了 `name`/`description`，缺少 `visibility`，导致从详情页编辑 KB 时无法修改可见性
+2. `loadPage` 无条件调用 `reloadDocList()`，而后端文档列表接口要求 owner/admin 权限。非 owner 访问公开 KB 时文档列表 403 → `catch` 误报「知识库不存在或无权限」→ 跳转回我的知识库，导致公开 KB 详情页对普通 user 不可用
+
+### 设计说明
+
+公开知识库对普通 user 的价值是**知识发现 + 问答入口**（PRD §5.4）：
+1. 浏览公共知识库列表 → 找到感兴趣的
+2. 进入详情页查看 KB 名称、描述、统计
+3. 点击「开始问答」跳转 `/chat?kb_id=xxx` 进行检索问答
+
+文档列表、上传、编辑、删除仅 owner 可见，符合权限矩阵。
+
+### 测试结果
+
+- 前端：59/59 全部通过
+
+### 文档同步
+
+| 文件 | 版本变更 | 主要变更 |
+|:---|:---|:---|
+| `frontend/docs/FRONTEND.md` | v0.6→v0.7 | §5.4 编辑操作补充可见性字段；§5.5.2 交互流程区分 owner/非 owner 的文档列表加载逻辑 |
+| `docs/ROADMAP.md` | v0.16→v0.17 | Phase 5 新增「Admin 访问 KB 详情页权限」任务；Phase 2.5 §4.5 新增推迟理由 |
+
+---
+
+## 2026-05-24 — Phase 2.5 前端实现：知识库可见性前端
+
+### 背景
+
+Phase 2.5 前端实现：在用户界面中支持知识库 `visibility` 字段（`private`/`public`），新增公共知识库浏览页，非 owner 访问 public KB 时只读展示。
+
+### 代码修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/api/knowledge.js` | 新增 `getPublicKnowledgeBases()` 函数，调用 `GET /api/knowledge-bases/public` |
+| `frontend/src/stores/knowledge.js` | 新增 `publicKbList`/`publicKbLoading`/`publicKbTotal` 状态；新增 `fetchPublicKbList()` action |
+| `frontend/src/router/index.js` | 新增 `/knowledge-bases/public` 路由（`PublicKnowledgeList`，需登录） |
+| `frontend/src/components/layout/Sidebar.vue` | 知识库导航新增「公共知识库」入口（所有用户可见），使用 `fa-globe` 图标 |
+| `frontend/src/views/KnowledgeList.vue` | 新建/编辑弹窗新增 visibility 选择（Radio：私有/公开）；卡片新增 visibility 标识标签 |
+| `frontend/src/views/PublicKnowledgeList.vue` | **新建文件**。公共知识库浏览页：卡片网格 + 搜索 + owner 用户名展示，无新建/编辑/删除按钮 |
+| `frontend/src/views/KnowledgeDetail.vue` | 新增 `isOwner` 计算逻辑；非 owner 访问 public KB 时隐藏上传区/文档表格/编辑删除按钮，显示「开始问答」入口 |
+
+### 测试
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/tests/PublicKnowledgeList.test.js` | **新建文件**。10 个用例覆盖：页面标题/搜索框渲染、无不含新建按钮/卡片、空状态、卡片网格 + username + 公开标识、无操作菜单、卡片点击跳转、生命周期 |
+| `frontend/tests/KnowledgeList.test.js` | 新增 `el-radio-group`/`el-radio` stubs（visibility 选择控件） |
+| `frontend/tests/KnowledgeDetail.test.js` | 新增 `@/stores/auth` mock（`isOwner` 计算依赖）；mockKb 新增 `user_id: 1`；新增 stubs |
+
+### 测试结果
+
+- 前端：59/59 全部通过（5 个测试文件，含新增 PublicKnowledgeList 10 用例）
+- 构建：`npm run build` 成功
+
+### 文档同步
+
+| 文件 | 版本变更 | 主要变更 |
+|:---|:---|:---|
+| `backend/docs/API.md` | v0.11→v0.12 | §9 权限速查表 `GET /api/knowledge-bases/public` 状态 ⬜→✅（后端已实现） |
+
+---
+
 ## 2026-05-24 — Phase 2.5 后端实现：知识库可见性重构
 
 ### 背景
