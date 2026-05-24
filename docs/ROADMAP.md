@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.13 |
-| 最后更新 | 2026-05-22 |
+| 文档版本 | v0.15 |
+| 最后更新 | 2026-05-24 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -135,7 +135,67 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 ---
 
-## 4. Phase 3：核心问答（3-4 天）
+## 4. Phase 2.5：知识库可见性重构（1-2 天）
+
+**目标**：采用「弱混合模式」，新增 `visibility` 字段实现 public/private KB 分离，支持跨部门知识共享。
+
+> **设计原则**：`visibility` 控制 READ，`ownership` 控制 WRITE。详见 PRD.md §5。
+
+### 4.1 业务规则文档
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | PRD.md §5 可见性模型 | ownership/visibility 规则 + CRUD 权限矩阵 + 检索范围 |
+| ✅ | ARCHITECTURE.md §7.6 | 弱混合模式设计决策 |
+| ✅ | DATABASE.md §2.2 | `visibility` 列定义 |
+| ✅ | API.md §3/§9 | 接口权限速查表更新 + public KB 列表端点 |
+| ✅ | FRONTEND.md §2.1/§4.5/§5.7 | 路由 + 侧边栏 + 公共 KB 浏览页 |
+| ✅ | CLAUDE.md | 权限分离约束 |
+| ✅ | CHANGE.md | 文档变更记录 |
+
+### 4.2 后端实现
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | 数据库迁移 | `knowledge_bases` 表新增 `visibility ENUM('private','public') DEFAULT 'private'`（迁移 `8fa3ea12b75e`） |
+| ✅ | ORM 模型更新 | `KnowledgeBase` 模型新增 `visibility` 字段 |
+| ✅ | Pydantic Schema 更新 | `KnowledgeBaseCreate` 新增 `visibility` 可选字段（默认 `private`）；`KnowledgeBaseUpdate` 新增 `visibility` 可选字段；`KnowledgeBaseResponse` 新增 `visibility` 字段；新增 `PublicKnowledgeBaseResponse`（含 `username`）和 `PublicKnowledgeBaseListResponse` |
+| ✅ | KB Service 权限重构 | `get_kb()` 增加 visibility 判断：public KB 允许非 owner 读取；`list_kbs()` 仅返回用户自己的 KB（不变）；新增 `list_public_kbs()` 返回所有 public+active KB（JOIN users 含 username） |
+| ✅ | API 端点更新 | `POST /api/knowledge-bases` 支持 visibility 参数；`GET /api/knowledge-bases/{id}` public KB 对非 owner 放行；`PUT /api/knowledge-bases/{id}` owner + admin 可修改含 visibility；新增 `GET /api/knowledge-bases/public` 端点 |
+| ✅ | 文档接口权限更新 | `_check_kb_ownership` 新增 `owner_only` 参数：上传/reprocess 仅 owner；查看/分块/删除 owner + admin；`TestDocumentPermissionMatrix` 18 用例覆盖全部权限组合 |
+
+### 4.3 前端实现
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 创建 KB 弹窗增加 visibility 选择 | 新建/编辑知识库弹窗增加 `private`/`public` 切换（Radio 或 Switch） |
+| ⬜ | KB 卡片增加 visibility 标识 | 卡片上显示 public/private 标签或图标 |
+| ⬜ | 公共知识库页面 | `PublicKnowledgeList.vue`（`/knowledge-bases/public`）：卡片网格 + 搜索 + owner 用户名展示，无新建/编辑/删除按钮 |
+| ⬜ | Sidebar 导航更新 | 新增「公共知识库」入口（所有用户可见），位于「我的知识库」下方 |
+| ⬜ | 路由更新 | 新增 `/knowledge-bases/public` 路由 |
+| ⬜ | KB 详情页适配 | 非 owner 访问 public KB 时：隐藏文档上传区、文档表格、编辑/删除按钮；显示「开始问答」入口 |
+| ⬜ | Pinia Store 更新 | `knowledge.js` 新增 `fetchPublicKbList()` action |
+
+### 4.4 测试
+
+| 状态 | 任务 | 测试类型 | 说明 |
+|:---|:---|:---|:---|
+| ✅ | visibility 字段校验测试 | 单元测试 | `TestKnowledgeBaseCreateVisibility`（5 用例）+ `TestKnowledgeBaseUpdateVisibility`（4 用例）+ `TestKnowledgeBaseResponseVisibility`（1 用例） |
+| ✅ | KB 权限矩阵接口测试 | 接口测试 | `TestVisibilityPermissionMatrix`（6 用例）：public KB 非 owner 可读/不可写；private KB 非 owner 拒绝；admin 全局读写 |
+| ✅ | 公共 KB 列表接口测试 | 接口测试 | `TestPublicKbList`（5 用例）：分页 + 仅返回 public+active + username + 无认证访问 |
+| ⬜ | 前端公共 KB 页组件测试 | 组件测试 | PublicKnowledgeList 渲染 + 无编辑/删除/新建按钮 |
+
+### 4.5 本阶段不做的
+
+| 推迟项 | 原因 |
+|:---|:---|
+| shared（指定用户共享） | 需要 ACL 表 + 邀请机制，复杂度爆炸 |
+| 部门管理员 / 角色扩展 | 当前无真实需求 |
+| 协作编辑、版本控制 | 那是 Notion，不是知识库问答平台 |
+
+---
+
+## 5. Phase 3：核心问答（3-4 天）
 
 **目标**：单轮问答全链路跑通，SSE 流式输出，前端展示答案及引用来源。
 
@@ -148,6 +208,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ⬜ | Prompt 组装 | 拼接检索结果 + 用户问题 |
 | ⬜ | LLM 调用 | DeepSeek API，含 thinking_content |
 | ⬜ | SSE 流式输出 | sse-starlette，event 类型 meta/thinking/message/sources/finish/error |
+| ⬜ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索（从 Phase 2.5 移入） |
 | ⬜ | 前端问答界面 | ChatPage + MessageList + ChatInput + SSE 解析 |
 | ⬜ | 来源引用展示 | 答案末尾展示引用文档名 |
 
@@ -157,7 +218,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 |:---|:---|:---|:---|
 | ⬜ | 检索器单元测试 | 单元测试 | 向量检索 / BM25 检索各自返回正确数量 + metadata 过滤 |
 | ⬜ | RRF 融合算法测试 | 单元测试 | k=60 合并两路结果的排序正确性 |
-| ⬜ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列（meta→message→sources→finish）+ 错误码（E4001/E4005） |
+| ⬜ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列（meta→message→sources→finish）+ 错误码（E4001/E4005）+ kb_id 可见性校验（private KB 非 owner 拒绝） |
 | ⬜ | Prompt 模板测试 | 单元测试 | 检索结果拼接、token 预算控制 |
 | ⬜ | NoopReranker 测试 | 单元测试 | 截取 top_k 行为正确 |
 | ⬜ | 前端 ChatPage 组件测试 | 组件测试 | 消息发送、SSE 流式渲染、停止按钮 |
@@ -167,7 +228,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 ---
 
-## 5. Phase 4：会话 & 记忆（2-3 天）
+## 6. Phase 4：会话 & 记忆（2-3 天）
 
 **目标**：多轮对话能力，会话管理，滑动窗口记忆。
 
@@ -191,7 +252,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 ---
 
-## 6. Phase 5：打磨上线（2-3 天）
+## 7. Phase 5：打磨上线（2-3 天）
 
 **目标**：体验完善，管理后台，错误处理，部署就绪。
 
@@ -219,30 +280,30 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 ---
 
-## 7. 依赖关系
+## 8. 依赖关系
 
 ```
-Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5
-  │            │            │            │            │
-  └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ──→  └─ 测试
-     (待补)      (含离线评估)  (含人工评分1) (含人工评分2)  (全量+压测)
+Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5
+  │            │            │              │            │            │
+  └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ────→ └─ 测试 ──→  └─ 测试 ──→  └─ 测试
+     (已测)      (含离线评估)  (权限测试)     (含人工评分1) (含人工评分2)  (全量+压测)
 ```
 
+- Phase 2.5 在 Phase 2 完成后立即执行，Phase 3 问答实现前完成——检索范围必须早于问答接口确定
 - Phase 3 和 Phase 4 可部分并行：核心问答的单轮链路可与会话 CRUD 同时开发
 - Phase 4 的问题重写依赖 Phase 3 的 LLM 调用能力
 - Phase 5 在所有功能就绪后进行
 
-### 7.1 测试准入规则
+### 8.1 测试准入规则
 
 **每个 Phase 的测试必须在该 Phase 功能完成后立即执行，作为下一 Phase 的准入条件：**
 
 - Phase N 功能完成 → 执行 Phase N 测试 → 全部通过 → 方可进入 Phase N+1
-- Phase 1 的测试需在 Phase 2 正式开始前补齐
 - 回归测试集随 Phase 迭代持续扩充，每次提交运行全量回归
 
 ---
 
-## 8. 相关文档
+## 9. 相关文档
 
 - [产品需求文档](PRD.md)
 - [架构设计文档](ARCHITECTURE.md)

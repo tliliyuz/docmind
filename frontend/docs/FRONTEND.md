@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.4 |
+| 文档版本 | v0.5 |
 | 最后更新 | 2026-05-22 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -67,7 +67,8 @@
 | `/login` | LoginPage | 公开 | 已登录者访问自动重定向到 `/chat` |
 | `/chat` | ChatPage | 需登录 | 核心问答页，默认首页（Phase 3 完整实现） |
 | `/knowledge-bases` | KnowledgeList | 需登录 | 我的知识库列表（Phase 2.3.3 实现） |
-| `/knowledge-bases/:id` | KnowledgeDetail | 需登录（所有者/admin） | 知识库详情：KB 信息 + 文档上传/管理（Phase 2.3.3 实现） |
+| `/knowledge-bases/public` | PublicKnowledgeList | 需登录 | 公开知识库列表，浏览所有 public KB（Phase 2.5 新增） |
+| `/knowledge-bases/:id` | KnowledgeDetail | 需登录（owner/admin/public KB 可查看） | 知识库详情：KB 信息 + 文档上传/管理。public KB 非 owner 只读查看 |
 
 **管理员视角路由**（仅 admin 可访问，后端接口 Phase 5 实现）：
 
@@ -233,7 +234,8 @@
 | 操作 | 行为 |
 |:---|:---|
 | 点击「我的知识库」| 跳转 `/knowledge-bases`，显示当前用户的知识库列表 |
-| 高亮状态 | 当路由在 `/knowledge-bases` 或 `/knowledge-bases/:id` 时，该项高亮 |
+| 点击「公共知识库」| 跳转 `/knowledge-bases/public`，浏览所有 `visibility=public` 的知识库 |
+| 高亮状态 | 当路由在 `/knowledge-bases`（不含 `/public`）或 `/knowledge-bases/:id` 时，「我的知识库」高亮；当路由在 `/knowledge-bases/public` 时，「公共知识库」高亮 |
 
 #### 4.5.3 管理后台导航（仅 admin 可见）
 
@@ -306,8 +308,10 @@
 
 ## 5.5 知识库详情页（KnowledgeDetail — `/knowledge-bases/:id`）
 
-> **权限**：KB 所有者或 admin。**Phase 2.3.3 新增页面**，此前文档未定义。
+> **权限**：KB 所有者、admin 或 public KB 的任意登录用户。**Phase 2.3.3 新增页面**。
 > **对应后端**：`GET /api/knowledge-bases/{id}` + 文档接口族（`/api/knowledge-bases/{kb_id}/documents/**`）
+>
+> **非 owner 访问 public KB**：仅可查看 KB 基本信息 + 统计。文档上传区、文档表格（含筛选/分页）、编辑/删除按钮对非 owner 隐藏。用户可从该页面点击「开始问答」跳转到 `/chat?kb_id=xxx` 使用该 KB 进行问答。
 
 ### 5.5.1 页面布局
 
@@ -355,8 +359,41 @@ GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表
 与用户视角的区别：
 - 可查看**全部用户**的知识库（含 `username` 字段）
 - 可按 `user_id` 筛选
-- 不可创建/编辑（admin 只读管理）
-- 删除操作会标记 `deleting` 并展示原 owner
+- 可查看全部用户的知识库（含 private KB）
+- 可编辑 KB 元数据（名称/描述/visibility 修正）
+- 可删除 KB（违规清理），展示原 owner
+- 不可创建新 KB 或上传文档
+
+---
+
+## 5.7 公共知识库浏览页（PublicKnowledgeList — `/knowledge-bases/public`）
+
+> **权限**：所有登录用户。**Phase 2.5 新增页面**。
+> **对应后端**：`GET /api/knowledge-bases/public`（待实现）
+
+### 5.7.1 页面定位
+
+与「我的知识库」（§5）并列的独立页面，展示所有 `visibility=public` 且 `status=active` 的知识库。用户可浏览和进入 public KB 进行问答，但不可编辑/删除/上传文档。
+
+### 5.7.2 与「我的知识库」的差异
+
+| 维度 | 我的知识库 | 公共知识库 |
+|:---|:---|:---|
+| 数据源 | `GET /api/knowledge-bases`（仅当前用户） | `GET /api/knowledge-bases/public`（跨用户） |
+| 卡片信息 | KB 名称、描述、文档数、分块数 | 额外显示 `username`（KB 所有者） |
+| 操作菜单 | 编辑、删除 | 无（仅查看） |
+| 新建按钮 | 有（新建知识库） | 无 |
+| 可搜索 | 是 | 是 |
+| 点击卡片 | 进入详情页（可管理文档） | 进入详情页（只读，不可上传/管理文档） |
+
+### 5.7.3 页面布局
+
+与 KnowledgeList（§5.1）基本一致，区别：
+- 页面标题为「公共知识库」
+- 无「新建知识库」按钮
+- 卡片无操作菜单（无编辑/删除按钮）
+- 卡片额外显示 owner 用户名
+- 空状态文案：「暂无公开知识库」
 
 ---
 
@@ -540,10 +577,11 @@ Sidebar「管理后台」分组，仅 `role === 'admin'` 可见：
 > **后端接口**：`GET /api/admin/knowledge-bases`（Phase 5 实现）
 
 与用户 KB 列表（§5）的区别：
-- 可查看全部用户的知识库，含 `username` 列
+- 可查看全部用户的知识库（含 private KB），含 `username` 列
 - 可按 `user_id` 筛选
-- 不可创建/编辑（admin 只读管理）
-- 删除操作标记 `deleting` 并展示原 owner
+- 可编辑 KB 元数据（名称/描述/visibility 修正，如离职员工 KB 转 public）
+- 可删除 KB（违规清理），展示原 owner
+- 不可创建新 KB 或上传文档
 
 ### 7.4 系统概览页（`/admin/stats`）
 
@@ -648,8 +686,9 @@ function abort() {
 |:---|:---|:---|:---|
 | ChatPage | 占位页面 | — | Phase 3：完整问答 SSE、消息列表、来源引用 |
 | Sidebar | 空会话列表 + admin 导航 | 增加「我的知识库」入口（所有用户可见） | Phase 4：历史会话列表、新建对话、重命名、删除 |
-| KnowledgeList (`/knowledge-bases`) | 占位页面 | 知识库卡片网格、新建/编辑弹窗、删除确认 | — |
-| KnowledgeDetail (`/knowledge-bases/:id`) | **新增页面** | KB 信息+统计 + 文档上传区 + 文档表格 + 状态轮询 + 分块预览 | — |
+| KnowledgeList (`/knowledge-bases`) | 占位页面 | 知识库卡片网格、新建/编辑弹窗、删除确认、visibility 选择 | — |
+| PublicKnowledgeList (`/knowledge-bases/public`) | **新增页面** | 公共 KB 卡片网格（跨用户浏览，无编辑/删除/新建） | — |
+| KnowledgeDetail (`/knowledge-bases/:id`) | **新增页面** | KB 信息+统计 + 文档上传区 + 文档表格 + 状态轮询 + 分块预览；public KB 非 owner 只读 | — |
 | AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | 前端页面完成（跨用户 KB 列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/knowledge-bases` |
 | AdminDocumentList (`/admin/documents`) | 占位页面 | 前端页面完成（跨库文档列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/documents` |
 | Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |

@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.6 |
+| 文档版本 | v0.7 |
 | 最后更新 | 2026-05-22 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -64,6 +64,7 @@ CREATE TABLE knowledge_bases (
     name VARCHAR(128) NOT NULL,
     description TEXT,
     user_id BIGINT NOT NULL,
+    visibility ENUM('private', 'public') DEFAULT 'private' COMMENT 'private（仅owner可见）/ public（所有用户可检索）',
     status ENUM('active', 'deleting') DEFAULT 'active',
     chunk_count INT DEFAULT 0,
     doc_count INT DEFAULT 0,
@@ -80,6 +81,7 @@ CREATE TABLE knowledge_bases (
 | name | VARCHAR(128) | 知识库名称，与 user_id 联合唯一（同一用户下名称不重复） |
 | description | TEXT | 知识库描述 |
 | user_id | BIGINT | 创建者用户 ID |
+| visibility | ENUM | private（仅 owner 可见可检索）/ public（所有用户可检索），默认 private |
 | status | ENUM | active（正常）/ deleting（异步清理中，随后物理删除行） |
 | chunk_count | INT | 分块总数（冗余缓存，避免 COUNT 查询）。文档/KB 删除时须用 `GREATEST(0, chunk_count - N)` 原子递减 |
 | doc_count | INT | 文档总数（冗余缓存）。文档删除时须用 `GREATEST(0, doc_count - 1)` 原子递减 |

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
-| 最后更新 | 2026-05-22 |
+| 文档版本 | v0.19 |
+| 最后更新 | 2026-05-24 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 2.3.3 前端页面 + 组件测试已完成，49 用例全部通过） |
+| 状态 | 进行中（Phase 2.5 后端完成，前端待实施） |
 
 ---
 
@@ -125,11 +125,11 @@
 | A2.1 | 创建知识库 | POST `/api/knowledge-bases` | 正常 | 201, `{code:0, data:{id, name, description}}` | ✅ | 2026-05-17 | — |
 | A2.2 | 创建-名称重复 | POST | 同名 | 409, E1002 | ✅ | 2026-05-17 | — |
 | A2.3 | 列表查询 | GET | 正常 | 200, 分页列表 | ✅ | 2026-05-17 | — |
-| A2.4 | 详情查询 | GET `/{id}` | 正常 | 200 | ✅ | 2026-05-17 | — |
+| A2.4 | 详情查询 | GET `/{id}` | 正常 | 200，data 含 visibility 字段 | ✅ | 2026-05-24 | Phase 2.5 响应新增 visibility |
 | A2.5 | 详情-不存在 | GET `/{id}` | 无效 ID | 404, E1001 | ✅ | 2026-05-17 | — |
-| A2.6 | 更新知识库 | PUT `/{id}` | 正常 | 200 | ✅ | 2026-05-17 | — |
+| A2.6 | 更新知识库 | PUT `/{id}` | 正常 | 200，支持 visibility 更新 | ✅ | 2026-05-24 | Phase 2.5 支持 visibility 修改 |
 | A2.7 | 删除知识库 | DELETE `/{id}` | 正常 | 202，异步删除 | ✅ | 2026-05-17 | — |
-| A2.8 | 越权访问 | GET | 他人 KB | 403, E5005 | ✅ | 2026-05-17 | — |
+| A2.8 | 越权访问-private KB | GET | 他人 private KB | 403, E5005 | ✅ | 2026-05-24 | public KB 对非 owner 放行，见 A6.1 |
 
 ### 3.2 后端 — 文档状态枚举单元测试
 
@@ -204,11 +204,87 @@
 
 ---
 
-## 4. Phase 3 测试用例
+## 4. Phase 2.5 测试用例
+
+> Phase 2.5 知识库可见性重构，新增 visibility 字段的 Schema 校验、KB 权限矩阵、公共 KB 列表接口、前端公共 KB 页面组件测试。
+
+### 4.1 后端 — visibility Schema 校验测试
+
+| ID | 测试用例 | Schema | 输入 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U9.1 | 创建-默认 visibility | `KnowledgeBaseCreate` | 不传 visibility | visibility 默认 `"private"` | ✅ | 2026-05-24 | test_default_visibility_is_private |
+| U9.2 | 创建-显式 private | `KnowledgeBaseCreate` | `visibility="private"` | 校验通过 | ✅ | 2026-05-24 | test_explicit_private |
+| U9.3 | 创建-显式 public | `KnowledgeBaseCreate` | `visibility="public"` | 校验通过 | ✅ | 2026-05-24 | test_explicit_public |
+| U9.4 | 创建-无效 visibility 值 | `KnowledgeBaseCreate` | `visibility="invalid"` | `ValidationError` | ✅ | 2026-05-24 | test_invalid_visibility_rejected + test_visibility_case_sensitive |
+| U9.5 | 更新-visibility 可选 | `KnowledgeBaseUpdate` | 不传 visibility（仅更新 name） | `visibility=None`，校验通过 | ✅ | 2026-05-24 | test_visibility_optional |
+| U9.6 | 更新-设置 visibility | `KnowledgeBaseUpdate` | `visibility="public"` | 校验通过 | ✅ | 2026-05-24 | test_set_visibility_public |
+| U9.7 | 更新-无效 visibility 值 | `KnowledgeBaseUpdate` | `visibility="invalid"` | `ValidationError` | ✅ | 2026-05-24 | test_invalid_visibility_rejected |
+| U9.8 | 响应-含 visibility 字段 | `KnowledgeBaseResponse` | ORM 对象含 visibility | `model_validate` 成功，visibility 为字符串 | ✅ | 2026-05-24 | test_response_includes_visibility |
+
+### 4.2 后端 — KB 权限矩阵接口测试
+
+| ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A6.1 | public KB 非 owner 可读 | GET `/{id}` | 其他用户访问 public KB | 200, 含 visibility="public" | ✅ | 2026-05-24 | test_public_kb_readable_by_other_user |
+| A6.2 | private KB 非 owner 拒绝 | GET `/{id}` | 其他用户访问 private KB | 403, E5005 | ✅ | 2026-05-24 | test_private_kb_denied_to_other_user |
+| A6.3 | public KB 非 owner 不可修改 | PUT `/{id}` | 其他用户修改 public KB | 403, E5005 | ✅ | 2026-05-24 | test_public_kb_not_writable_by_other_user |
+| A6.4 | admin 可读 private KB | GET `/{id}` | admin 访问他人 private KB | 200 | ✅ | 2026-05-24 | test_admin_can_read_private_kb |
+| A6.5 | admin 可修改任意 KB visibility | PUT `/{id}` | admin 修正他人 KB visibility | 200, visibility 已更新 | ✅ | 2026-05-24 | test_admin_can_update_any_kb_visibility |
+| A6.6 | owner 可修改自己 KB visibility | PUT `/{id}` | owner 将 private→public | 200, visibility="public" | ✅ | 2026-05-24 | test_owner_can_update_visibility |
+
+### 4.3 后端 — 公共 KB 列表接口测试
+
+| ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A7.1 | 公共列表-返回 public+active | GET `/public` | 多个 KB 混合状态 | 200, 仅返回 visibility=public 且 status=active | ✅ | 2026-05-24 | test_list_public_kbs_success |
+| A7.2 | 公共列表-不返回 private | GET `/public` | private KB 存在 | private KB 不在列表中 | ✅ | 2026-05-24 | 由 list_public_kbs() WHERE visibility=public 保证 |
+| A7.3 | 公共列表-不返回 deleting | GET `/public` | deleting KB（visibility=public）存在 | deleting KB 不在列表中 | ✅ | 2026-05-24 | 由 list_public_kbs() WHERE status=active 保证 |
+| A7.4 | 公共列表-分页 | GET `/public?page=1&page_size=5` | 多页数据 | 正确分页 | ✅ | 2026-05-24 | test_list_public_pagination |
+| A7.5 | 公共列表-返回 owner 用户名 | GET `/public` | 正常 | items 含 username 字段 | ✅ | 2026-05-24 | test_list_public_includes_username |
+| A7.6 | 公共列表-未认证拒绝 | GET `/public` | 无 Token | 401, E5004 | ✅ | 2026-05-24 | test_list_public_no_auth |
+| A7.7 | 公共列表-空数据 | GET `/public` | 无 public KB | 200, total=0 | ✅ | 2026-05-24 | test_list_public_empty |
+
+### 4.4 前端 — 公共 KB 页面组件测试
+
+| ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| C5.1 | PublicKnowledgeList 渲染 | `PublicKnowledgeList` | 卡片网格 | 公共 KB 卡片正确渲染 | ⬜ | — | Phase 2.5 前端 |
+| C5.2 | PublicKnowledgeList 无新建按钮 | `PublicKnowledgeList` | 新建按钮 | 无新建/编辑/删除按钮 | ⬜ | — | Phase 2.5 前端 |
+| C5.3 | PublicKnowledgeList 显示 owner | `PublicKnowledgeList` | 卡片 | 显示 owner 用户名 | ⬜ | — | Phase 2.5 前端 |
+| C5.4 | PublicKnowledgeList 空状态 | `PublicKnowledgeList` | 无 public KB | 显示空状态提示 | ⬜ | — | Phase 2.5 前端 |
+
+### 4.5 后端 — 文档接口权限矩阵测试
+
+> 验证 ROADMAP §4.2「文档接口权限更新」：上传/reprocess 仅 owner；查看/分块/删除 owner + admin。
+
+| ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A8.1 | owner 可上传 | POST `/{kb_id}/documents` | owner 上传文档 | 201 | ✅ | 2026-05-24 | test_owner_can_upload |
+| A8.2 | admin 不可上传 | POST `/{kb_id}/documents` | admin 上传到他人 KB | 403, E5005 | ✅ | 2026-05-24 | test_admin_cannot_upload |
+| A8.3 | 其他用户不可上传 | POST `/{kb_id}/documents` | 普通用户上传到他人 KB | 403, E5005 | ✅ | 2026-05-24 | test_other_user_cannot_upload |
+| A8.4 | owner 可查看列表 | GET `/{kb_id}/documents` | owner 查看文档列表 | 200 | ✅ | 2026-05-24 | test_owner_can_list |
+| A8.5 | admin 可查看列表 | GET `/{kb_id}/documents` | admin 查看他人 KB 文档（审计） | 200 | ✅ | 2026-05-24 | test_admin_can_list |
+| A8.6 | 其他用户不可查看列表 | GET `/{kb_id}/documents` | 普通用户查看他人 KB 文档 | 403, E5005 | ✅ | 2026-05-24 | test_other_user_cannot_list |
+| A8.7 | owner 可查看详情 | GET `/{kb_id}/documents/{doc_id}` | owner 查看文档详情 | 200 | ✅ | 2026-05-24 | test_owner_can_get |
+| A8.8 | admin 可查看详情 | GET `/{kb_id}/documents/{doc_id}` | admin 查看他人文档（审计） | 200 | ✅ | 2026-05-24 | test_admin_can_get |
+| A8.9 | 其他用户不可查看详情 | GET `/{kb_id}/documents/{doc_id}` | 普通用户查看他人文档 | 403, E5005 | ✅ | 2026-05-24 | test_other_user_cannot_get |
+| A8.10 | owner 可查看分块 | GET `/{kb_id}/documents/{doc_id}/chunks` | owner 查看分块列表 | 200 | ✅ | 2026-05-24 | test_owner_can_get_chunks |
+| A8.11 | admin 可查看分块 | GET `/{kb_id}/documents/{doc_id}/chunks` | admin 查看他人文档分块（审计） | 200 | ✅ | 2026-05-24 | test_admin_can_get_chunks |
+| A8.12 | 其他用户不可查看分块 | GET `/{kb_id}/documents/{doc_id}/chunks` | 普通用户查看他人文档分块 | 403, E5005 | ✅ | 2026-05-24 | test_other_user_cannot_get_chunks |
+| A8.13 | owner 可删除 | DELETE `/{kb_id}/documents/{doc_id}` | owner 删除文档 | 202 | ✅ | 2026-05-24 | test_owner_can_delete |
+| A8.14 | admin 可删除 | DELETE `/{kb_id}/documents/{doc_id}` | admin 删除他人文档（违规清理） | 202 | ✅ | 2026-05-24 | test_admin_can_delete |
+| A8.15 | 其他用户不可删除 | DELETE `/{kb_id}/documents/{doc_id}` | 普通用户删除他人文档 | 403, E5005 | ✅ | 2026-05-24 | test_other_user_cannot_delete |
+| A8.16 | owner 可 reprocess | POST `/{kb_id}/documents/{doc_id}/reprocess` | owner 重新处理 | 200 | ✅ | 2026-05-24 | test_owner_can_reprocess |
+| A8.17 | admin 不可 reprocess | POST `/{kb_id}/documents/{doc_id}/reprocess` | admin 重新处理他人文档 | 403, E5005 | ✅ | 2026-05-24 | test_admin_cannot_reprocess |
+| A8.18 | 其他用户不可 reprocess | POST `/{kb_id}/documents/{doc_id}/reprocess` | 普通用户重新处理他人文档 | 403, E5005 | ✅ | 2026-05-24 | test_other_user_cannot_reprocess |
+
+---
+
+## 5. Phase 3 测试用例
 
 > 详细用例在 Phase 3 开发时补充。
 
-### 4.1 检索器 & RRF 单元测试
+### 5.1 检索器 & RRF 单元测试
 
 | ID | 测试用例 | 被测模块 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -219,7 +295,7 @@
 | U7.5 | RRF 融合-单路为空 | `retriever.py` | BM25 无结果 | 仅返回向量结果 | ⬜ | — | — |
 | U7.6 | NoopReranker | `reranker.py` | 任意输入 | 截取 top_k 不改变顺序 | ⬜ | — | — |
 
-### 4.2 问答 SSE 接口测试
+### 5.2 问答 SSE 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期 SSE 事件序列 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -228,7 +304,7 @@
 | A4.3 | 空知识库 | POST | kb 无文档 | error (E4001) | ⬜ | — | — |
 | A4.4 | 无效 kb_id | POST | 不存在 KB | error (E1001) | ⬜ | — | — |
 
-### 4.3 前端 — 问答页 & SSE 解析测试
+### 5.3 前端 — 问答页 & SSE 解析测试
 
 | ID | 测试用例 | 组件/模块 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -245,7 +321,7 @@
 
 ---
 
-## 5. Phase 4 测试用例
+## 6. Phase 4 测试用例
 
 > 详细用例在 Phase 4 开发时补充。
 
@@ -262,9 +338,9 @@
 
 ---
 
-## 6. 专项测试用例
+## 7. 专项测试用例
 
-### 6.1 离线检索评估（Phase 2 完成执行）
+### 7.1 离线检索评估（Phase 2 完成执行）
 
 | ID | 评估项目 | 指标 | 目标值 | 实际值 | 状态 | 执行日期 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -274,12 +350,12 @@
 | E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ⬜ | — | — |
 | E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ⬜ | — | — |
 
-### 6.2 回归测试（每次提交运行）
+### 7.2 回归测试（每次提交运行）
 
 - 测试集规模：25-30 固定问题
 - 通过标准：Recall@5 ≥ 0.85、全部非空、来源有效、SSE 正确、无系统错误
 
-### 6.3 压测（Phase 5 执行）
+### 7.3 压测（Phase 5 执行）
 
 | ID | 场景 | 并发 | 持续时间 | P50 目标 | P99 目标 | 错误率 | 状态 | 执行日期 |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
@@ -290,7 +366,7 @@
 
 ---
 
-## 7. 测试覆盖率目标
+## 8. 测试覆盖率目标
 
 | 模块 | 覆盖率目标 | 当前值 | 备注 |
 |:---|:---|:---|:---|
@@ -298,7 +374,7 @@
 | `core/exceptions.py` | ≥ 80% | ✅ 已覆盖 | E2001-E2013/E5005 等文档异常全部覆盖 |
 | `services/auth_service.py` | ≥ 80% | ✅ 100% | 7 个测试全覆盖 |
 | `api/auth.py` (接口测试) | ≥ 90% | ✅ 100% | 14 个测试全覆盖 |
-| `api/document.py` (接口测试) | ≥ 90% | ✅ 100% | 47 个测试全覆盖（上传/批量/列表/详情/分块/删除/reprocess）|
+| `api/document.py` (接口测试) | ≥ 90% | ✅ 100% | 65 个测试全覆盖（上传/批量/列表/详情/分块/删除/reprocess + 权限矩阵 18 用例）|
 | `schemas/auth.py` | ≥ 85% | ✅ 100% | 10 个测试全覆盖 |
 | `models/` | ≥ 70% | ✅ 已覆盖 | U4.1-U4.3 已实现 |
 | `ingest/lock.py` | ≥ 80% | ✅ 100% | 16 个测试全覆盖（幂等锁获取/重复拒绝/过期重入） |
@@ -306,12 +382,16 @@
 | `rag/chunker.py` | ≥ 80% | ✅ 100% | 37 个测试全覆盖（分隔符优先级/偏移量页码追踪/中英文自适应token估算/重叠） |
 | `rag/embedder.py` | ≥ 80% | ✅ 100% | 26 个测试全覆盖（DashScope API/重试/批量/响应解析/指数退避） |
 | `core/storage.py` | ≥ 80% | ✅ 100% | 37 个测试全覆盖（sanitize_filename/generate_stored_filename/LocalStorage save/read/delete/空目录清理） |
+| `schemas/knowledge_base.py` | ≥ 85% | ✅ 100% | visibility 字段校验 10 用例（U9.1-U9.8），Phase 2.5 |
+| `services/knowledge_base_service.py` | ≥ 80% | ✅ 100% | 权限矩阵 6 用例（A6.1-A6.6）+ 公共列表 5 用例（A7.1-A7.7），Phase 2.5 |
+| `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
+| `services/document_service.py` | ≥ 80% | ✅ 100% | `owner_only` 权限分离 18 用例（A8.1-A8.18），Phase 2.5 |
 | 前端 `utils/` | ≥ 80% | ⬜ | sse.js / markdown.js 待 Phase 3 |
 | 前端组件 | ≥ 60% | ✅ 49 通过 | LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(12) 全部通过 |
 
 ---
 
-## 8. 相关文档
+## 9. 相关文档
 
 - [测试策略文档](TESTING.md) — 6 层测试体系详细说明
 - [开发排期](ROADMAP.md) — 各 Phase 测试任务与准入规则

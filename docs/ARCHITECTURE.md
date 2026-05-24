@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.12 |
+| 文档版本 | v0.13 |
 | 最后更新 | 2026-05-22 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -564,6 +564,25 @@ class StorageBackend(ABC):
 class LocalStorage(StorageBackend): ...    # 当前使用
 class OSSStorage(StorageBackend): ...      # 后续扩展
 ```
+
+---
+
+### 7.6 知识库可见性模型（弱混合模式）
+
+**设计原则**：`visibility` 控制 READ（谁能看），`ownership` 控制 WRITE（谁能改）。
+
+**决策背景**：当前权限模型为「仅 owner 能看自己的 KB + admin 全局只读」。PRD 描述的跨部门知识共享场景（如技术查财务文档）要求非 owner 也能检索特定 KB，但完整多租户/ACL 方案复杂度远超当前项目阶段需要。
+
+**方案**：`knowledge_bases` 表新增 `visibility` 字段（`ENUM('private', 'public')`，默认 `'private'`）。
+
+| 维度 | 控制字段 | 规则 |
+|:---|:---|:---|
+| READ（查看/检索） | `visibility` | `private` → 仅 owner + admin；`public` → 所有登录用户 |
+| WRITE（编辑/删除/上传） | `ownership` (`user_id`) | 仅 owner 可编辑/上传文档；admin 可删除 KB/文档（违规清理）和修正 KB 元数据（名称/描述/visibility），但不上传文档 |
+
+**代码约束**：所有 KB 接口必须先判断 visibility（能否读）再判断 ownership（能否写），两步校验不可合并。admin 角色拥有管理级写权限（删除 + 元数据修改），但不是 owner 的完全替代（不上传文档）。禁止在代码中硬编码「只有 owner 能看/改 KB」的假设。
+
+**详细规则**：见 PRD.md §5 知识库可见性模型。
 
 ---
 

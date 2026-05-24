@@ -1,5 +1,112 @@
 # DocMind 变更日志
 
+## 2026-05-24 — Phase 2.5 后端实现：知识库可见性重构
+
+### 背景
+
+Phase 2.5 需求：知识库新增 `visibility` 字段（`private`/`public`），实现「弱混合模式」——`visibility` 控制 READ，`ownership` 控制 WRITE。后端先行：数据库迁移 → ORM → Schema → Service → API。
+
+### 数据库迁移
+
+| 迁移文件 | 版本链 | 变更 |
+|:---|:---|:---|
+| `8fa3ea12b75e_knowledge_bases新增visibility字段.py` | `687b64790b37` → `8fa3ea12b75e` | `knowledge_bases` 新增 `visibility ENUM('private','public') DEFAULT 'private'` |
+
+### 代码修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/models/knowledge_base.py` | 新增 `visibility` 字段：`Mapped[str]`，`Enum("private", "public")`，`default="private"`，`server_default="'private'"` |
+| `backend/app/schemas/knowledge_base.py` | `KnowledgeBaseCreate` 新增 `visibility: str = Field("private", pattern="^(private|public)$")`；`KnowledgeBaseUpdate` 新增 `visibility: str \| None = Field(None, pattern="^(private|public)$")`；`KnowledgeBaseResponse` 新增 `visibility: str` 字段；新增 `PublicKnowledgeBaseResponse`（含 `username`）+ `PublicKnowledgeBaseListResponse` |
+| `backend/app/schemas/__init__.py` | 导出 `PublicKnowledgeBaseResponse`、`PublicKnowledgeBaseListResponse` |
+| `backend/app/services/knowledge_base_service.py` | `create_kb()` 支持 visibility 参数；`get_kb()` 权限重构：public KB 所有登录用户可读，private KB 仅 owner + admin 可读；新增 `list_public_kbs()` 查询 visibility=public + status=active（JOIN users 获取 owner 用户名）；`update_kb()` 支持 visibility 字段更新（owner 改自己的，admin 改任意 KB） |
+| `backend/app/api/knowledge_base.py` | 新增 `GET /api/knowledge-bases/public` 端点（路由在 `/{kb_id}` 之前）；`GET /{kb_id}` 适配 public KB 可见性；`PUT /{kb_id}` 支持 visibility 修改 |
+
+### 测试文档同步
+
+| 文件 | 版本变更 | 主要变更 |
+|:---|:---|:---|
+| `docs/TEST_CASES.md` | v0.17→v0.18 | 新增 §4 Phase 2.5 测试用例（Schema 校验 8 个 + 权限矩阵接口 6 个 + 公共 KB 列表接口 7 个 + 前端组件 4 个）；A2.4/A2.6/A2.8 更新描述对齐 visibility 模型；§7→§8 覆盖率表新增 `schemas/knowledge_base.py`、`services/knowledge_base_service.py`、`api/knowledge_base.py (public)` 三行；文档版本号更新 |
+| `docs/TESTING.md` | v0.4→v0.5 | §9 测试执行计划新增 Phase 2.5 四个测试行（Schema 校验/权限矩阵/公共列表/前端组件）|
+| `docs/ROADMAP.md` | — | §4.2 后端实现 5 项标记 ✅（DB迁移/ORM/Schema/Service/API），文档接口权限和问答接口权限标记为后续验证 |
+
+### 测试结果
+
+- 后端：343/343 全部通过（零回归）
+- Phase 2.5 新增测试 39 个：
+  - Schema 校验 10 个（`TestKnowledgeBaseCreateVisibility` 5 + `TestKnowledgeBaseUpdateVisibility` 4 + `TestKnowledgeBaseResponseVisibility` 1）
+  - KB 权限矩阵 6 个（`TestVisibilityPermissionMatrix`）
+  - 公共 KB 列表 5 个（`TestPublicKbList`）
+  - 文档接口权限 18 个（`TestDocumentPermissionMatrix`：上传 3 + 列表 3 + 详情 3 + 分块 3 + 删除 3 + reprocess 3）
+
+### 文档接口权限更新
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/document_service.py` | `_check_kb_ownership` 新增 `owner_only` 参数：`True` 时仅 owner 可操作（admin 也不允许），用于上传/reprocess；`False`（默认）时 owner + admin 均可操作，用于查看/分块/删除 |
+| `backend/tests/test_document_api.py` | 新增 `TestDocumentPermissionMatrix`（18 用例）覆盖全部权限组合；修复 `test_upload_admin_can_access` → `test_upload_admin_denied`（上传仅 owner） |
+
+### 权限模型总结
+
+| 操作 | owner | admin | 其他用户 |
+|:---|:---|:---|:---|
+| 上传文档 | ✅ | ❌ | ❌ |
+| 批量上传 | ✅ | ❌ | ❌ |
+| 查看文档列表 | ✅ | ✅ | ❌（public KB 除外） |
+| 查看文档详情 | ✅ | ✅ | ❌（public KB 除外） |
+| 查看文档分块 | ✅ | ✅ | ❌（public KB 除外） |
+| 删除文档 | ✅ | ✅ | ❌ |
+| 重新处理 | ✅ | ❌ | ❌ |
+
+---
+
+## 2026-05-22 — 知识库可见性模型：弱混合模式文档体系建立
+
+### 背景
+
+当前权限模型为「仅 owner 能看自己的 KB + admin 全局只读」，与 PRD 描述的跨部门知识共享场景不匹配。采用「弱混合模式」——`visibility` 控制 READ，`ownership` 控制 WRITE——用一个字段解决核心矛盾，不做 ACL/多租户。
+
+### 文档修改
+
+| 文件 | 版本变更 | 主要变更 |
+|:---|:---|:---|
+| `docs/PRD.md` | v0.3→v0.4 | 新增 §5「知识库可见性模型」：ownership 归属规则、visibility 规则、CRUD 权限矩阵（user/admin × 各操作）、问答检索范围、暂时不做的推迟项说明 |
+| `docs/ARCHITECTURE.md` | v0.12→v0.13 | 新增 §7.6「知识库可见性模型（弱混合模式）」设计决策：决策背景、方案、代码约束 |
+| `backend/docs/DATABASE.md` | v0.6→v0.7 | §2.2 `knowledge_bases` 表新增 `visibility ENUM('private','public') DEFAULT 'private'` 列 + 字段说明 |
+| `backend/docs/API.md` | v0.10→v0.11 | §3 KB 创建/列表/详情/更新接口补充 visibility 字段；新增 `GET /api/knowledge-bases/public` 端点；§9 权限速查表全面更新（public 可读约束 + admin 只读约束 + 文档接口仅 owner 可写） |
+| `frontend/docs/FRONTEND.md` | v0.4→v0.5 | §2.1 路由表新增 `/knowledge-bases/public`（PublicKnowledgeList）；§4.5.2 侧边栏新增「公共知识库」入口；新增 §5.7 公共知识库浏览页规格（布局、与我的 KB 差异、卡片行为）；§5.5 KB 详情页增加 public KB 非 owner 只读说明；§11 TODO 更新 |
+| `docs/ROADMAP.md` | v0.13→v0.14 | 新增 §4「Phase 2.5：知识库可见性重构」（1-2 天）：业务规则文档、后端实现、前端实现、测试 4 个子任务组；依赖关系图更新（Phase 2→2.5→3） |
+| `CLAUDE.md` | — | 关键约定→后端 新增「权限分离原则（visibility / ownership）」约束；文档索引 PRD 描述更新为「需求/验收/权限模型」 |
+
+### 设计决策
+
+| # | 决策 | 文档位置 |
+|:---|:---|:---|
+| 14 | 弱混合模式：`visibility` 控制 READ，`ownership` 控制 WRITE | PRD.md §5, ARCHITECTURE.md §7.6 |
+
+### 2026-05-23 — Admin 权限修正
+
+**问题**：初始版本将 admin 设为「全局只读管理」，但「管理」天然需要写权限。只能看不能动的 admin 实际什么都做不了（无法删除违规 KB、无法修正不当元数据、无法审计 private KB 内容）。
+
+**修正**：
+
+| 操作 | 修正前 | 修正后 | 理由 |
+|:---|:---|:---|:---|
+| 查看 KB | 只读（公私皆可） | 含 private KB 审计 | 审计需要 |
+| 编辑 KB 元数据 | ❌ | ✅ | 修正不当名称/离职员工 KB 转 public |
+| 删除 KB | ✅ | ✅ | 不变 |
+| 上传文档 | ❌ | ❌ | 不越权写入（不变） |
+| 删除文档 | ❌ | ✅ | 逐文档违规清理，不必整库删除 |
+| 查看文档/分块 | ❌ | ✅ | 审计 private KB 内容 |
+
+**涉及文档**：PRD.md §5.1/§5.3/§5.4（权限矩阵）、ARCHITECTURE.md §7.6（设计决策）、API.md §9（权限速查表）、CLAUDE.md（权限分离约束）、ROADMAP.md §4.2（任务描述）、FRONTEND.md §5.6/§7.3（Admin 页面描述）
+
+### 代码变更
+
+本次仅文档，无代码变更。代码实现将在 Phase 2.5 进行（数据库迁移 + API 权限重构 + 前端页面）。
+
+---
+
 ## 2026-05-22 — Phase 2.3.3 前端测试：组件测试编写并全部通过
 
 ### 新增
