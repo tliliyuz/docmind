@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.12 |
-| 最后更新 | 2026-05-22 |
+| 文档版本 | v0.13 |
+| 最后更新 | 2026-05-27 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -279,9 +279,9 @@ MYSQL_DATABASE=docmind
 CHROMA_PERSIST_DIR=./chroma_data
 
 # LLM (OpenAI 兼容 — DeepSeek)
-LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_BASE_URL=https://api.deepseek.com
 LLM_API_KEY=sk-xxx
-LLM_MODEL=deepseek-chat
+LLM_MODEL=deepseek-v4-pro
 
 # Embedding (DashScope)
 EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/api/v1

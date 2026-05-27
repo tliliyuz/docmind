@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.7 |
-| 最后更新 | 2026-05-24 |
+| 文档版本 | v0.9 |
+| 最后更新 | 2026-05-25 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -156,22 +156,32 @@
 │  Sidebar (280px)              │  Main Content               │
 │  ─────────────────────────────┤  ─────────────────────────  │
 │  Logo + 新建对话               │  Top: 知识库选择器            │
-│  ─────────────────────────────┤  ─────────────────────────  │
-│  历史会话列表                  │  MessageList               │
-│  • 鼠标悬停显示重命名/删除      │  • WelcomeScreen（空态）     │
-│  • 点击切换会话                │  • User Bubble              │
+│  ─────────────────────────────┤    <el-select> +            │
+│  历史会话列表（Phase 4）        │    <el-option-group>        │
+│  • 会话空态 + 新建提示          │    ├─ 我的知识库             │
+│  ─────────────────────────────┤    └─ 公共知识库             │
+│  [所有用户] 我的知识库           │  ─────────────────────────  │
+│  • 点击进入 /knowledge-bases   │  MessageList               │
+│  [所有用户] 公共知识库           │  • WelcomeScreen（空态）     │
+│  • 点击进入 /kb/public         │  • User Bubble              │
 │  ─────────────────────────────┤  • Assistant Bubble         │
-│  [所有用户] 我的知识库           │    - thinking box           │
-│  • 点击进入 /knowledge-bases   │    - markdown content       │
-│  ─────────────────────────────┤                             │
-│  [admin] 管理后台              │    - sources box            │
-│  • 知识库管理 / 文档管理 / …   │  ─────────────────────────  │
-│  ─────────────────────────────┤  ChatInput                   │
-│  用户头像 + 退出按钮             │  • 输入框 + 发送按钮          │
-│  • 点击头像→个人资料（预留）     │  • 深度思考开关               │
-│  • 点击退出→提示+跳转登录页      │  • 快捷键：Enter 发送          │
-└───────────────────────────────┴─────────────────────────────┘
+│  [admin] 管理后台              │    - thinking box（黄色折叠） │
+│  • 知识库管理 / 文档管理 / …   │    - markdown content       │
+│  ─────────────────────────────┤    - sources box            │
+│  用户头像 + 退出按钮             │  ─────────────────────────  │
+│  • 点击头像→个人资料（预留）     │  ChatInput                   │
+│  • 点击退出→提示+跳转登录页      │  • 输入框 + 发送按钮          │
+│                                  │  • 深度思考开关               │
+│                                  │  • 快捷键：Enter 发送          │
+└──────────────────────────────┴─────────────────────────────┘
 ```
+
+**知识库选择器**（ChatPage 顶部）：
+
+- 数据来源：`GET /api/knowledge-bases/selectable`（Phase 3 新增接口）
+- 渲染方式：`<el-select>` + `<el-option-group label="我的知识库">` + `<el-option-group label="公共知识库">`
+- 默认选中：最近一次使用的 KB（前端 localStorage 缓存 `last_kb_id`）
+- 切换 KB：新建会话（`conversation_id=null`），不同 KB 的对话使用不同会话
 
 ### 4.2 核心问答交互流程
 
@@ -185,15 +195,35 @@
 调用 chatStore.sendMessage() → POST /api/chat（SSE）
     ↓
 接收 SSE 事件流：
-  event: meta      → 记录 conversation_id、task_id
-  event: thinking  → 展开思考过程框，实时追加内容
+  event: meta      → 记录 conversation_id（新对话时后端自动创建）、task_id
+  event: thinking  → 展开思考过程框（黄色折叠面板），实时追加内容
   event: message   → 逐字追加到助手消息内容区（Markdown 实时渲染）
   event: sources   → 在消息底部渲染引用来源卡片
-  event: finish    → 关闭 typing，更新消息 ID，保存标题
+  event: finish    → 关闭 typing，更新消息 ID，首轮保存 title
   event: error     → 替换为错误提示，关闭 typing
+  : ping\n\n       → SSE 心跳注释帧（15s 间隔），前端忽略
     ↓
 用户可点击「停止生成」中断 SSE 连接
 ```
+
+**会话自动创建**（Phase 3 单轮模式）：
+- 新对话时前端传 `conversation_id=null`，后端自动创建会话并通过 `event: meta` 返回新 `conversation_id`
+- 前端收到 `meta` 事件后更新 `chatStore.currentConversationId`，后续追问使用该 ID
+- Phase 3 单轮问答不注入历史（`history=[]`），Phase 4 开始支持多轮记忆
+
+**对话标题生成**：
+- 首轮问答的 `event: finish` 中返回 `title` 字段（截取用户问题前 12 字）
+- 前端将 title 存入会话列表，侧边栏显示为会话标题
+- 后续轮次 `finish` 事件不返回 title（或为 null），标题保持不变
+
+**thinking_content 展示**（仅 `deep_thinking=true` 时）：
+- `event: thinking` 到达时，助手气泡内展开黄色边框折叠面板，内容逐字追加
+- 默认展开，用户可手动折叠
+- **仅前端实时展示，不落库**：刷新页面后 thinking 内容丢失，消息历史中不存在
+
+**SSE 心跳处理**：
+- 后端每 15 秒发送 `: ping\n\n` 注释帧防止代理超时断连
+- 浏览器原生 `EventSource` / `fetch` 读取 SSE 时自动忽略注释帧（以 `:` 开头），前端无需特殊处理
 
 ### 4.3 输入框行为（ChatInput）
 
@@ -222,7 +252,7 @@
 
 | 操作 | 行为 |
 |:---|:---|
-| 点击「新建对话」| 清空当前消息列表，conversation_id 设为 null，标题自动在首轮生成 |
+| 点击「新建对话」| 清空当前消息列表，重置 `conversation_id=null`，首轮问答时后端自动创建会话并通过 `event: meta` 返回新 ID，标题由首轮 `finish` 事件自动生成 |
 | 点击历史会话 | 加载该会话的消息历史，切换 conversation_id |
 | 悬停会话项 | 显示重命名和删除图标按钮 |
 | 重命名 | 点击后标题变为可编辑输入框，Enter 保存，Esc 取消 |
@@ -640,17 +670,62 @@ Sidebar「管理后台」分组，仅 `role === 'admin'` 可见：
 ### 9.1 连接管理
 
 ```js
-// 使用 EventSource 或 fetch + ReadableStream
-const eventSource = new EventSource('/api/chat')
+// 使用 fetch + ReadableStream 读取 SSE（推荐，支持 POST 请求）
+const response = await fetch('/api/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+  body: JSON.stringify({ question, kb_id, conversation_id, deep_thinking })
+})
 
-// 支持手动中断
+const reader = response.body.getReader()
+const decoder = new TextDecoder()
+let buffer = ''
+
+while (true) {
+  const { done, value } = await reader.read()
+  if (done) break
+  buffer += decoder.decode(value, { stream: true })
+
+  // 按 \n\n 分割 SSE 事件
+  const events = buffer.split('\n\n')
+  buffer = events.pop()  // 保留未完成的事件片段
+
+  for (const event of events) {
+    if (!event.trim()) continue
+    parseSSEEvent(event)  // 解析 event: xxx\ndata: {...}
+  }
+}
+
+// 手动中断
 function abort() {
-  eventSource.close()
+  reader.cancel()
   chatStore.streaming = false
 }
 ```
 
-### 9.2 事件处理状态机
+> **为什么不用 EventSource**：`EventSource` API 仅支持 GET 请求，无法发送 POST body。问答请求体包含 `question`、`kb_id` 等参数，必须用 `fetch + ReadableStream` 实现 SSE 读取。
+
+### 9.2 SSE 心跳处理
+
+后端每 **15 秒**发送 SSE 注释帧 `: ping\n\n`，防止 Nginx/Cloudflare 代理超时断连。注释帧以 `:` 开头，SSE 协议规定客户端忽略注释行，前端解析时直接跳过：
+
+```js
+function parseSSEEvent(raw) {
+  const lines = raw.split('\n')
+  let event = 'message'
+  let data = ''
+
+  for (const line of lines) {
+    if (line.startsWith(':')) continue  // 忽略心跳注释帧
+    if (line.startsWith('event: ')) event = line.slice(7)
+    else if (line.startsWith('data: ')) data = line.slice(6)
+  }
+
+  return { event, data: data ? JSON.parse(data) : null }
+}
+```
+
+### 9.3 事件处理状态机
 
 ```
 [idle] --发送请求--> [streaming]
@@ -659,12 +734,24 @@ function abort() {
 [streaming] --用户点击停止 --> [idle]
 ```
 
-### 9.3 内容渲染策略
+### 9.4 事件处理详情
+
+| 事件类型 | 触发条件 | 前端处理 |
+|:---|:---|:---|
+| meta | 连接建立后首个事件 | 记录 `conversation_id`（新对话时后端自动创建）、`task_id` |
+| thinking | `deep_thinking=true` 时 | 助手气泡内展开黄色边框折叠面板，内容逐字追加。**仅实时展示，不落库**（刷新丢失） |
+| message | 正常生成 | 逐字追加到助手消息内容区，Markdown 实时渲染 |
+| sources | 检索结果就绪（message 前或后） | 消息底部渲染引用来源卡片（文档名 + 相关度分数 + 页码） |
+| finish | 全部输出完毕 | 关闭 typing 动画，更新消息 ID，首轮保存 title，记录 token_usage |
+| error | 检索/LLM 异常 | 替换 typing 为错误提示卡片，关闭 streaming 状态 |
+| (注释帧) | 每 15s | `: ping\n\n`，解析时跳过，用户不可见 |
+
+### 9.5 内容渲染策略
 
 | 事件类型 | 渲染方式 |
 |:---|:---|
-| thinking | 黄色边框卡片，内容逐字追加，支持展开/折叠 |
-| message | Markdown 实时渲染，代码块高亮，支持复制 |
+| thinking | 黄色边框卡片，内容逐字追加，默认展开可手动折叠 |
+| message | Markdown 实时渲染，代码块高亮，支持一键复制 |
 | sources | 折叠面板，默认展开，显示文档名 + 相关度分数 + 页码 |
 
 ---
@@ -683,17 +770,20 @@ function abort() {
 
 ## 11. 已知 TODO
 
-| 模块 | 当前状态 | Phase 2.3.3 实现 | 后续 Phase |
+| 模块 | 当前状态 | Phase 3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
-| ChatPage | 占位页面 | — | Phase 3：完整问答 SSE、消息列表、来源引用 |
-| Sidebar | 空会话列表 + admin 导航 | 增加「我的知识库」入口（所有用户可见） | Phase 4：历史会话列表、新建对话、重命名、删除 |
-| KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | 知识库卡片网格、新建/编辑弹窗、删除确认、visibility 选择 | — |
-| PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | 公共 KB 卡片网格（跨用户浏览，无编辑/删除/新建） | — |
-| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | KB 信息+统计 + 文档上传区 + 文档表格 + 状态轮询 + 分块预览；public KB 非 owner 只读 | — |
-| AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | 前端页面完成（跨用户 KB 列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/knowledge-bases` |
-| AdminDocumentList (`/admin/documents`) | 占位页面 | 前端页面完成（跨库文档列表），后端接口 Phase 5 | Phase 5：联调 `GET /api/admin/documents` |
+| ChatPage | Phase 3 实现中 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：历史会话列表集成、多轮对话 |
+| ChatPage Sidebar | 空会话列表 + 基本导航 | KB 选择器（下拉）集成到 ChatPage 顶部 | Phase 4：历史会话列表、新建对话、重命名、删除、按时间分组 |
+| KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | — | — |
+| PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | — | — |
+| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | — |
+| AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/knowledge-bases` |
+| AdminDocumentList (`/admin/documents`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/documents` |
 | Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
-| 状态轮询 | 无 | 2s 间隔轮询非终态，终态停止，5 分钟超时 | Phase 5：可选升级 WebSocket |
+| 状态轮询 | ✅ 已实现 | — | Phase 5：可选升级 WebSocket |
+| SSE 流式输出 | Phase 3 实现中 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
+| 会话自动创建 | Phase 3 实现中 | `conversation_id=null` 传参 → `event: meta` 返回新 ID | Phase 4：多轮历史注入 |
+| 标题自动生成 | Phase 3 实现中 | 首轮 `finish` 事件返回 title（截取 question[:12]） | — |
 
 ---
 

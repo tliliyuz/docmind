@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.7 |
-| 最后更新 | 2026-05-24 |
+| 文档版本 | v0.9 |
+| 最后更新 | 2026-05-27 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -205,7 +205,7 @@ def evaluate_retrieval(test_set, retriever):
     }
 ```
 
-> TODO: [待实现] 检索评估脚本 `backend/tests/eval_retrieval.py`，用于自动化评估向量检索、BM25、RRF 融合三者的效果差异。
+> Phase 3 实现：检索评估脚本 `backend/tests/eval_retrieval.py`，用于自动化评估向量检索、BM25、RRF 融合三者的效果差异。Phase 3 检索管线完成后执行。
 
 ---
 
@@ -356,7 +356,7 @@ def evaluate_retrieval(test_set, retriever):
 | SSE 格式正确 | 脚本校验 | 所有问题均收到 `meta` → `message` → `sources` → `finish` 事件序列 |
 | 错误率 | 脚本统计 | 无 E9xxx / E4xxx 系统级错误 |
 
-> TODO: [待实现] 回归测试脚本 `backend/tests/regression_test.py`，遍历测试集、调用 `/api/chat`、自动检查上述项并输出报告。
+> Phase 3 实现：回归测试脚本 `backend/tests/regression_test.py`，遍历测试集、调用 `/api/chat`、自动检查上述项并输出报告。Phase 3 问答 API 完成后执行。
 
 ---
 
@@ -421,8 +421,6 @@ class ChatUser(HttpUser):
 | Phase 2 | 知识库 CRUD + 文档管理 API 测试 | 接口测试 | 正常 + 错误码覆盖 | Phase 3 准入 |
 | Phase 2 | Celery 流水线测试 | 单元测试 | 幂等锁 / 解析容错 / 分块 / checkpoint | Phase 3 准入 |
 | Phase 2 | 前端 KB/Doc 页面组件测试 | 组件测试 | 网格/表格渲染、交互、状态轮询 | Phase 3 准入 |
-| Phase 2 完成 | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告 | Phase 3 准入 |
-| Phase 2 完成 | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注 | Phase 3 准入 |
 | Phase 2.5 | visibility Schema 校验测试 | 单元测试 | KnowledgeBaseCreate/Update visibility 字段校验 + 默认值 | ✅ |
 | Phase 2.5 | KB 权限矩阵接口测试 | 接口测试 | public KB 非 owner 可读/不可写；private KB 非 owner 拒绝；admin 全局可读 + 管理写 | ✅ |
 | Phase 2.5 | 公共 KB 列表接口测试 | 接口测试 | GET /public 分页 + 仅返回 public+active + 含 username | ✅ |
@@ -431,6 +429,8 @@ class ChatUser(HttpUser):
 | Phase 3 | 检索器 + RRF 测试 | 单元测试 | 检索正确性 + RRF 排序验证 | Phase 4 准入 |
 | Phase 3 | 问答 SSE API 测试 | 接口测试 | SSE 事件序列 + 错误码 | Phase 4 准入 |
 | Phase 3 | 前端 ChatPage + SSE 解析测试 | 组件+单元测试 | 消息发送/流式渲染/停止/来源引用 | Phase 4 准入 |
+| Phase 3 完成 | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告 | Phase 4 准入 |
+| Phase 3 完成 | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注 | Phase 4 准入 |
 | Phase 3 完成 | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表 | Phase 4 准入 |
 | Phase 4 | 会话 CRUD + 记忆测试 | 接口+单元测试 | 会话 API + 滑动窗口 + 问题重写 | Phase 5 准入 |
 | Phase 4 | 前端会话列表组件测试 | 组件测试 | Sidebar 会话 CRUD 交互 | Phase 5 准入 |

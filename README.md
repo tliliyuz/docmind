@@ -40,8 +40,9 @@
 ## 当前进度
 
 - [x] Phase 1 — 骨架搭建完成（模型/迁移/ChromaDB/JWT 认证/前端登录页/路由/全局样式）
-- [ ] Phase 2 — 文档入库
-- [ ] Phase 3-5 — 见 [ROADMAP.md](docs/ROADMAP.md)
+- [x] Phase 2 — 文档入库完成（解析/分块/Embedding/ChromaDB/Celery 流水线/前端 KB 管理）
+- [x] Phase 2.5 — 知识库可见性完成（visibility private/public + 公共 KB 浏览页）
+- [ ] Phase 3 — 核心问答（进行中）见 [ROADMAP.md](docs/ROADMAP.md)
 
 ---
 

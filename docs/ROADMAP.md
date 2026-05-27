@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
-| 最后更新 | 2026-05-25 |
+| 文档版本 | v0.20 |
+| 最后更新 | 2026-05-27 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -175,7 +175,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 |:---|:---|:---|:---|
 | ✅ | visibility 字段校验测试 | 单元测试 | `TestKnowledgeBaseCreateVisibility`（5 用例）+ `TestKnowledgeBaseUpdateVisibility`（4 用例）+ `TestKnowledgeBaseResponseVisibility`（1 用例） |
 | ✅ | KB 权限矩阵接口测试 | 接口测试 | `TestVisibilityPermissionMatrix`（6 用例）：public KB 非 owner 可读/不可写；private KB 非 owner 拒绝；admin 全局读写 |
-| ✅ | 公共 KB 列表接口测试 | 接口测试 | `TestPublicKbList`（5 用例）：分页 + 仅返回 public+active + username + 无认证访问 |
+| ✅ | 公共 KB 列表接口测试 | 接口测试 | `TestPublicKbList`（5 用例）：分页 + 仅返回 public+active + username + 未认证拒绝 |
 | ✅ | 前端公共 KB 页组件测试 | 组件测试 | PublicKnowledgeList 渲染 + 无编辑/删除/新建按钮（10 用例） |
 
 ### 4.5 本阶段不做的
@@ -193,34 +193,107 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 **目标**：单轮问答全链路跑通，SSE 流式输出，前端展示答案及引用来源。
 
-| 状态 | 任务 | 说明 |
-|:---|:---|:---|
-| ⬜ | 向量检索 | ChromaDB 语义检索 |
-| ⬜ | BM25 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 |
-| ⬜ | RRF 多路融合 | k=60 合并两路结果 |
-| ⬜ | NoopReranker | 占位实现，截取 top_k |
-| ⬜ | Prompt 组装 | 拼接检索结果 + 用户问题 |
-| ⬜ | LLM 调用 | DeepSeek API，含 thinking_content |
-| ⬜ | SSE 流式输出 | sse-starlette，event 类型 meta/thinking/message/sources/finish/error |
-| ⬜ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索（从 Phase 2.5 移入） |
-| ⬜ | 前端问答界面 | ChatPage + MessageList + ChatInput + SSE 解析 |
-| ⬜ | 来源引用展示 | 答案末尾展示引用文档名 |
+### 5.1 后端：RAG 检索管线
 
-### 4.1 Phase 3 测试
+| 状态 | 任务 | 说明 | 依赖决策 |
+|:---|:---|:---|:---|
+| ⬜ | 向量检索器 | ChromaDB `collection.query()` 语义检索，`where={"kb_id": kb_id}` 过滤，返回 top_k=10 | 决策 #15、#21 |
+| ⬜ | BM25 关键词检索器 | `rank-bm25` (BM25Okapi) + `jieba.lcut` 分词，每个 KB 独立索引 | 决策 #16 |
+| ⬜ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建 | 决策 #16 |
+| ⬜ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
+| ⬜ | NoopReranker | 占位实现：按 chunk 长度升序排列后截取 top_k=5，保证短 chunk（高信息密度）优先 | 决策 #18 |
+| ⬜ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时尝试下一个更短 chunk 而非 break），按 chunk 长度升序择优填充 | 决策 #19 |
+| ⬜ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关 + `reasoning_effort="high"` 控制强度，解析 `content` + `reasoning_content` | 决策 #20 |
+| ⬜ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index` | 决策 #21 |
+
+### 5.2 后端：Chat API 与 SSE
+
+| 状态 | 任务 | 说明 | 依赖决策 |
+|:---|:---|:---|:---|
+| ⬜ | ChatRequest Schema | Pydantic model：`conversation_id: int\|None`、`kb_id: int`、`question: str`（≤2000字符）、`deep_thinking: bool=False` | — |
+| ⬜ | Chat Service 核心流程 | `chat_service.chat()` — 检索 → RRF → Rerank → Prompt → LLM SSE 流式，阶段化错误处理（检索失败 E4003 / LLM失败 E4002） | — |
+| ⬜ | SSE 流式输出 | 手动 `StreamingResponse`（不用 sse-starlette），事件类型：meta → thinking → message → sources → finish → error，15s 心跳注释帧 `: ping\n\n` | 决策 #22 |
+| ⬜ | 会话自动创建 | `conversation_id=null` 时自动创建会话（`kb_id` 记录问答目标 KB），不注入历史消息（`history=[]`），数据结构兼容 Phase 4 | 决策 #23 |
+| ⬜ | 标题自动生成 | 截取用户问题前 12 字（`question[:12]`），去除标点。首轮问答后 `event: finish` 返回 title；后续轮次不更新标题 | 决策 #24 |
+| ⬜ | thinking_content 传输 | `deep_thinking=true` 时解析 DeepSeek `reasoning_content` → `event: thinking` 流式推送。**不落库**（`messages.thinking_content=null`），仅前端实时展示 | 决策 #25 |
+| ⬜ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索 | — |
+| ⬜ | KB 选择器接口 | `GET /api/knowledge-bases/selectable` 返回 `{"mine": [...], "public": [...]}`（mine=用户全部 KB，public=他人 public KB），前端直接渲染 `<el-option-group>` | 决策 #26 |
+| ⬜ | Chat Router 注册 | `main.py` 注册 `chat_router`（`prefix="/api"`） | — |
+
+### 5.3 前端：问答界面
+
+| 状态 | 任务 | 说明 | 依赖决策 |
+|:---|:---|:---|:---|
+| ⬜ | KB 选择器 | ChatPage 顶部 `<el-select>` + `<el-option-group>`（「我的知识库」/「公共知识库」），数据来源 `GET /api/knowledge-bases/selectable`，默认选中最近使用的 KB | 决策 #26 |
+| ⬜ | ChatInput 组件 | 输入框（≤2000字符计数字）+ Enter 发送 / Shift+Enter 换行 + 深度思考开关 + 发送中切换为「停止生成」按钮 | FRONTEND.md §4.3 |
+| ⬜ | MessageList 组件 | 消息列表：用户气泡 + AI 气泡（Markdown 实时渲染）+ thinking 折叠面板 + sources 引用卡片；自动滚动到底部，手动上滚时显示「新消息」浮动按钮 | FRONTEND.md §4.4 |
+| ⬜ | MessageItem 组件 | 单条消息渲染：角色头像 + 内容区（markdown-it 渲染）+ thinking 黄色折叠面板 + sources 文档链接（点击预览分块内容） | — |
+| ⬜ | WelcomeScreen 组件 | 空消息列表时展示：Logo + 欢迎语 + 快捷问题卡片（点击自动填入输入框并发送） | FRONTEND.md §4.6 |
+| ⬜ | SSE 解析工具 `sse.js` | `fetch` + `ReadableStream` 解析 SSE 事件流（`event:` 行 + `data:` 行），支持 6 种事件类型 + 格式异常容错 + 心跳帧忽略 | 决策 #22 |
+| ⬜ | Markdown 渲染工具 `markdown.js` | `markdown-it` 封装，代码块高亮 + 一键复制 + 安全过滤（XSS 防护） | — |
+| ⬜ | ChatStore (Pinia) | 消息列表状态 + `sendMessage()` SSE 流式消费 + `abort()` 中断 + `conversation_id` 管理 | — |
+| ⬜ | Chat API 封装 `api/chat.js` | `sendMessage(params, onEvent, onError)` — fetch SSE 流，回调式事件分发 | — |
+| ⬜ | 来源引用展示 | `event: sources` 事件在消息底部渲染引用文档卡片（doc_name + score + page），点击展开分块预览弹窗 | — |
+| ⬜ | Sidebar 会话入口适配 | 会话区域先展示空态（Phase 4 实现 CRUD），「新建对话」按钮清空消息列表 + conversation_id=null | — |
+
+### 5.4 本阶段不做的
+
+| 推迟项 | 排期 | 原因 |
+|:---|:---|:---|
+| 结构感知分块（Markdown 标题层级） | Phase 5+ | Phase 3 继续用固定大小分块，检索质量已够用 |
+| 意图识别（知识查询/闲聊分类） | Phase 5 | 单轮问答先跑通核心链路 |
+| 问题重写（多轮上下文补全） | Phase 4 | Phase 3 仅单轮，不注入历史 |
+| 会话 CRUD（列表/重命名/删除） | Phase 4 | Phase 3 仅自动创建 + 标题生成 |
+| DashScope Rerank API | Phase 3+ | 先用 NoopReranker 占位跑通链路 |
+| 对话历史注入 Prompt | Phase 4 | Phase 3 `history=[]`，数据结构兼容 Phase 4 |
+| thinking_content 持久化 | Phase 5+ | Phase 3 仅流式展示不落库；SSE 中断半条消息持久化见 Phase 4 消息状态机 |
+| reasoning_effort 前端可控 | Phase 5+ | Phase 3 后端固定 `"high"`，前端仅 deep_thinking 开关 |
+
+### 5.5 Phase 3 测试
+
+> Phase 3 功能完成后立即执行，不推迟到后续阶段。
 
 | 状态 | 任务 | 测试类型 | 说明 |
 |:---|:---|:---|:---|
-| ⬜ | 检索器单元测试 | 单元测试 | 向量检索 / BM25 检索各自返回正确数量 + metadata 过滤 |
-| ⬜ | RRF 融合算法测试 | 单元测试 | k=60 合并两路结果的排序正确性 |
-| ⬜ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列（meta→message→sources→finish）+ 错误码（E4001/E4005）+ kb_id 可见性校验（private KB 非 owner 拒绝） |
-| ⬜ | Prompt 模板测试 | 单元测试 | 检索结果拼接、token 预算控制 |
-| ⬜ | NoopReranker 测试 | 单元测试 | 截取 top_k 行为正确 |
-| ⬜ | 前端 ChatPage 组件测试 | 组件测试 | 消息发送、SSE 流式渲染、停止按钮 |
-| ⬜ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 事件解析（各 event 类型 + 异常格式） |
-| ⬜ | 前端来源引用展示测试 | 组件测试 | MessageItem 中来源文档链接渲染 |
-| ⬜ | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表（见 TESTING.md §3） |
-| ⬜ | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告（见 TESTING.md §2） |
-| ⬜ | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注（见 TESTING.md §4） |
+| ⬜ | 向量检索器单元测试 | 单元测试 | ChromaDB `query()` Mock：返回 top_k 结果 + `where` kb_id 过滤 + 空结果处理（15 用例） |
+| ⬜ | BM25 检索器单元测试 | 单元测试 | BM25Okapi 初始化 + `get_scores()` 排序 + jieba 分词 + 空语料处理（12 用例） |
+| ⬜ | BM25 索引缓存测试 | 单元测试 | Redis 缓存命中/未命中懒加载/Celery 触发重建/缓存失效（8 用例） |
+| ⬜ | RRF 融合算法测试 | 单元测试 | k=60 标准合并 / 单路为空 / 两路均空 / 排名相同处理（10 用例） |
+| ⬜ | NoopReranker 测试 | 单元测试 | 按长度排序 + top_k 截取 + 输入不足 top_k（6 用例） |
+| ⬜ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（10 用例） |
+| ⬜ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（8 用例） |
+| ⬜ | LLM 调用与 thinking 解析测试 | 单元测试 | DeepSeek API 流式响应 Mock / `reasoning_content` 解析 / `content` 解析 / 重试 + 指数退避（10 用例） |
+| ⬜ | SSE 流式输出测试 | 单元测试 | `StreamingResponse` 事件序列 / 心跳帧 / 中途错误 / 客户端断开（8 用例） |
+| ⬜ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列（meta→message→sources→finish）+ 错误码（E4001/E4005/E1001）+ kb_id 可见性校验（private KB 非 owner 拒绝）+ deep_thinking 开关（13 用例） |
+| ⬜ | KB 选择器接口测试 | 接口测试 | GET `/knowledge-bases/selectable` 返回 mine+public 分组 + 不重复 + 仅返回 active KB（6 用例） |
+| ⬜ | ChatRequest Schema 校验测试 | 单元测试 | question 空/超长 + kb_id 缺失 + conversation_id 类型 + deep_thinking 默认值（6 用例） |
+| ⬜ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 各 event 类型解析 + 异常格式容错 + 心跳帧忽略 + 多行 data 拼接（12 用例） |
+| ⬜ | 前端 Markdown 渲染工具测试 | 单元测试 | markdown-it 渲染 + 代码块高亮 + XSS 过滤 + 链接处理（6 用例） |
+| ⬜ | 前端 ChatInput 组件测试 | 组件测试 | 输入/发送/停止/Enter/Shift+Enter/字数计数/空内容拒绝/deep_thinking 开关（10 用例） |
+| ⬜ | 前端 MessageList 组件测试 | 组件测试 | 消息气泡排列 / 自动滚动 / 手动上滚「新消息」按钮 / 空状态（8 用例） |
+| ⬜ | 前端 MessageItem 组件测试 | 组件测试 | Markdown 渲染 / thinking 折叠面板 / sources 引用卡片 / 重新生成按钮（8 用例） |
+| ⬜ | 前端 WelcomeScreen 组件测试 | 组件测试 | 欢迎语渲染 + 快捷问题卡片点击填入输入框（5 用例） |
+| ⬜ | 前端 ChatPage 集成测试 | 组件测试 | 完整问答流程：选择KB→输入问题→SSE流式渲染→sources展示→停止按钮（8 用例） |
+| ⬜ | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表（见 TESTING.md §6） |
+| ⬜ | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告（见 TESTING.md §5） |
+| ⬜ | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注（见 TESTING.md §7） |
+
+### 5.6 关键决策索引
+
+| # | 决策 | 文档位置 |
+|:---|:---|:---|
+| 15 | 向量检索：ChromaDB `query()` + `where={"kb_id": kb_id}` metadata 过滤，top_k=10 | ARCHITECTURE.md §5.1.1 |
+| 16 | BM25 索引生命周期：终态后 Celery 触发重建 + Redis 缓存 `tokenized_corpus` + 查询时懒加载 BM25Okapi 实例化 | ARCHITECTURE.md §5.1.1, §6.2 |
+| 17 | RRF 融合：k=60，单路为空时仅返回另一路 | ARCHITECTURE.md §6.3 |
+| 18 | NoopReranker：按 chunk 长度升序排列后截取 top_k=5 | ARCHITECTURE.md §7.3 |
+| 19 | Prompt 预算：软上限 + 按长度择优填充，chunking 阶段固定 chunk_size 不二次裁剪 | ARCHITECTURE.md §5.1.2 |
+| 20 | LLM：DeepSeek API（OpenAI 兼容），流式 `chat/completions`，通过 `extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关 + `reasoning_effort="high"` 控制强度。**注意**：DeepSeek 默认 thinking=enabled，关闭时须显式传 disabled | ARCHITECTURE.md §5.1.3 |
+| 21 | ChromaDB metadata 类型一致：保持 int 类型，入库/查询两端统一 | ARCHITECTURE.md §7.1 |
+| 22 | SSE：手动 `StreamingResponse`，6 事件类型 + 15s 心跳注释帧 `: ping\n\n` | ARCHITECTURE.md §5.1.3, API.md §6 |
+| 23 | 会话：Phase 3 自动创建（conversation_id=null），不注入历史（history=[]），数据结构兼容 Phase 4 | ARCHITECTURE.md §5.1 |
+| 24 | 标题：截取用户问题前 12 字，首轮 `event: finish` 返回 | ARCHITECTURE.md §5.1 |
+| 25 | thinking_content：`event: thinking` 流式推送，不落库（`messages.thinking_content=null`），仅前端实时展示。`deep_thinking` 通过 `extra_body` 映射到 DeepSeek `thinking` 参数 | API.md §6.1, ARCHITECTURE.md §5.1.3 |
+| 26 | KB 选择器：`GET /knowledge-bases/selectable` 返回 `{mine, public}` 分组，前端 `<el-option-group>` 渲染 | API.md §3, FRONTEND.md §4.1 |
 
 ---
 
@@ -234,13 +307,15 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ⬜ | 多轮对话上下文 | service 层获取历史消息注入 context |
 | ⬜ | 滑动窗口记忆 | 保留最近 10 轮，超出 LLM 摘要压缩 |
 | ⬜ | 问题重写 | LLM 结合对话历史补全指代和上下文 |
+| ⬜ | 消息状态机 | `messages.status` 字段（`complete`/`partial`），SSE 中断时前端 PATCH 保存已接收内容 |
 | ⬜ | 前端会话列表 | Sidebar 展示会话列表 + 切换 |
 
-### 5.1 Phase 4 测试
+### 6.1 Phase 4 测试
 
 | 状态 | 任务 | 测试类型 | 说明 |
 |:---|:---|:---|:---|
 | ⬜ | 会话 CRUD API 接口测试 | 接口测试 | POST/GET/PUT/DELETE 会话正常流程 + 错误码（E3001/E3002） |
+| ⬜ | 消息状态机接口测试 | 接口测试 | SSE 中断时前端 PATCH 保存 partial 消息 / 重连后加载历史含 partial 标记 |
 | ⬜ | 滑动窗口记忆测试 | 单元测试 | 保留最近 10 轮、超出 LLM 摘要压缩 |
 | ⬜ | 问题重写测试 | 单元测试 | LLM 结合对话历史补全指代 |
 | ⬜ | 前端会话列表组件测试 | 组件测试 | Sidebar 会话列表渲染、切换、重命名、删除 |
@@ -265,7 +340,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ⬜ | README + 部署文档 | 项目说明 + Docker Compose 部署方案 |
 | ⬜ | 简历描述文案 | 项目亮点提炼，技术选型理由 |
 
-### 6.1 Phase 5 测试
+### 7.1 Phase 5 测试
 
 | 状态 | 任务 | 测试类型 | 说明 |
 |:---|:---|:---|:---|

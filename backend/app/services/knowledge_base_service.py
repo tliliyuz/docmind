@@ -166,8 +166,9 @@ async def delete_kb(
     kb.status = "deleting"
     await db.flush()
     await db.refresh(kb)
+    await db.commit()
 
-    # 分发 Celery 异步删除任务
+    # 分发 Celery 异步删除任务（commit 后再分发，避免 Worker 在事务提交前读到旧状态）
     delete_kb_task.delay(kb.id)
 
     return KnowledgeBaseDeleteResponse(kb_id=kb.id, status=kb.status)

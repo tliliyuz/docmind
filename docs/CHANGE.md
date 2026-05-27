@@ -1,5 +1,49 @@
 # DocMind 变更日志
 
+## 2026-05-27 — Phase 3 准入修复：代码缺陷 + DeepSeek 参数对齐 + 文档过期/矛盾清理
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/knowledge_base_service.py` | `delete_kb()` 在 `delete_kb_task.delay(kb.id)` 前新增 `await db.commit()`，对齐 CLAUDE.md Celery 分发约束 |
+
+### 修改
+
+| 文件 | 版本变更 | 变更 |
+|:---|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.15→v0.16 | ① ChromaDB metadata 策略 string→int（3 处）；② §5.1.3 thinking_content 处理新增 `extra_body` 映射 + `reasoning_effort` + 默认值风险说明；③ §5.2 伪代码 LLM 调用补充 `extra_body` 参数传递 |
+| `backend/docs/API.md` | v0.13→v0.14 | ① §6 ChatRequest 新增 `reasoning_effort` 字段 + `deep_thinking` 映射说明（extra_body/type:enabled\|disabled）；② thinking 事件补充 DeepSeek API 调用说明；③ §7 会话消息列表示例 thinking_content 改为 null（对齐决策 #25）；④ 问答示例补充 reasoning_effort |
+| `docs/ROADMAP.md` | v0.18→v0.20 | ① 决策 #20（LLM）补充 `extra_body` + `reasoning_effort` + 默认 enabled 风险；② 决策 #25（thinking_content）补充 `extra_body` 映射说明；③ §5.1 LLM 调用任务补充 `extra_body` 参数；④ §5.4 推迟项新增 reasoning_effort 前端可控说明；⑤ §6 Phase 4 新增消息状态机任务（`message.status` complete/partial）；⑥ Phase 4 测试新增消息状态机接口测试 |
+| `docs/TEST_CASES.md` | v0.21→v0.23 | ① §5.10 ChatRequest 新增 reasoning_effort 默认值/非法值 2 个用例；② U7.72/U7.73 LLM test 补充 `extra_body` 参数说明；③ U7.8 metadata 测试从字符串转换改为 int 类型一致性；④ A4.11 SSE 中断从「消息已保存」改为「前端内存保留，Phase 3 不持久化」对齐设计方案 |
+| `docs/TESTING.md` | v0.8→v0.9 | §5 检索评估 + §7 回归测试 TODO 标记从「待实现」改为「Phase 3 实现」，明确非 Phase 3 准入前置项 |
+| `docs/DEVELOPMENT.md` | v0.12→v0.13 | §5 `.env` 示例 LLM 配置对齐 `config.py`：`LLM_BASE_URL` 移除 `/v1`，`LLM_MODEL` deepseek-chat→deepseek-v4-pro |
+| `frontend/docs/FRONTEND.md` | — | 无需修改（thinking 开关描述保持 deep_thinking bool 抽象层） |
+| `README.md` | — | Phase 2/2.5 标记 ✅，Phase 3 标记「进行中」 |
+
+### 决策索引（追加）
+
+| # | 决策 | 位置 |
+|:---|:---|:---|
+| 27 | DeepSeek thinking：`deep_thinking` bool → `extra_body={"thinking":{"type":"enabled\|disabled"}}` + `reasoning_effort="high"`，关闭时须显式传 disabled（官方默认 enabled） | ARCHITECTURE.md §5.1.3, API.md §6 |
+| 28 | SSE 中断不持久化：Phase 3 前端内存保留半条消息（刷新丢失），Phase 4 引入 `message.status` 字段 + 前端 PATCH 保存 | ROADMAP.md §6, TEST_CASES.md A4.11 |
+
+## 2026-05-25 — Phase 3 文档细化：全部设计文档扩充
+
+### 背景
+
+Phase 3（核心问答）开发启动前，对全部 5 份设计文档进行细化：ROADMAP 排期拆分为 4 个子阶段 50+ 任务、TEST_CASES 从 20 个框架用例扩充至 100+ 详细用例、ARCHITECTURE/API/FRONTEND 补充 Phase 3 设计细节。
+
+### 修改
+
+| 文件 | 版本变更 | 变更 |
+|:---|:---|:---|
+| `docs/ROADMAP.md` | v0.17→v0.18 | Phase 3 从 10 项简略任务拆分为 4 个子阶段 25+ 详细任务（§5.1 后端 RAG 检索管线 8 项 / §5.2 Chat API 与 SSE 9 项 / §5.3 前端问答界面 11 项 / §5.4 暂不做 7 项）；§5.5 测试 22 项；§5.6 关键决策索引 #15-#26；修复编号错误（4.1→5.1, 5.1→6.1, 6.1→7.1） |
+| `docs/TEST_CASES.md` | v0.20→v0.21 | §5 从 20 个框架用例扩充至 100+ 详细用例，覆盖 20 个子模块（向量检索 8 + BM25 检索 6 + BM25 缓存 7 + RRF 融合 7 + NoopReranker 5 + Prompt 7 + Chat Service 8 + LLM 9 + SSE 7 + Schema 6 + 问答接口 12 + KB 选择器 6 + SSE 解析 12 + Markdown 6 + ChatInput 10 + MessageList 8 + MessageItem 8 + WelcomeScreen 3 + ChatPage 8 + 专项测试 6）；§8 覆盖率表新增 Phase 3 模块 |
+| `docs/ARCHITECTURE.md` | v0.14→v0.15 | §5 拆分为 3 个子节（§5.1.1 多路检索实现含 BM25 生命周期 / §5.1.2 Prompt 组装与 Token 预算含 4 级策略表 / §5.1.3 SSE 事件流与心跳机制）；§5.2 伪代码从注释骨架更新为 Phase 3 实现（含会话自动创建/SSE 心跳/thinking 处理）；§6 检索方案拆分为 3 子节（§6.1 向量 / §6.2 BM25 含生命周期表 / §6.3 RRF）；§7 补充 ChromaDB metadata 类型一致性和 BM25 缓存结构 |
+| `backend/docs/API.md` | v0.12→v0.13 | §3 新增 `GET /api/knowledge-bases/selectable` 端点（Phase 3 KB 选择器）；§6 SSE 事件格式中补充 thinking_content 不落库说明、finish 事件 title 生成说明、SSE 实现方式注释（手动 StreamingResponse + 15s 心跳）；§9 权限矩阵新增 selectable 端点 |
+| `frontend/docs/FRONTEND.md` | v0.8→v0.9 | §4.1 布局图新增 KB 选择器（el-select + el-option-group）；§4.2 补充会话自动创建/标题生成/thinking 展示/SSE 心跳说明；§4.5.1 新建对话行为细化；§9 SSE 交互重写（fetch + ReadableStream/心跳解析/事件详情表）；§11 TODO 更新 Phase 3 状态 |
+
 ## 2026-05-25 — 文档同步修复
 
 ### 修改
