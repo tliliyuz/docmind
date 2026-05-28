@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.14 |
-| 最后更新 | 2026-05-27 |
+| 文档版本 | v0.15 |
+| 最后更新 | 2026-05-28 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -336,6 +336,8 @@
 | `public` | 其他用户的 `visibility=public` + `status=active` KB | 不含当前用户自己的 KB（避免重复） |
 
 > **设计意图**：前端直接使用分组数据渲染，无需自行 merge 或去重。后端统一控制权限 scope。
+
+> **空知识库行为**：选择器返回所有 `status=active` 的 KB（含无文档的空 KB）。用户选择空 KB 发问时，后端返回 E4001「知识库无可用文档」。
 
 ### GET `/api/knowledge-bases/{id}`
 
@@ -874,6 +876,16 @@ Celery Worker（异步）:
 
 > **错误流程说明**：连接建立前的参数校验错误（如 422/E9003、404/E1001）直接返回 HTTP JSON 响应；SSE 连接成功建立后的检索/LLM 错误通过 `event: error` 发送，连接仍正常关闭。
 
+> **SSE 中断时的消息持久化**（Phase 3）：
+> - Phase 3 不持久化未完成 assistant 消息。
+> - user message 在请求开始时立即写库。
+> - assistant message 仅在 LLM 正常完成后一次性写入。
+> - 客户端 abort / 网络中断时：
+>   - 前端保留当前已渲染内容（仅内存态）
+>   - 后端丢弃未完成 assistant message
+
+> **LLM 失败时 sources 仍发送**：检索结果在 LLM 调用前已完成，即使 LLM 失败（E4002），也先发送 `event: sources`，再发送 `event: error`。
+
 ### POST `/api/chat`
 
 **权限**：user（需登录）
@@ -1223,11 +1235,14 @@ Content-Type: application/json
 }
 ```
 
-**SSE 返回**（检索成功但 LLM 调用失败）：
+**SSE 返回**（检索成功但 LLM 调用失败，sources 仍发送）：
 
 ```
 event: meta
 data: {"conversation_id": 3, "task_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"}
+
+event: sources
+data: {"chunks": [{"doc_id": 1, "doc_name": "入职指南.md", "content": "新员工入职当天需开通以下账号：...", "score": 0.95, "page": 2}]}
 
 event: error
 data: {"code": "E4002", "message": "LLM 调用失败", "detail": "DeepSeek API 返回 503 Service Unavailable，已重试 3 次"}

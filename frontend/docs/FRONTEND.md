@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.9 |
-| 最后更新 | 2026-05-25 |
+| 文档版本 | v0.10 |
+| 最后更新 | 2026-05-28 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -157,8 +157,9 @@
 │  ─────────────────────────────┤  ─────────────────────────  │
 │  Logo + 新建对话               │  Top: 知识库选择器            │
 │  ─────────────────────────────┤    <el-select> +            │
-│  历史会话列表（Phase 4）        │    <el-option-group>        │
-│  • 会话空态 + 新建提示          │    ├─ 我的知识库             │
+│  会话区域（Phase 3 空态）       │    <el-option-group>        │
+│  • 新建对话按钮                │    ├─ 我的知识库             │
+│  • 历史会话列表（Phase 4 实现） │    └─ 公共知识库             │
 │  ─────────────────────────────┤    └─ 公共知识库             │
 │  [所有用户] 我的知识库           │  ─────────────────────────  │
 │  • 点击进入 /knowledge-bases   │  MessageList               │
@@ -773,7 +774,7 @@ function parseSSEEvent(raw) {
 | 模块 | 当前状态 | Phase 3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
 | ChatPage | Phase 3 实现中 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：历史会话列表集成、多轮对话 |
-| ChatPage Sidebar | 空会话列表 + 基本导航 | KB 选择器（下拉）集成到 ChatPage 顶部 | Phase 4：历史会话列表、新建对话、重命名、删除、按时间分组 |
+| ChatPage Sidebar | 空会话列表 + 基本导航 | 会话区域空态 + 「新建对话」按钮（清空消息列表 + conversation_id=null） | Phase 4：历史会话列表、重命名、删除、按时间分组 |
 | KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | — | — |
 | PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | — | — |
 | KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | — |

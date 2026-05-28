@@ -1,5 +1,14 @@
 # DocMind 变更日志
 
+## 2026-05-28 — Phase 3 文档补充：SSE 协议行为 + KB 空库行为 + 前端文档对齐
+
+### 修改
+
+| 文件 | 版本变更 | 变更 |
+|:---|:---|:---|
+| `backend/docs/API.md` | v0.14→v0.15 | ① §6 补充 SSE 中断持久化策略（assistant 仅完整完成后持久化）；② §6 补充 LLM 失败时 sources 仍发送；③ §8.3 错误流程示例补充 sources 事件；④ KB 选择器接口补充空知识库行为说明（允许选择，发问返回 E4001） |
+| `frontend/docs/FRONTEND.md` | v0.9→v0.10 | ① §4.1 布局图会话区域标注 Phase 3 空态 + Phase 4 实现历史列表；② §10 模块表 ChatPage Sidebar 修正「新建对话」为 Phase 3（原误标 Phase 4） |
+
 ## 2026-05-27 — Phase 3 准入修复：代码缺陷 + DeepSeek 参数对齐 + 文档过期/矛盾清理
 
 ### 修复
