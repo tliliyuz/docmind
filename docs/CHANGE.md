@@ -1,5 +1,37 @@
 # DocMind 变更日志
 
+## 2026-06-01 — Phase 3 NoopReranker 占位实现
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/reranker.py` | **新建** Rerank 重排序模块，实现 `NoopReranker` 类：按 chunk 长度升序排列后截取 top_k=5，短 chunk 优先（高信息密度），输入不足 top_k 时返回全部 |
+| `backend/tests/test_reranker.py` | **新建** NoopReranker 单元测试，12 个用例覆盖：按长度排序、截取 top_k、输入不足 top_k、空输入、不改变 chunk 内容、默认 top_k、单 chunk、top_k=1、相同长度稳定性、接口一致性 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | §5.1 NoopReranker 状态更新为 ✅；§5.5 NoopReranker 测试状态更新为 ✅（12 用例） |
+| `docs/TEST_CASES.md` | §5.5 NoopReranker 测试用例状态更新为 ✅（U7.40-U7.44）；§8 覆盖率表 `rag/reranker.py` 状态更新为 ✅ |
+
+## 2026-06-01 — Phase 3 RRF 多路融合实现
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/fusion.py` | **新建** RRF 多路融合模块，实现 `rrf_fusion()` 函数：支持多路检索结果融合，k=60 默认平滑常数，单路为空返回另一路，两路均空返回空结果 |
+| `backend/tests/test_fusion.py` | **新建** RRF 融合单元测试，14 个用例覆盖：标准合并、单路为空、两路均空、三路融合、排名相同、参数化 k 值、边界情况 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | §5.1 RRF 多路融合状态更新为 ✅；§5.5 RRF 融合算法测试状态更新为 ✅（14 用例） |
+| `docs/TEST_CASES.md` | §5.4 RRF 融合算法测试用例状态更新为 ✅（U7.30-U7.36） |
+
 ## 2026-06-01 — Phase 3 代码审查修复：异常捕获 + 类型标注 + 边界防护
 
 ### 修复

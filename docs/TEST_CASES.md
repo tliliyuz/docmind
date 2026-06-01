@@ -325,23 +325,23 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.30 | RRF-标准合并 | `rrf_fusion()` | 两路各 10 结果，k=60 | 按 `Σ 1/(k+rank)` 降序排列，输出 top_k 结果 | ⬜ | — | — |
-| U7.31 | RRF-两路有重叠文档 | `rrf_fusion()` | 同一 chunk 在两路中都出现 | 分数累加（两路 rank 分别计算），排名更靠前 | ⬜ | — | — |
-| U7.32 | RRF-向量路为空 | `rrf_fusion()` | 向量检索返回 [] | 仅返回 BM25 结果，保持原排序 | ⬜ | — | — |
-| U7.33 | RRF-BM25 路为空 | `rrf_fusion()` | BM25 返回 [] | 仅返回向量结果，保持原排序 | ⬜ | — | — |
-| U7.34 | RRF-两路均为空 | `rrf_fusion()` | 两路均返回 [] | 返回空列表 | ⬜ | — | — |
-| U7.35 | RRF-排名相同处理 | `rrf_fusion()` | 不同 chunk 在同一路中 rank 相同（罕见） | 使用平均 rank 或文档 ID 作为 tiebreaker | ⬜ | — | — |
-| U7.36 | RRF-k 值可配置 | `rrf_fusion()` | k=10 / k=60 / k=120 | k 越小排名影响越大，k=60 为默认平衡值 | ⬜ | — | — |
+| U7.30 | RRF-标准合并 | `rrf_fusion()` | 两路各 10 结果，k=60 | 按 `Σ 1/(k+rank)` 降序排列，输出 top_k 结果 | ✅ | 2026-05-30 | 14 用例全部通过 |
+| U7.31 | RRF-两路有重叠文档 | `rrf_fusion()` | 同一 chunk 在两路中都出现 | 分数累加（两路 rank 分别计算），排名更靠前 | ✅ | 2026-05-30 | — |
+| U7.32 | RRF-向量路为空 | `rrf_fusion()` | 向量检索返回 [] | 仅返回 BM25 结果，保持原排序 | ✅ | 2026-05-30 | — |
+| U7.33 | RRF-BM25 路为空 | `rrf_fusion()` | BM25 返回 [] | 仅返回向量结果，保持原排序 | ✅ | 2026-05-30 | — |
+| U7.34 | RRF-两路均为空 | `rrf_fusion()` | 两路均返回 [] | 返回空列表 | ✅ | 2026-05-30 | — |
+| U7.35 | RRF-排名相同处理 | `rrf_fusion()` | 不同 chunk 在同一路中 rank 相同（罕见） | 使用平均 rank 或文档 ID 作为 tiebreaker | ✅ | 2026-05-30 | — |
+| U7.36 | RRF-k 值可配置 | `rrf_fusion()` | k=10 / k=60 / k=120 | k 越小排名影响越大，k=60 为默认平衡值 | ✅ | 2026-05-30 | — |
 
 ### 5.5 后端 — NoopReranker 测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.40 | NoopReranker-按长度排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 按 content 长度升序排列（短 chunk 优先） | ⬜ | — | — |
-| U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 排序后返回前 5 个 | ⬜ | — | — |
-| U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ⬜ | — | — |
-| U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ⬜ | — | — |
-| U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅改变顺序，chunk 的 content/metadata 不变 | ⬜ | — | — |
+| U7.40 | NoopReranker-按长度排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 按 content 长度升序排列（短 chunk 优先） | ✅ | 2026-06-01 | 12 用例全部通过 |
+| U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 排序后返回前 5 个 | ✅ | 2026-06-01 | — |
+| U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-01 | — |
+| U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-01 | — |
+| U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅改变顺序，chunk 的 content/metadata 不变 | ✅ | 2026-06-01 | — |
 
 ### 5.6 后端 — Prompt 模板测试
 
@@ -605,7 +605,7 @@
 | `services/document_service.py` | ≥ 80% | ✅ 100% | `owner_only` 权限分离 18 用例（A8.1-A8.18），Phase 2.5 |
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖 |
 | `rag/bm25.py` | ≥ 80% | ✅ | Phase 3：BM25 检索 + 缓存已覆盖（25 用例，含 7 个真实 jieba 集成测试） |
-| `rag/reranker.py` | ≥ 80% | ⬜ | Phase 3：NoopReranker 占位 |
+| `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（12 用例） |
 | `rag/prompt_builder.py` | ≥ 80% | ⬜ | Phase 3：Prompt 组装 + Token 预算 |
 | `services/chat_service.py` | ≥ 80% | ⬜ | Phase 3：问答核心流程 + SSE |
 | `api/chat.py` (接口测试) | ≥ 90% | ⬜ | Phase 3：POST /api/chat SSE 接口 |
