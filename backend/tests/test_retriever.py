@@ -1,0 +1,261 @@
+"""向量检索器单元测试 — Mock ChromaDB + Embedder 覆盖核心检索逻辑"""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.rag.retriever import (
+    RetrievalOutput,
+    RetrievalResult,
+    VectorRetriever,
+)
+from app.core.exceptions import RetrievalServiceException
+from tests.helpers import (
+    MOCK_DIM,
+    make_mock_chroma_results,
+    make_mock_embed_result,
+)
+
+
+# ==================== RetrievalResult 数据类 ====================
+
+
+class TestRetrievalResult:
+    """RetrievalResult 数据类测试"""
+
+    def test_正常创建(self):
+        r = RetrievalResult(
+            doc_id=1, chunk_index=0, content="测试内容", score=0.85,
+        )
+        assert r.doc_id == 1
+        assert r.chunk_index == 0
+        assert r.content == "测试内容"
+        assert r.score == 0.85
+        assert r.page is None
+        assert r.doc_name == ""
+
+    def test_带页码和文档名(self):
+        r = RetrievalResult(
+            doc_id=2, chunk_index=3, content="内容", score=0.7,
+            page=5, doc_name="文档.pdf",
+        )
+        assert r.page == 5
+        assert r.doc_name == "文档.pdf"
+
+
+class TestRetrievalOutput:
+    """RetrievalOutput 数据类测试"""
+
+    def test_默认值(self):
+        out = RetrievalOutput()
+        assert out.results == []
+        assert out.total == 0
+
+    def test_包含结果(self):
+        r = RetrievalResult(doc_id=1, chunk_index=0, content="c", score=0.9)
+        out = RetrievalOutput(results=[r], total=1)
+        assert len(out.results) == 1
+        assert out.total == 1
+
+
+# ==================== VectorRetriever._parse_results ====================
+
+
+class TestParseResults:
+    """_parse_results 测试"""
+
+    def test_正常解析多条结果(self):
+        retriever = VectorRetriever(collection=MagicMock())
+        chroma_results = make_mock_chroma_results()
+        output = retriever._parse_results(chroma_results)
+
+        assert output.total == 2
+        assert len(output.results) == 2
+
+        r0 = output.results[0]
+        assert r0.doc_id == 1
+        assert r0.chunk_index == 0
+        assert r0.content == "这是第一段内容"
+        # distance=0.2 → score=1-0.2=0.8
+        assert abs(r0.score - 0.8) < 1e-6
+
+        r1 = output.results[1]
+        assert r1.chunk_index == 1
+        # distance=0.5 → score=0.5
+        assert abs(r1.score - 0.5) < 1e-6
+
+    def test_空结果(self):
+        retriever = VectorRetriever(collection=MagicMock())
+        chroma_results = make_mock_chroma_results(
+            ids=[[]], documents=[[]], distances=[[]], metadatas=[[]],
+        )
+        output = retriever._parse_results(chroma_results)
+        assert output.total == 0
+        assert output.results == []
+
+    def test_ids为空列表(self):
+        retriever = VectorRetriever(collection=MagicMock())
+        chroma_results = {"ids": [], "documents": [], "distances": [], "metadatas": []}
+        output = retriever._parse_results(chroma_results)
+        assert output.total == 0
+
+    def test_distance为0时score为1(self):
+        """distance=0 表示完全匹配，score 应为 1.0"""
+        retriever = VectorRetriever(collection=MagicMock())
+        chroma_results = make_mock_chroma_results(
+            ids=[["doc_1_chunk_0"]],
+            documents=[["完全匹配"]],
+            distances=[[0.0]],
+            metadatas=[[{"kb_id": 1, "doc_id": 1, "chunk_index": 0}]],
+        )
+        output = retriever._parse_results(chroma_results)
+        assert abs(output.results[0].score - 1.0) < 1e-6
+
+    def test_distance为1时score为0(self):
+        """distance=1 表示完全不相似，score 应为 0.0"""
+        retriever = VectorRetriever(collection=MagicMock())
+        chroma_results = make_mock_chroma_results(
+            ids=[["doc_1_chunk_0"]],
+            documents=[["完全不匹配"]],
+            distances=[[1.0]],
+            metadatas=[[{"kb_id": 1, "doc_id": 1, "chunk_index": 0}]],
+        )
+        output = retriever._parse_results(chroma_results)
+        assert abs(output.results[0].score - 0.0) < 1e-6
+
+    def test_metadata缺失字段时使用默认值(self):
+        retriever = VectorRetriever(collection=MagicMock())
+        chroma_results = make_mock_chroma_results(
+            ids=[["doc_x"]],
+            documents=[["内容"]],
+            distances=[[0.3]],
+            metadatas=[[{}]],
+        )
+        output = retriever._parse_results(chroma_results)
+        assert output.results[0].doc_id == 0
+        assert output.results[0].chunk_index == 0
+
+
+# ==================== VectorRetriever.search ====================
+
+
+class TestVectorRetrieverSearch:
+    """VectorRetriever.search 端到端测试（Mock 外部依赖）"""
+
+    @pytest.mark.asyncio
+    async def test_正常检索流程(self):
+        """正常检索：embed 返回向量 → ChromaDB 返回结果 → 解析输出"""
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = make_mock_chroma_results()
+
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            output = await retriever.search("测试问题", kb_id=1, top_k=10)
+
+        assert output.total == 2
+        assert len(output.results) == 2
+
+        # 验证 embed_chunks 以 text_type="query" 调用
+        mock_embed.assert_called_once_with(["测试问题"], text_type="query")
+
+        # 验证 ChromaDB query 参数
+        mock_collection.query.assert_called_once()
+        call_kwargs = mock_collection.query.call_args[1]
+        assert call_kwargs["n_results"] == 10
+        assert call_kwargs["where"] == {"kb_id": 1}
+        assert "documents" in call_kwargs["include"]
+        assert "distances" in call_kwargs["include"]
+
+    @pytest.mark.asyncio
+    async def test_空查询返回空结果(self):
+        """查询内容为空时直接返回空结果，不调用 Embedding API"""
+        mock_collection = MagicMock()
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            output = await retriever.search("", kb_id=1)
+
+        assert output.total == 0
+        mock_embed.assert_not_called()
+        mock_collection.query.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_空白查询返回空结果(self):
+        """查询内容为纯空白时返回空结果"""
+        mock_collection = MagicMock()
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            output = await retriever.search("   ", kb_id=1)
+
+        assert output.total == 0
+        mock_embed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_embedding返回空时返回空结果(self):
+        """Embedding API 返回空 embeddings 时返回空结果"""
+        mock_collection = MagicMock()
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            from app.rag.embedder import EmbedResult
+            mock_embed.return_value = EmbedResult()
+            output = await retriever.search("问题", kb_id=1)
+
+        assert output.total == 0
+        mock_collection.query.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_chroma查询异常时抛出RetrievalServiceException(self):
+        """ChromaDB 查询异常时抛出 E4003 检索服务异常"""
+        mock_collection = MagicMock()
+        mock_collection.query.side_effect = Exception("ChromaDB 连接失败")
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            with pytest.raises(RetrievalServiceException):
+                await retriever.search("问题", kb_id=1)
+
+    @pytest.mark.asyncio
+    async def test_embedding异常时抛出RetrievalServiceException(self):
+        """查询向量化失败时抛出 E4003 检索服务异常"""
+        mock_collection = MagicMock()
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.side_effect = RuntimeError("Embedding API 调用失败")
+            with pytest.raises(RetrievalServiceException):
+                await retriever.search("问题", kb_id=1)
+
+    @pytest.mark.asyncio
+    async def test_top_k参数传递(self):
+        """验证 top_k 参数正确传递给 ChromaDB"""
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = make_mock_chroma_results(ids=[[]], documents=[[]], distances=[[]], metadatas=[[]])
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            await retriever.search("问题", kb_id=42, top_k=5)
+
+        call_kwargs = mock_collection.query.call_args[1]
+        assert call_kwargs["n_results"] == 5
+        assert call_kwargs["where"] == {"kb_id": 42}
+
+    @pytest.mark.asyncio
+    async def test_kb_id为int类型(self):
+        """验证 kb_id 以 int 类型传入 ChromaDB where（Decision #21）"""
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = make_mock_chroma_results(ids=[[]], documents=[[]], distances=[[]], metadatas=[[]])
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            await retriever.search("问题", kb_id=99)
+
+        call_kwargs = mock_collection.query.call_args[1]
+        kb_id_value = call_kwargs["where"]["kb_id"]
+        assert isinstance(kb_id_value, int)
+        assert kb_id_value == 99

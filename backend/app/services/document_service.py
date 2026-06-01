@@ -427,6 +427,11 @@ async def reprocess_document(
     except Exception:
         logger.exception("文档 %d reprocess 前 ChromaDB 旧向量清理失败", doc_id)
 
+    # 清除 BM25 缓存（对齐 ARCHITECTURE.md §6.2）
+    from app.core.redis_client import get_redis
+    from app.rag.bm25 import invalidate_bm25_cache
+    invalidate_bm25_cache(get_redis(), kb_id)
+
     # 清理旧 chunk 记录（MySQL FK CASCADE 自动删除）并重置状态
     doc.status = DocumentStatus.UPLOADED
     doc.error_msg = None

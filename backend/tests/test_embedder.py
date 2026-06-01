@@ -15,36 +15,11 @@ from app.rag.embedder import (
     _safe_truncate,
     EMBED_MAX_RETRIES,
 )
-
-
-# 1024 维 mock 向量（DEFAULT_DIM=1024 for text-embedding-v3）
-MOCK_DIM = 1024
-
-
-def _make_mock_response(embeddings_count: int = 2, total_tokens: int = 10):
-    """构造 DashScope Embedding API 成功响应"""
-    return {
-        "output": {
-            "embeddings": [
-                {"text_index": i, "embedding": [0.1 * (i + 1)] * MOCK_DIM}
-                for i in range(embeddings_count)
-            ]
-        },
-        "usage": {"total_tokens": total_tokens},
-        "request_id": "test-request-id",
-    }
-
-
-def _make_mock_httpx_response(status_code: int = 200, json_data: dict | None = None):
-    """构造 Mock httpx.Response"""
-    response = MagicMock(spec=httpx.Response)
-    response.status_code = status_code
-    if json_data is not None:
-        response.json.return_value = json_data
-    else:
-        response.json.return_value = _make_mock_response()
-    response.text = "mock response text"
-    return response
+from tests.helpers import (
+    MOCK_DIM,
+    make_mock_embed_response,
+    make_mock_httpx_response,
+)
 
 
 # ==================== EmbedResult 数据类 ====================
@@ -103,6 +78,10 @@ class TestBuildPayload:
         payload = _build_payload(["文本"])
         assert payload["parameters"]["text_type"] == "document"
 
+    def test_text_type_为_query(self):
+        payload = _build_payload(["查询问题"], text_type="query")
+        assert payload["parameters"]["text_type"] == "query"
+
     def test_空文本列表(self):
         payload = _build_payload([])
         assert payload["input"]["texts"] == []
@@ -136,7 +115,7 @@ class TestParseEmbedResponse:
     """_parse_embed_response 测试"""
 
     def test_正常解析2条embedding(self):
-        data = _make_mock_response(embeddings_count=2, total_tokens=10)
+        data = make_mock_embed_response(embeddings_count=2, total_tokens=10)
         result = _parse_embed_response(data, text_count=2)
 
         assert len(result.embeddings) == 2
@@ -145,26 +124,26 @@ class TestParseEmbedResponse:
         # 按比例分配: 10 // 2 = 5
         assert result.token_counts == [5, 5]
 
-    def test_token计数_按文本数等比例分配(self):
-        data = _make_mock_response(embeddings_count=5, total_tokens=23)
+    def test_token计数_按文本数等比例分配_余数分配(self):
+        data = make_mock_embed_response(embeddings_count=5, total_tokens=23)
         result = _parse_embed_response(data, text_count=5)
-        # 23 // 5 = 4
-        assert result.token_counts == [4, 4, 4, 4, 4]
+        # 23 // 5 = 4 per_text, remainder=3 → [5,5,5,4,4]
+        assert result.token_counts == [5, 5, 5, 4, 4]
 
     def test_total_tokens为0时_每条至少1(self):
-        data = _make_mock_response(embeddings_count=3, total_tokens=0)
+        data = make_mock_embed_response(embeddings_count=3, total_tokens=0)
         result = _parse_embed_response(data, text_count=3)
         # max(1, 0 // 3) = 1
         assert result.token_counts == [1, 1, 1]
 
     def test_空文本列表返回空结果(self):
-        data = _make_mock_response(embeddings_count=0, total_tokens=0)
+        data = make_mock_embed_response(embeddings_count=0, total_tokens=0)
         result = _parse_embed_response(data, text_count=0)
         assert result.embeddings == []
         assert result.token_counts == []
 
     def test_single_text_正确分配(self):
-        data = _make_mock_response(embeddings_count=1, total_tokens=7)
+        data = make_mock_embed_response(embeddings_count=1, total_tokens=7)
         result = _parse_embed_response(data, text_count=1)
         assert len(result.embeddings) == 1
         assert result.token_counts == [7]
@@ -184,9 +163,9 @@ class TestEmbedChunks:
 
     @pytest.mark.asyncio
     async def test_正常调用_返回embeddings(self):
-        mock_response = _make_mock_httpx_response(
+        mock_response = make_mock_httpx_response(
             status_code=200,
-            json_data=_make_mock_response(embeddings_count=2, total_tokens=6),
+            json_data=make_mock_embed_response(embeddings_count=2, total_tokens=6),
         )
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value.post.return_value = mock_response
@@ -200,9 +179,9 @@ class TestEmbedChunks:
 
     @pytest.mark.asyncio
     async def test_请求体格式正确(self):
-        mock_response = _make_mock_httpx_response(
+        mock_response = make_mock_httpx_response(
             status_code=200,
-            json_data=_make_mock_response(embeddings_count=1, total_tokens=3),
+            json_data=make_mock_embed_response(embeddings_count=1, total_tokens=3),
         )
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value.post.return_value = mock_response
@@ -219,11 +198,28 @@ class TestEmbedChunks:
         assert "Authorization" in call_kwargs["headers"]
 
     @pytest.mark.asyncio
+    async def test_text_type_query参数传递(self):
+        """验证 text_type="query" 正确传递给 API"""
+        mock_response = make_mock_httpx_response(
+            status_code=200,
+            json_data=make_mock_embed_response(embeddings_count=1, total_tokens=3),
+        )
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value.post.return_value = mock_response
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            await embed_chunks(["测试查询"], text_type="query")
+
+        call_args = mock_client.__aenter__.return_value.post.call_args
+        call_kwargs = call_args[1]
+        assert call_kwargs["json"]["parameters"]["text_type"] == "query"
+
+    @pytest.mark.asyncio
     async def test_embedding维度为1024(self):
         """验证 text-embedding-v3 输出 1024 维向量"""
-        mock_response = _make_mock_httpx_response(
+        mock_response = make_mock_httpx_response(
             status_code=200,
-            json_data=_make_mock_response(embeddings_count=2, total_tokens=5),
+            json_data=make_mock_embed_response(embeddings_count=2, total_tokens=5),
         )
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value.post.return_value = mock_response
@@ -244,10 +240,10 @@ class TestEmbedRetry:
     @pytest.mark.asyncio
     async def test_API_500后重试成功(self):
         """第一次 500 失败，第二次 200 成功"""
-        fail_response = _make_mock_httpx_response(status_code=500, json_data={"error": "server error"})
-        success_response = _make_mock_httpx_response(
+        fail_response = make_mock_httpx_response(status_code=500, json_data={"error": "server error"})
+        success_response = make_mock_httpx_response(
             status_code=200,
-            json_data=_make_mock_response(embeddings_count=1, total_tokens=3),
+            json_data=make_mock_embed_response(embeddings_count=1, total_tokens=3),
         )
 
         mock_client = AsyncMock()
@@ -268,9 +264,9 @@ class TestEmbedRetry:
     @pytest.mark.asyncio
     async def test_网络异常后重试成功(self):
         """网络超时后重试成功"""
-        success_response = _make_mock_httpx_response(
+        success_response = make_mock_httpx_response(
             status_code=200,
-            json_data=_make_mock_response(embeddings_count=1, total_tokens=2),
+            json_data=make_mock_embed_response(embeddings_count=1, total_tokens=2),
         )
 
         mock_client = AsyncMock()
@@ -302,15 +298,15 @@ class TestEmbedRetry:
     @pytest.mark.asyncio
     async def test_指数退避延迟递增(self):
         """验证 sleep 延迟为 1, 2, 4, 8, 16 秒"""
-        fail_response = _make_mock_httpx_response(status_code=429, json_data={"error": "rate limit"})
+        fail_response = make_mock_httpx_response(status_code=429, json_data={"error": "rate limit"})
 
         mock_client = AsyncMock()
         # 前 4 次失败，最后一次成功
         mock_client.__aenter__.return_value.post.side_effect = [
             fail_response, fail_response, fail_response, fail_response,
-            _make_mock_httpx_response(
+            make_mock_httpx_response(
                 status_code=200,
-                json_data=_make_mock_response(embeddings_count=1, total_tokens=2),
+                json_data=make_mock_embed_response(embeddings_count=1, total_tokens=2),
             ),
         ]
 
@@ -333,10 +329,10 @@ class TestEmbedRetry:
         # 这里验证非200响应走重试路径
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value.post.side_effect = [
-            _make_mock_httpx_response(status_code=401, json_data={"error": "unauthorized"}),
-            _make_mock_httpx_response(
+            make_mock_httpx_response(status_code=401, json_data={"error": "unauthorized"}),
+            make_mock_httpx_response(
                 status_code=200,
-                json_data=_make_mock_response(embeddings_count=1, total_tokens=2),
+                json_data=make_mock_embed_response(embeddings_count=1, total_tokens=2),
             ),
         ]
 

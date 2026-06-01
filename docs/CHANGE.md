@@ -1,5 +1,83 @@
 # DocMind 变更日志
 
+## 2026-06-01 — Phase 3 代码审查修复：异常捕获 + 类型标注 + 边界防护
+
+### 修复
+
+| 优先级 | 文件 | 变更 |
+|:---|:---|:---|
+| P0 | `backend/app/rag/embedder.py` | `_call_embed_api` 新增 `json.JSONDecodeError` 捕获（DashScope 服务降级返回 HTML + 200 时不再穿透崩溃，转为重试） |
+| P1 | `backend/app/rag/bm25.py` | `_load_and_cache` 返回类型标注修正 `BM25Okapi` → `BM25Okapi \| None`（空 KB 返回 `None`） |
+| P2 | `backend/app/rag/embedder.py` | `_parse_embed_response` Token 计数余数分配（`total_tokens=23, text_count=5` → `[5,5,5,4,4]` 替代整除丢弃 `[4,4,4,4,4]`）；新增 embedding 维度一致性校验 |
+| P2 | `backend/app/rag/embedder.py` | `embed_chunks` 新增批量上限 guardrail（`len(texts) > EMBED_BATCH_SIZE` 抛出 `ValueError`） |
+| P2 | `backend/app/rag/retriever.py` | `_parse_results` 边界防护加固：`documents[0]` 三段式检查 `documents and documents[0]`（防御 ChromaDB 异常数据导致 IndexError） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/test_embedder.py` | `test_token计数_按文本数等比例分配` 期望值更新为余数分配结果 `[5,5,5,4,4]` |
+
+### 重构
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/helpers.py` | **新建** 共享测试工厂模块，集中 8 个工厂函数：`make_mock_doc`、`make_mock_chunks`、`make_mock_embed_result`、`setup_mock_db`、`mock_async_session_ctx`、`make_mock_embed_response`、`make_mock_httpx_response`、`make_mock_chroma_results` |
+| `backend/tests/test_tasks.py` | 移除 6 个本地工厂函数，改为从 `tests.helpers` 导入 |
+| `backend/tests/test_embedder.py` | 移除 `MOCK_DIM` + 2 个本地工厂函数，改为从 `tests.helpers` 导入 |
+| `backend/tests/test_retriever.py` | 移除 `MOCK_DIM` + 2 个本地工厂函数，改为从 `tests.helpers` 导入 |
+
+## 2026-05-29 — 测试质量修复：BM25 负分阈值 + 真实分词集成测试 + test_tasks 断言精确化
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/bm25.py` | 新增 `MIN_BM25_SCORE = -5.0` 阈值常量；`search()` 新增 `min_score` 参数，过滤低于阈值的 chunk（极端负分不进入 RRF 融合） |
+| `backend/tests/test_bm25.py` | 新增 `TestBM25RetrieverWithRealJieba` 类（7 用例使用真实 jieba 验证中文分词检索质量）；旧 `test_查询无匹配时分数为零` 改为精确验证分数=0.0 行为 |
+| `backend/tests/test_tasks.py` | 4 处 `result["status"] in ("completed", "success_with_warnings")` 改为精确断言 `== "completed"`；checkpoint 测试 commit 计数从 `>=3` 改为 `>=4` 并移除未使用的 `expected_batches` 变量 |
+
+### 修复
+
+- **BM25 负分不截断**：原实现因 mock jieba 逐字拆分导致测试发现负分后直接去掉截断逻辑。现恢复阈值策略：`min_score=-5.0` 过滤极端负值，score=0.0（无证据）保留
+- **过度 mock**：所有 BM25 测试 mock jieba 为 `list(text)` 逐字拆分，验证的是"算法能处理字符数组"而非"中文检索质量"。现新增 7 个真实 jieba 测试覆盖精确匹配排序、top_k 截取、阈值过滤
+- **test_tasks 模糊断言**：`status in ("completed", "success_with_warnings")` 无法区分成功与部分失败。改为精确 `== "completed"`
+
+## 2026-05-28 — Phase 3 BM25 关键词检索器实现
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/bm25.py` | BM25 检索器 `BM25Retriever`：jieba 分词 + Redis 缓存 tokenized corpus（TTL=300s）+ BM25Okapi 评分检索 + `invalidate_bm25_cache()` 缓存失效函数 |
+| `backend/tests/test_bm25.py` | BM25 检索器单元测试：18 个用例覆盖分词、缓存命中/未命中、空语料、Redis 降级、top_k 截取、排序、缓存失效 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/ingest/tasks.py` | 入库完成 + 文档删除完成后调用 `invalidate_bm25_cache()` 清除 BM25 缓存（对齐 ARCHITECTURE.md §6.2） |
+| `backend/app/services/document_service.py` | reprocess 触发时清除 BM25 缓存 |
+| `docs/TEST_CASES.md` | U7.10-U7.15 BM25 检索用例 + U7.20-U7.26 缓存用例状态 ⬜→✅，版本 v0.24→v0.25 |
+| `docs/ROADMAP.md` | BM25 检索器 + BM25 索引缓存 + 对应测试任务 ⬜→✅ |
+
+## 2026-05-28 — Phase 3 向量检索器实现
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/retriever.py` | 向量检索器 `VectorRetriever`：ChromaDB cosine 相似度检索 + `RetrievalResult` 标准化数据结构 |
+| `backend/tests/test_retriever.py` | 向量检索器单元测试：18 个用例覆盖正常检索、空结果、异常处理、参数传递、类型一致性 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/embedder.py` | `_build_payload()` / `_call_embed_api()` / `embed_chunks()` 新增 `text_type` 参数，支持 `"query"` 类型向量化（DashScope 区分 query/document 策略） |
+| `backend/tests/test_embedder.py` | 新增 `text_type="query"` 参数传递测试 |
+| `docs/TEST_CASES.md` | U7.1-U7.8 向量检索用例状态 ⬜→✅，`rag/retriever.py` 覆盖率状态更新 |
+
 ## 2026-05-28 — Phase 3 文档补充：SSE 协议行为 + KB 空库行为 + 前端文档对齐
 
 ### 修改

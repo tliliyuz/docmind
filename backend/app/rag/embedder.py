@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -32,23 +33,29 @@ def _build_embed_url() -> str:
     return f"{base}/services/embeddings/text-embedding/text-embedding"
 
 
-def _build_payload(texts: list[str]) -> dict:
-    """构建 DashScope Embedding API 请求体"""
+def _build_payload(texts: list[str], text_type: str = "document") -> dict:
+    """构建 DashScope Embedding API 请求体
+
+    Args:
+        texts: 待向量化的文本列表
+        text_type: "document"（入库文档）或 "query"（检索查询），
+                   DashScope 对两种类型使用不同的向量化策略
+    """
     return {
         "model": settings.EMBEDDING_MODEL,
         "input": {"texts": texts},
-        "parameters": {"text_type": "document"},
+        "parameters": {"text_type": text_type},
     }
 
 
-async def _call_embed_api(texts: list[str]) -> EmbedResult:
+async def _call_embed_api(texts: list[str], text_type: str = "document") -> EmbedResult:
     """单次调用 DashScope Embedding API，带指数退避重试"""
     url = _build_embed_url()
     headers = {
         "Authorization": f"Bearer {settings.EMBEDDING_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = _build_payload(texts)
+    payload = _build_payload(texts, text_type)
 
     last_error = None
     for attempt in range(EMBED_MAX_RETRIES):
@@ -66,7 +73,7 @@ async def _call_embed_api(texts: list[str]) -> EmbedResult:
                     attempt + 1, EMBED_MAX_RETRIES, last_error,
                 )
 
-        except (httpx.RequestError, httpx.TimeoutException) as e:
+        except (httpx.RequestError, httpx.TimeoutException, json.JSONDecodeError) as e:
             last_error = str(e)
             logger.warning(
                 "Embedding API 网络异常 (尝试 %d/%d): %s",
@@ -101,11 +108,27 @@ def _parse_embed_response(data: dict, text_count: int) -> EmbedResult:
             f"Embedding 数量不匹配: 期望 {text_count}, 实际 {len(embeddings)}"
         )
 
+    # 验证所有 embedding 维度一致
+    if embeddings:
+        dim = len(embeddings[0])
+        for idx, emb in enumerate(embeddings):
+            if len(emb) != dim:
+                raise ValueError(
+                    f"Embedding 维度不一致: 第 0 条 {dim} 维, 第 {idx} 条 {len(emb)} 维"
+                )
+
     total_tokens = usage.get("total_tokens", 0)
 
-    # API 仅返回总量不返回每条，按等比例分配
-    per_text_tokens = max(1, total_tokens // text_count) if text_count else 0
-    token_counts = [per_text_tokens] * text_count
+    # API 仅返回总量不返回每条，按等比例分配（余数分配到前几条，避免整除丢弃）
+    if text_count:
+        if total_tokens >= text_count:
+            per_text = total_tokens // text_count
+            remainder = total_tokens - per_text * text_count
+            token_counts = [per_text + 1] * remainder + [per_text] * (text_count - remainder)
+        else:
+            token_counts = [1] * text_count
+    else:
+        token_counts = []
 
     return EmbedResult(
         embeddings=embeddings,
@@ -119,11 +142,12 @@ def _safe_truncate(text: str, max_len: int = 200) -> str:
     return text[:max_len] if len(text) > max_len else text
 
 
-async def embed_chunks(texts: list[str]) -> EmbedResult:
+async def embed_chunks(texts: list[str], text_type: str = "document") -> EmbedResult:
     """对文本列表执行 Embedding 向量化。
 
     Args:
         texts: 待向量化的文本列表
+        text_type: "document"（入库文档）或 "query"（检索查询）
 
     Returns:
         EmbedResult: 包含 embeddings、token_counts、total_tokens
@@ -134,8 +158,13 @@ async def embed_chunks(texts: list[str]) -> EmbedResult:
     if not texts:
         return EmbedResult()
 
-    logger.info("开始 Embedding 向量化: %d 条文本", len(texts))
-    result = await _call_embed_api(texts)
+    if len(texts) > settings.EMBED_BATCH_SIZE:
+        raise ValueError(
+            f"单次 Embedding 文本数超过上限: {len(texts)} > {settings.EMBED_BATCH_SIZE}"
+        )
+
+    logger.info("开始 Embedding 向量化: %d 条文本 (type=%s)", len(texts), text_type)
+    result = await _call_embed_api(texts, text_type)
     logger.info(
         "Embedding 完成: %d 条, total_tokens=%d",
         len(texts), result.total_tokens,

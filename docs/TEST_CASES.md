@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.23 |
-| 最后更新 | 2026-05-27 |
+| 文档版本 | v0.26 |
+| 最后更新 | 2026-05-29 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 2.5 全部完成，Phase 3 用例已细化） |
 
@@ -286,37 +286,40 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.1 | 向量检索-基本 | `vector_retriever.search()` | 正常查询 | 返回 top_k=10 结果，含 doc_id + score + content | ⬜ | — | Mock ChromaDB collection |
-| U7.2 | 向量检索-kb_id 过滤 | `vector_retriever.search()` | 指定 kb_id | `where={"kb_id": kb_id}` 仅返回该 kb_id 结果 | ⬜ | — | metadata 保持 int 类型 |
-| U7.3 | 向量检索-结果不足 top_k | `vector_retriever.search()` | kb 文档数 < top_k | 返回实际可用数量，不补空 | ⬜ | — | — |
-| U7.4 | 向量检索-空结果 | `vector_retriever.search()` | kb 无匹配文档 | 返回空列表，不抛异常 | ⬜ | — | — |
-| U7.5 | 向量检索-metadata 字段完整 | `vector_retriever.search()` | 正常查询 | 每条结果含 doc_id/kb_id/chunk_index/page/score | ⬜ | — | — |
-| U7.6 | 向量检索-Embedding 调用 | `vector_retriever._embed_query()` | 查询文本 | 调用 DashScope embed API，返回 1024 维向量 | ⬜ | — | 复用已有 embedder |
-| U7.7 | 向量检索-ChromaDB 异常 | `vector_retriever.search()` | ChromaDB 不可用 | 抛出 `RetrievalException(E4003)` | ⬜ | — | — |
-| U7.8 | 向量检索-metadata int 类型一致性 | `vector_retriever.search()` | metadata kb_id/doc_id/chunk_index 为 int | 入库/查询两端统一 int，无需类型转换 | ⬜ | — | 决策 #21，不使用 _normalize_metadata() |
+| U7.1 | 向量检索-基本 | `vector_retriever.search()` | 正常查询 | 返回 top_k=10 结果，含 doc_id + score + content | ✅ | 2026-05-28 | Mock ChromaDB collection |
+| U7.2 | 向量检索-kb_id 过滤 | `vector_retriever.search()` | 指定 kb_id | `where={"kb_id": kb_id}` 仅返回该 kb_id 结果 | ✅ | 2026-05-28 | metadata 保持 int 类型 |
+| U7.3 | 向量检索-结果不足 top_k | `vector_retriever.search()` | kb 文档数 < top_k | 返回实际可用数量，不补空 | ✅ | 2026-05-28 | ChromaDB 自然返回实际数量 |
+| U7.4 | 向量检索-空结果 | `vector_retriever.search()` | kb 无匹配文档 | 返回空列表，不抛异常 | ✅ | 2026-05-28 | 含空查询/空白查询/embedding 空结果 |
+| U7.5 | 向量检索-metadata 字段完整 | `vector_retriever.search()` | 正常查询 | 每条结果含 doc_id/kb_id/chunk_index/page/score | ✅ | 2026-05-28 | page 为后续补充字段 |
+| U7.6 | 向量检索-Embedding 调用 | `vector_retriever.search()` | 查询文本 | 调用 DashScope embed API，text_type="query" | ✅ | 2026-05-28 | 复用 embedder，text_type 参数已扩展 |
+| U7.7 | 向量检索-ChromaDB 异常 | `vector_retriever.search()` | ChromaDB 不可用 | 抛出 `RetrievalServiceException(E4003)` | ✅ | 2026-05-28 | 含 embedding 异常场景 |
+| U7.8 | 向量检索-metadata int 类型一致性 | `vector_retriever.search()` | metadata kb_id/doc_id/chunk_index 为 int | 入库/查询两端统一 int，无需类型转换 | ✅ | 2026-05-28 | 决策 #21，不使用 _normalize_metadata() |
 
 ### 5.2 后端 — BM25 检索器单元测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.10 | BM25-基本检索 | `bm25_retriever.search()` | 中文查询 | `jieba.lcut` 分词 → `BM25Okapi.get_scores()` 返回排序结果 | ⬜ | — | — |
-| U7.11 | BM25-返回 doc_id 映射 | `bm25_retriever.search()` | 正常查询 | 通过 `doc_ids` 数组映射 chunk_id → 返回结果含 doc_id | ⬜ | — | — |
-| U7.12 | BM25-空语料 | `BM25Okapi([])` | 知识库无文档 | 初始化不抛异常，`get_scores()` 返回空数组 | ⬜ | — | — |
-| U7.13 | BM25-jieba 分词中文 | `jieba.lcut()` | 中文文本 | 正确切分中文词组（如 "入职需要开通哪些账号"） | ⬜ | — | — |
-| U7.14 | BM25-结果数量 | `bm25_retriever.search()` | 正常查询 | 返回 top_k=10 结果 | ⬜ | — | — |
-| U7.15 | BM25-相关性排序 | `bm25_retriever.search()` | 精确关键词查询 | 包含精确关键词的 chunk 排在前面 | ⬜ | — | 如搜"VPN"→含"VPN"的排最前 |
+| U7.10 | BM25-基本检索 | `bm25_retriever.search()` | 中文查询 | `jieba.lcut` 分词 → `BM25Okapi.get_scores()` 返回排序结果 | ✅ | 2026-05-28 | Mock Redis + DB |
+| U7.11 | BM25-返回 doc_id 映射 | `bm25_retriever.search()` | 正常查询 | 通过 `doc_ids` 数组映射 chunk_id → 返回结果含 doc_id | ✅ | 2026-05-28 | — |
+| U7.12 | BM25-空语料 | `BM25Okapi([])` | 知识库无文档 | 初始化不抛异常，`get_scores()` 返回空数组 | ✅ | 2026-05-28 | 返回 None + 空列表 |
+| U7.13 | BM25-jieba 分词中文 | `jieba.lcut()` | 中文文本 | 正确切分中文词组（如 "入职需要开通哪些账号"） | ✅ | 2026-05-29 | Mock + 真实 jieba 双重覆盖 |
+| U7.14 | BM25-结果数量 | `bm25_retriever.search()` | 正常查询 | 返回 top_k=10 结果 | ✅ | 2026-05-28 | top_k 截取验证 |
+| U7.15 | BM25-相关性排序 | `bm25_retriever.search()` | 精确关键词查询 | 包含精确关键词的 chunk 排在前面 | ✅ | 2026-05-29 | 真实 jieba 验证 |
+| U7.16 | BM25-真实分词检索 | `bm25_retriever.search()` | 真实 jieba 分词 + 中文查询 | 相关文档得分更高，精确匹配排第一 | ✅ | 2026-05-29 | `TestBM25RetrieverWithRealJieba` (7 用例) |
+| U7.17 | BM25-min_score 阈值 | `bm25_retriever.search()` | 负分/零分/参数调整 | score < min_score 被过滤，score=0 保留，参数可调 | ✅ | 2026-05-29 | `MIN_BM25_SCORE=-5.0` |
+| U7.18 | BM25-真实分词缓存懒加载 | `bm25_retriever.search()` | 缓存未命中 + 真实 jieba | 从 MySQL 加载后用真实 jieba 分词构建索引并缓存 | ✅ | 2026-05-29 | 验证缓存 tokens 非逐字拆分 |
 
 ### 5.3 后端 — BM25 索引缓存测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.20 | 缓存-命中 | `get_bm25_index()` | Redis 有 `bm25_tokens:{kb_id}` | 直接返回 `BM25Okapi(data["tokens"]), data["doc_ids"]` | ⬜ | — | Mock Redis |
-| U7.21 | 缓存-未命中懒加载 | `get_bm25_index()` | Redis 无缓存 | 从 MySQL 读 chunks → jieba 分词 → 写 Redis → 返回 | ⬜ | — | — |
-| U7.22 | 缓存-写入格式正确 | `get_bm25_index()` | 懒加载后写缓存 | Redis 存 `{"doc_ids": [...], "tokens": [[...], ...]}` JSON | ⬜ | — | — |
-| U7.23 | 缓存-TTL=300s | `get_bm25_index()` | 写缓存 | `SETEX` 带 300s 过期 | ⬜ | — | — |
-| U7.24 | 缓存-文档终态后重建 | Celery task | 文档入库完成 | 触发 `DEL bm25_tokens:{kb_id}` → 下次查询懒加载 | ⬜ | — | 在 ingest task 末尾 |
-| U7.25 | 缓存-文档删除后失效 | Celery task | 文档删除完成 | `DEL bm25_tokens:{kb_id}` | ⬜ | — | — |
-| U7.26 | BM25Okapi 实例化性能 | `BM25Okapi(corpus)` | 1000 chunk 语料 | 构造时间 < 50ms（仅 NumPy 计算，不含分词） | ⬜ | — | ⏭️ 性能测试，可选 |
+| U7.20 | 缓存-命中 | `get_bm25_index()` | Redis 有 `bm25_tokens:{kb_id}` | 直接返回 `BM25Okapi(data["tokens"]), data["doc_ids"]` | ✅ | 2026-05-28 | Mock Redis |
+| U7.21 | 缓存-未命中懒加载 | `get_bm25_index()` | Redis 无缓存 | 从 MySQL 读 chunks → jieba 分词 → 写 Redis → 返回 | ✅ | 2026-05-28 | — |
+| U7.22 | 缓存-写入格式正确 | `get_bm25_index()` | 懒加载后写缓存 | Redis 存 `{"doc_ids": [...], "tokens": [[...], ...], "contents": [...]}` JSON | ✅ | 2026-05-28 | — |
+| U7.23 | 缓存-TTL=300s | `get_bm25_index()` | 写缓存 | `SETEX` 带 300s 过期 | ✅ | 2026-05-28 | — |
+| U7.24 | 缓存-文档终态后重建 | Celery task | 文档入库完成 | 触发 `DEL bm25_tokens:{kb_id}` → 下次查询懒加载 | ✅ | 2026-05-28 | 在 ingest task 末尾 |
+| U7.25 | 缓存-文档删除后失效 | Celery task | 文档删除完成 | `DEL bm25_tokens:{kb_id}` | ✅ | 2026-05-28 | — |
+| U7.26 | BM25Okapi 实例化性能 | `BM25Okapi(corpus)` | 1000 chunk 语料 | 构造时间 < 50ms（仅 NumPy 计算，不含分词） | ⏭️ | — | 性能测试，可选 |
 
 ### 5.4 后端 — RRF 融合算法测试
 
@@ -600,7 +603,8 @@
 | `services/knowledge_base_service.py` | ≥ 80% | ✅ 100% | 权限矩阵 6 用例（A6.1-A6.6）+ 公共列表 5 用例（A7.1-A7.7），Phase 2.5 |
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
 | `services/document_service.py` | ≥ 80% | ✅ 100% | `owner_only` 权限分离 18 用例（A8.1-A8.18），Phase 2.5 |
-| `rag/retriever.py` | ≥ 80% | ⬜ | Phase 3：向量检索 + BM25 + RRF 融合 |
+| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖 |
+| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3：BM25 检索 + 缓存已覆盖（25 用例，含 7 个真实 jieba 集成测试） |
 | `rag/reranker.py` | ≥ 80% | ⬜ | Phase 3：NoopReranker 占位 |
 | `rag/prompt_builder.py` | ≥ 80% | ⬜ | Phase 3：Prompt 组装 + Token 预算 |
 | `services/chat_service.py` | ≥ 80% | ⬜ | Phase 3：问答核心流程 + SSE |

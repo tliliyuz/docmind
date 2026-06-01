@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 
 from app.config import settings
+from app.core.redis_client import get_redis
 from app.core.chroma_client import get_collection
 from app.core.database import async_session
 from app.core.storage import local_storage
@@ -469,6 +470,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
                 doc_id, final_status.value, total_chunks,
             )
 
+        # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
+        from app.rag.bm25 import invalidate_bm25_cache
+        invalidate_bm25_cache(get_redis(), kb_id)
+
         return {
             "status": final_status.value,
             "doc_id": doc_id,
@@ -555,6 +560,10 @@ async def _delete_document_async(doc_id: int) -> dict:
                 )
                 await db.commit()
                 logger.info("文档 %d MySQL 记录已物理删除，KB %d 计数已更新", doc_id, kb_id)
+
+        # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
+        from app.rag.bm25 import invalidate_bm25_cache
+        invalidate_bm25_cache(get_redis(), kb_id)
 
         return {"status": "completed", "doc_id": doc_id}
 
