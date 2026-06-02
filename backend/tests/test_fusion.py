@@ -11,7 +11,7 @@
 
 import pytest
 
-from app.rag.fusion import DEFAULT_RRF_K, rrf_fusion
+from app.rag.fusion import rrf_fusion
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
 
@@ -28,16 +28,6 @@ def _make_result(doc_id: int, chunk_index: int, content: str, score: float = 0.0
 def _make_output(results: list[RetrievalResult]) -> RetrievalOutput:
     """构造 RetrievalOutput 测试数据"""
     return RetrievalOutput(results=results, total=len(results))
-
-
-# ==================== 常量测试 ====================
-
-
-class TestConstants:
-    """常量测试"""
-
-    def test_默认k值为60(self):
-        assert DEFAULT_RRF_K == 60
 
 
 # ==================== rrf_fusion 核心逻辑测试 ====================
@@ -274,20 +264,3 @@ class TestEdgeCases:
         for i in range(len(result.results) - 1):
             assert result.results[i].score >= result.results[i + 1].score
 
-    def test_k值为0(self):
-        """k=0 时的边界情况"""
-        results1 = _make_output([
-            _make_result(1, 0, "文档A", 0.9),
-        ])
-
-        results2 = _make_output([
-            _make_result(1, 0, "文档A", 5.0),
-        ])
-
-        # k=0 时，rank 从 1 开始，所以 k+rank 最小值为 1，不会除零
-        # 实际使用中 k 应该 > 0，但 k=0 在数学上是有效的
-        result = rrf_fusion(results1, results2, k=0)
-
-        assert result.total == 1
-        # 文档A: 1/(0+1) + 1/(0+1) = 1 + 1 = 2.0
-        assert abs(result.results[0].score - 2.0) < 1e-6

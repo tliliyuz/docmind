@@ -141,12 +141,17 @@ class TestBM25RetrieverSearch:
         retriever = BM25Retriever(redis_client, session_factory)
         output = await retriever.search("入职", kb_id=1, top_k=3)
 
-        assert output.total > 0
-        assert len(output.results) > 0
-        # 结果应为 RetrievalResult 类型
-        assert isinstance(output.results[0], RetrievalResult)
-        # doc_id 应为 int
-        assert isinstance(output.results[0].doc_id, int)
+        assert output.total == 3
+        assert len(output.results) == 3
+        # 含查询词"入"/"职"的文档[1,0]应排第一，分数为正
+        assert output.results[0].doc_id == 1
+        assert output.results[0].chunk_index == 0
+        assert output.results[0].score > 0
+        # 其余文档不含查询词，分数应为 0
+        assert output.results[1].score == 0.0
+        assert output.results[2].score == 0.0
+        # 分数降序
+        assert output.results[0].score >= output.results[1].score
 
     @pytest.mark.asyncio
     async def test_空查询返回空结果(self):
@@ -302,9 +307,9 @@ class TestBM25RetrieverSearch:
         retriever = BM25Retriever(redis_client, session_factory)
         output = await retriever.search("关键词", kb_id=1, top_k=5)
 
-        if output.total >= 2:
-            # 分数应递减
-            assert output.results[0].score >= output.results[1].score
+        assert output.total >= 2, f"期望至少 2 条结果，实际 {output.total}"
+        # 分数应递减
+        assert output.results[0].score >= output.results[1].score
 
     @pytest.mark.asyncio
     async def test_未认证kb_id类型为int(self):

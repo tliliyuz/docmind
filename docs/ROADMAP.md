@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.20 |
-| 最后更新 | 2026-05-27 |
+| 文档版本 | v0.21 |
+| 最后更新 | 2026-06-02 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -202,9 +202,9 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建 | 决策 #16 |
 | ✅ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
 | ✅ | NoopReranker | 占位实现：按 chunk 长度升序排列后截取 top_k=5，保证短 chunk（高信息密度）优先 | 决策 #18 |
-| ⬜ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时尝试下一个更短 chunk 而非 break），按 chunk 长度升序择优填充 | 决策 #19 |
-| ⬜ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关 + `reasoning_effort="high"` 控制强度，解析 `content` + `reasoning_content` | 决策 #20 |
-| ⬜ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index` | 决策 #21 |
+| ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时尝试下一个更短 chunk 而非 break），按 chunk 长度升序择优填充 | 决策 #19 |
+| ✅ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关 + `reasoning_effort="high"` 控制强度，解析 `content` + `reasoning_content` | 决策 #20 |
+| ✅ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index`，显式 `int()` 转换保障 | 决策 #21 |
 
 ### 5.2 后端：Chat API 与 SSE
 
@@ -260,9 +260,9 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | BM25 索引缓存测试 | 单元测试 | Redis 缓存命中/未命中懒加载/Celery 触发重建/缓存失效（8 用例） |
 | ✅ | RRF 融合算法测试 | 单元测试 | k=60 标准合并 / 单路为空 / 两路均空 / 排名相同处理（14 用例） |
 | ✅ | NoopReranker 测试 | 单元测试 | 按长度排序 + top_k 截取 + 输入不足 top_k（12 用例） |
-| ⬜ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（10 用例） |
+| ✅ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（15 用例） |
 | ⬜ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（8 用例） |
-| ⬜ | LLM 调用与 thinking 解析测试 | 单元测试 | DeepSeek API 流式响应 Mock / `reasoning_content` 解析 / `content` 解析 / 重试 + 指数退避（10 用例） |
+| ✅ | LLM 调用与 thinking 解析测试 | 单元测试 | DeepSeek API 流式响应 Mock / `reasoning_content` 解析 / `content` 解析（15 用例） |
 | ⬜ | SSE 流式输出测试 | 单元测试 | `StreamingResponse` 事件序列 / 心跳帧 / 中途错误 / 客户端断开（8 用例） |
 | ⬜ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列（meta→message→sources→finish）+ 错误码（E4001/E4005/E1001）+ kb_id 可见性校验（private KB 非 owner 拒绝）+ deep_thinking 开关（13 用例） |
 | ⬜ | KB 选择器接口测试 | 接口测试 | GET `/knowledge-bases/selectable` 返回 mine+public 分组 + 不重复 + 仅返回 active KB（6 用例） |

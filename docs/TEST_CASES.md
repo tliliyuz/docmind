@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.26 |
-| 最后更新 | 2026-05-29 |
+| 文档版本 | v0.27 |
+| 最后更新 | 2026-06-02 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 2.5 全部完成，Phase 3 用例已细化） |
+| 状态 | 进行中（Phase 3 测试完成，438 用例全部通过） |
 
 ---
 
@@ -293,7 +293,7 @@
 | U7.5 | 向量检索-metadata 字段完整 | `vector_retriever.search()` | 正常查询 | 每条结果含 doc_id/kb_id/chunk_index/page/score | ✅ | 2026-05-28 | page 为后续补充字段 |
 | U7.6 | 向量检索-Embedding 调用 | `vector_retriever.search()` | 查询文本 | 调用 DashScope embed API，text_type="query" | ✅ | 2026-05-28 | 复用 embedder，text_type 参数已扩展 |
 | U7.7 | 向量检索-ChromaDB 异常 | `vector_retriever.search()` | ChromaDB 不可用 | 抛出 `RetrievalServiceException(E4003)` | ✅ | 2026-05-28 | 含 embedding 异常场景 |
-| U7.8 | 向量检索-metadata int 类型一致性 | `vector_retriever.search()` | metadata kb_id/doc_id/chunk_index 为 int | 入库/查询两端统一 int，无需类型转换 | ✅ | 2026-05-28 | 决策 #21，不使用 _normalize_metadata() |
+| U7.8 | 向量检索-metadata int 类型一致性 | `vector_retriever.search()` | metadata kb_id/doc_id/chunk_index 为 int | 入库/查询两端统一 int，显式 int() 转换保障 | ✅ | 2026-06-01 | 决策 #21，新增 test_metadata字段为int类型 测试 |
 
 ### 5.2 后端 — BM25 检索器单元测试
 
@@ -347,12 +347,12 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.50 | Prompt-基本拼接 | `prompt_builder.build()` | question + chunks | 返回含 system prompt + context + question 的 messages 数组 | ⬜ | — | — |
-| U7.51 | Prompt-检索结果格式化 | `prompt_builder.build()` | 多个 chunks | 每个 chunk 标注 [来源N] 标签（N=chunk_index） | ⬜ | — | — |
-| U7.52 | Prompt-软上限控制 | `prompt_builder.build()` | chunks 总长度超预算 | 按长度升序择优填充，超预算时尝试下一更短 chunk | ⬜ | — | Token 估算用中英文自适应算法 |
-| U7.53 | Prompt-空检索结果 | `prompt_builder.build()` | chunks=[] | system prompt 包含「知识库中未找到相关信息」 | ⬜ | — | — |
+| U7.50 | Prompt-基本拼接 | `prompt_builder.build()` | question + chunks | 返回含 system prompt + context + question 的 messages 数组 | ✅ | 2026-06-01 | 15 用例全部通过 |
+| U7.51 | Prompt-检索结果格式化 | `prompt_builder.build()` | 多个 chunks | 每个 chunk 标注 [来源N] 标签（N=chunk_index） | ✅ | 2026-06-01 | _format_chunk_reference 测试 |
+| U7.52 | Prompt-软上限控制 | `prompt_builder.build()` | chunks 总长度超预算 | 按长度升序择优填充，超预算时尝试下一更短 chunk | ✅ | 2026-06-01 | Token 估算用中英文自适应算法 |
+| U7.53 | Prompt-空检索结果 | `prompt_builder.build()` | chunks=[] | system prompt 包含「知识库中未找到相关信息」 | ✅ | 2026-06-01 | — |
 | U7.54 | Prompt-history 参数 | `prompt_builder.build()` | Phase 3 历史为空 | `history=[]` 不注入历史消息，Phase 4 传入历史 | ⬜ | — | — |
-| U7.55 | Prompt-预算计算正确 | `prompt_builder._count_tokens()` | 中文/英文/混合 | 中文占比 >30% → ratio=1.5，否则 4.0（复用 chunker 算法） | ⬜ | — | — |
+| U7.55 | Prompt-预算计算正确 | `estimate_tokens()` | 中文/英文/混合 | 中文占比 >30% → ratio=1.5，否则 4.0（复用 chunker 算法） | ✅ | 2026-06-01 | 复用 chunker.estimate_tokens |
 | U7.56 | Prompt-不超过模型上限 80% | `prompt_builder.build()` | 大量 chunks | 最终 prompt tokens ≤ 模型 context_window × 0.8 | ⬜ | — | — |
 
 ### 5.7 后端 — Chat Service 单元测试
@@ -372,13 +372,13 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.70 | LLM-流式调用 | `llm_client.stream_chat()` | 正常请求 | 返回 async generator，逐 chunk yield delta | ⬜ | — | Mock OpenAI SDK |
-| U7.71 | LLM-content 事件 | `llm_client.stream_chat()` | 正常响应 | `delta.content` → `event: message` | ⬜ | — | — |
-| U7.72 | LLM-thinking 事件 | `llm_client.stream_chat()` | deep_thinking=true | `extra_body={"thinking":{"type":"enabled"}}`，`delta.reasoning_content` → `event: thinking` | ⬜ | — | — |
-| U7.73 | LLM-deep_thinking=false 显式禁用 | `llm_client.stream_chat()` | deep_thinking=false | `extra_body={"thinking":{"type":"disabled"}}`，仅 message 事件，无 thinking | ⬜ | — | DeepSeek 默认 enabled，须显式传 disabled |
-| U7.74 | LLM-重试 | `llm_client.stream_chat()` | API 返回 500/503 | max_retries=3 指数退避重试 | ⬜ | — | — |
-| U7.75 | LLM-重试全部失败 | `llm_client.stream_chat()` | 3 次重试均失败 | 抛出 `LLMException(E4002)` | ⬜ | — | — |
-| U7.76 | LLM-限流 | `llm_client.stream_chat()` | API 返回 429 | 等待 Retry-After 或指数退避后重试 | ⬜ | — | — |
+| U7.70 | LLM-流式调用 | `stream_chat_completion()` | 正常请求 | 返回 async generator，逐 chunk yield delta | ✅ | 2026-06-01 | Mock OpenAI SDK，16 用例全部通过 |
+| U7.71 | LLM-content 事件 | `stream_chat_completion()` | 正常响应 | `delta.content` → `event: message` | ✅ | 2026-06-01 | — |
+| U7.72 | LLM-thinking 事件 | `stream_chat_completion()` | deep_thinking=true | `extra_body={"thinking":{"type":"enabled"}}`，`delta.reasoning_content` → `event: thinking` | ✅ | 2026-06-01 | — |
+| U7.73 | LLM-deep_thinking=false 显式禁用 | `stream_chat_completion()` | deep_thinking=false | `extra_body={"thinking":{"type":"disabled"}}`，仅 message 事件，无 thinking | ✅ | 2026-06-01 | DeepSeek 默认 enabled，须显式传 disabled |
+| U7.74 | LLM-重试 | `stream_chat_completion()` | API 返回 500/503 | max_retries=3 指数退避重试 | ⬜ | — | — |
+| U7.75 | LLM-重试全部失败 | `stream_chat_completion()` | 3 次重试均失败 | 抛出 `LLMCallFailedException(E4002)` | ⬜ | — | — |
+| U7.76 | LLM-限流 | `stream_chat_completion()` | API 返回 429 | 抛出 `LLMRateLimitExceededException(E4004)` | ✅ | 2026-06-01 | — |
 | U7.77 | LLM-thinking 不落库 | `chat_service.chat()` | deep_thinking=true | `messages.thinking_content` 写入 null | ⬜ | — | 仅流式展示 |
 | U7.78 | LLM-token 消耗记录 | `chat_service.chat()` | 正常问答 | `messages.token_count` 写入 API 返回的 usage 值 | ⬜ | — | — |
 
@@ -606,7 +606,7 @@
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖 |
 | `rag/bm25.py` | ≥ 80% | ✅ | Phase 3：BM25 检索 + 缓存已覆盖（25 用例，含 7 个真实 jieba 集成测试） |
 | `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（12 用例） |
-| `rag/prompt_builder.py` | ≥ 80% | ⬜ | Phase 3：Prompt 组装 + Token 预算 |
+| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（16 用例） |
 | `services/chat_service.py` | ≥ 80% | ⬜ | Phase 3：问答核心流程 + SSE |
 | `api/chat.py` (接口测试) | ≥ 90% | ⬜ | Phase 3：POST /api/chat SSE 接口 |
 | `schemas/chat.py` | ≥ 85% | ⬜ | Phase 3：ChatRequest Schema 校验 |

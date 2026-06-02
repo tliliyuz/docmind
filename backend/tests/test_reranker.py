@@ -10,7 +10,7 @@
 
 import pytest
 
-from app.rag.reranker import DEFAULT_RERANK_TOP_K, BaseReranker, NoopReranker
+from app.rag.reranker import BaseReranker, NoopReranker
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
 
@@ -36,16 +36,6 @@ def _make_result(
 def _make_output(results: list[RetrievalResult]) -> RetrievalOutput:
     """构造 RetrievalOutput 测试数据"""
     return RetrievalOutput(results=results, total=len(results))
-
-
-# ==================== 常量测试 ====================
-
-
-class TestConstants:
-    """常量测试"""
-
-    def test_默认top_k为5(self):
-        assert DEFAULT_RERANK_TOP_K == 5
 
 
 # ==================== NoopReranker 核心逻辑测试 ====================

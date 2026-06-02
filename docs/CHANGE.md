@@ -1,5 +1,60 @@
 # DocMind 变更日志
 
+## 2026-06-02 — Phase 3 审查报告修复
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | 9 处 `[Planned: Phase 3]` → `[Implemented]`（§1 关键词检索、§3.1 多路检索/Rerank、§5 流程图 5 处、§5.1 标题）；版本 v0.17→v0.18 |
+| `docs/ROADMAP.md` | §5.5 LLM 调用测试：移除「重试+指数退避」描述，用例数 16→15；版本 v0.20→v0.21 |
+| `docs/TEST_CASES.md` | `prompt_builder.py` 覆盖率 ⬜→✅ 100%（16 用例）；版本 v0.26→v0.27 |
+| `backend/app/ingest/tasks.py` | 局部导入 `invalidate_bm25_cache` 提升为顶部导入（消除 L474/L565 两次局部导入） |
+| `backend/app/services/document_service.py` | 局部导入 `get_redis` + `invalidate_bm25_cache` 提升为顶部导入 |
+| `backend/app/rag/prompt_builder.py` | `build_prompt()` 排序处加注释说明输入已由 NoopReranker 按相同键排序（消除隐式依赖） |
+| `backend/tests/test_bm25.py` | `test_正常检索流程` 加固断言（验证 chunk_id + 分数范围）；`test_分数降序排列` 加前置断言消除条件断言静默通过风险 |
+| `backend/tests/test_retriever.py` | 删除 `TestParseResults`（6 用例，私有方法 `_parse_results` 禁测） |
+| `backend/tests/test_llm.py` | 删除 `TestGetLLMClient`（1 用例，私有函数 `_get_llm_client` 禁测） |
+| `backend/tests/test_fusion.py` | 删除 `test_k值为0`（1 用例，未定义行为禁固化为测试）；删除 `TestConstants`（合并到集中文件） |
+| `backend/tests/test_reranker.py` | 删除 `TestConstants`（合并到集中文件）；清理 `DEFAULT_RERANK_TOP_K` 导入 |
+| `backend/tests/test_prompt_builder.py` | 删除 `TestConstants`（合并到集中文件）；清理常量导入 |
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/test_constants.py` | **新建** Phase 3 模块常量定位测试，集中管理 5 个常量验证（`DEFAULT_RRF_K`、`DEFAULT_RERANK_TOP_K`、`DEFAULT_MAX_CONTEXT_TOKENS`、`DEFAULT_MAX_CHUNKS`、`SYSTEM_PROMPT_TEMPLATE`） |
+
+## 2026-06-01 — Phase 3 ChromaDB metadata 类型一致性保障
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/ingest/tasks.py` | ChromaDB 入库 metadata 显式 `int()` 转换：`kb_id`、`doc_id`、`chunk_index` 确保 int 类型 |
+| `backend/app/rag/retriever.py` | ChromaDB 查询 metadata 显式 `int()` 转换：`doc_id`、`chunk_index` 确保 int 类型 |
+| `backend/tests/test_retriever.py` | 新增 `test_metadata字段为int类型` 测试，验证 metadata 字段类型一致性 |
+| `docs/ROADMAP.md` | §5.1 ChromaDB metadata 类型一致性状态更新为 ✅ |
+| `docs/TEST_CASES.md` | §5.1 U7.8 测试用例状态更新为 ✅（2026-06-01） |
+
+## 2026-06-01 — Phase 3 Prompt 组装与 LLM 调用实现
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/prompt_builder.py` | **新建** Prompt 组装模块，实现 `build_prompt()` 函数：SYSTEM_PROMPT 模板 + 检索结果格式化 + 软上限择优填充（超预算时尝试下一个更短 chunk）+ Token 预算控制 |
+| `backend/app/core/llm.py` | **新建** LLM 调用模块，实现 `stream_chat_completion()` 和 `chat_completion()` 函数：DeepSeek API（OpenAI 兼容）流式/非流式调用 + `extra_body` 控制 thinking 开关 + 解析 `content` + `reasoning_content` |
+| `backend/tests/test_prompt_builder.py` | **新建** Prompt 组装单元测试，15 个用例覆盖：chunk 格式化、空检索结果、按长度升序排列、软上限控制、最大 chunk 数限制、用户问题保留、system prompt 格式、单 chunk、第一个 chunk 超预算仍加入、返回类型、常量验证 |
+| `backend/tests/test_llm.py` | **新建** LLM 调用单元测试，16 个用例覆盖：LLMChunk/LLMResult 数据类、客户端创建、流式输出、deep_thinking 参数、reasoning_effort 参数、限流异常、其他异常、非流式调用、空结果异常 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | §5.1 Prompt 组装和 LLM 调用状态更新为 ✅；§5.5 Prompt 模板测试和 LLM 调用测试状态更新为 ✅ |
+| `docs/TEST_CASES.md` | §5.6 Prompt 模板测试用例状态更新为 ✅（U7.50-U7.55）；§5.8 LLM 调用测试用例状态更新为 ✅（U7.70-U7.76） |
+
 ## 2026-06-01 — Phase 3 NoopReranker 占位实现
 
 ### 新增

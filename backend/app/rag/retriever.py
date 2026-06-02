@@ -131,9 +131,13 @@ class VectorRetriever:
             distance = result_dists[i] if result_dists[i] is not None else 1.0
             score = 1.0 - distance
 
+            # 确保 metadata 值为 int 类型（对齐 Decision #21）
+            doc_id = int(meta.get("doc_id", 0))
+            chunk_index = int(meta.get("chunk_index", 0))
+
             results.append(RetrievalResult(
-                doc_id=meta.get("doc_id", 0),
-                chunk_index=meta.get("chunk_index", 0),
+                doc_id=doc_id,
+                chunk_index=chunk_index,
                 content=result_docs[i] or "",
                 score=score,
             ))

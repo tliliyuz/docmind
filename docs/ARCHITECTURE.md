@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
-| 最后更新 | 2026-05-28 |
+| 文档版本 | v0.18 |
+| 最后更新 | 2026-06-02 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 3 设计细化） |
+| 状态 | 草稿（Phase 3 实现完成） |
 
 ---
 
@@ -19,7 +19,7 @@
 | `[Planned: Phase X]` | 计划在 Phase X 实现 |
 | `[Target Architecture]` | 最终目标态，非当前状态 |
 
-**当前开发进度**：Phase 2.5 已完成，Phase 3（核心问答）准备中，详见 [ROADMAP.md](ROADMAP.md)。
+**当前开发进度**：Phase 3（核心问答）已完成，详见 [ROADMAP.md](ROADMAP.md)。
 
 ---
 
@@ -38,7 +38,7 @@
 | 异步入库 | Redis + Celery | 文档入库异步任务队列 | [Implemented] |
 | 文档解析 | PyPDF2 + python-docx | 多格式文档统一提取纯文本 | [Implemented] |
 | 智能分块 | RecursiveCharacterTextSplitter | 固定大小分块，分隔符优先级切分 | [Implemented] |
-| 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 | 成熟库，支持自定义 tokenizer（见 §7.2） | [Planned: Phase 3] |
+| 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 | 成熟库，支持自定义 tokenizer（见 §7.2） | [Implemented] |
 | 文件存储 | 本地磁盘（可扩展至 OSS） | 抽象 StorageBackend 接口，当前本地实现 | [Implemented] |
 | 流式输出 | SSE (Server-Sent Events) | 实时推送 LLM 生成内容 | [Planned: Phase 3] |
 | 前端框架 | Vue 3 + Vite | Composition API + SFC | [Implemented] |
@@ -125,8 +125,8 @@
 | 文档格式五花八门（PDF/Word/MD） | **文档解析** | PyPDF2 + python-docx | 统一提取纯文本 | [Implemented] |
 | 完整文档太长，无法直接检索 | **智能分块** | 固定大小分块，重叠窗口保留上下文 | 检索粒度精准，不丢上下文 | [Implemented] |
 | 大文件（100页PDF）上传后同步处理，用户等很久 | **异步入库** | Redis + Celery 异步任务 | 上传即返回，后台处理 | [Implemented] |
-| 关键词搜索"墨盒怎么换"找不到"打印机耗材更换" | **多路检索** | 向量检索（语义）+ BM25（关键词）+ RRF 融合 | 召回率大幅提升 | [Planned: Phase 3] |
-| 搜出来的结果排序不准 | **Rerank 重排序** | 当前 NoopReranker 占位，后续 DashScope Rerank 精排 | 相关文档排在前面 | [Planned: Phase 3] |
+| 关键词搜索"墨盒怎么换"找不到"打印机耗材更换" | **多路检索** | 向量检索（语义）+ BM25（关键词）+ RRF 融合 | 召回率大幅提升 | [Implemented] |
+| 搜出来的结果排序不准 | **Rerank 重排序** | 当前 NoopReranker 占位，后续 DashScope Rerank 精排 | 相关文档排在前面 | [Implemented] |
 | 用户连续提问"怎么申请"，系统不知道在问什么 | **问题重写** | LLM 结合对话历史补全指代和上下文 | 多轮对话不丢失意图 | [Planned: Phase 4] |
 | 用户问"今天天气"走知识库检索是浪费 | **意图识别** | LLM 分类：知识查询 / 闲聊 | 路由到正确处理分支 | [Planned: Phase 5] |
 | 长对话 30 轮后 Token 超限 | **会话记忆** | 滑动窗口 + 旧消息 LLM 摘要压缩 | 记忆不丢，Token 受控 | [Planned: Phase 4] |
@@ -355,18 +355,18 @@ def ingest_document(self, doc_id):
     ↓ （如果是查知识库）
 [Rewrite] 问题重写 → 结合对话历史补全上下文              ← [Planned: Phase 4]
     ↓
-[Retrieval] 多路检索 → 向量检索 + BM25 关键词检索       ← [Planned: Phase 3]
+[Retrieval] 多路检索 → 向量检索 + BM25 关键词检索       ← [Implemented]
     ↓
-[Fusion] RRF 融合排序 → 合并两路结果                     ← [Planned: Phase 3]
+[Fusion] RRF 融合排序 → 合并两路结果                     ← [Implemented]
     ↓
-[Rerank] 重排序 → NoopReranker 占位，后续接入 DashScope  ← [Planned: Phase 3]
+[Rerank] 重排序 → NoopReranker 占位，后续接入 DashScope  ← [Implemented]
     ↓
-[Prompt] 组装 Prompt → 拼接检索结果 + 用户问题           ← [Planned: Phase 3]
+[Prompt] 组装 Prompt → 拼接检索结果 + 用户问题           ← [Implemented]
     ↓
-[LLM] 调用 LLM → SSE 流式返回答案                        ← [Planned: Phase 3]
+[LLM] 调用 LLM → SSE 流式返回答案                        ← [Implemented]
 ```
 
-### 5.1 Phase 3 实际问答流程 [Planned: Phase 3]
+### 5.1 Phase 3 实际问答流程 [Implemented]
 
 Phase 3 实现的是**单轮问答核心链路**，不含意图识别和问题重写：
 
