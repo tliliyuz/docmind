@@ -1,5 +1,43 @@
 # DocMind 变更日志
 
+## 2026-06-02 — 修复 DeepSeek thinking 与 reasoning_effort 参数冲突
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/core/llm.py` | 修复 `deep_thinking=false` 时仍传 `reasoning_effort` 导致 `thinking disabled` 与推理强度控制冲突的问题；现在仅 `deep_thinking=true` 时传 `reasoning_effort="high"` |
+| `backend/tests/test_llm.py` | 更新 LLM 参数断言：开启 thinking 时校验顶层 `reasoning_effort`，关闭 thinking 时校验不传 `reasoning_effort`；补充非流式关闭 thinking 用例 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/docs/API.md` | v0.15→v0.16：移除请求体中的 `reasoning_effort` 字段示例，明确 Phase 3 仅通过 `deep_thinking` 控制，后端内部在开启 thinking 时固定 high |
+| `docs/ARCHITECTURE.md` | v0.18→v0.19：修正 §5.1.3 参数映射，明确 `thinking.disabled` 时禁止同时传 `reasoning_effort` |
+| `docs/ROADMAP.md` | v0.21→v0.22：同步决策 #20 与 Phase 3 推迟项说明 |
+| `docs/TEST_CASES.md` | v0.27→v0.28：同步 LLM 参数用例预期和 ChatRequest 中 `reasoning_effort` 的 Phase 3 跳过说明 |
+
+## 2026-06-02 — Phase 3 Chat API 与 SSE 流式输出
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/schemas/chat.py` | ChatRequest / ChatSourceChunk / ChatFinishData / SelectableKBItem / SelectableKBResponse Pydantic 模型 |
+| `backend/app/core/sse.py` | SSE 工具模块：`format_sse_event()` / `format_sse_heartbeat()` / `stream_with_heartbeat()`（15s 心跳 + asyncio 任务合并） |
+| `backend/app/services/chat_service.py` | Chat Service 核心流程：`chat()` 全链路（权限校验→会话创建→多路检索→RRF→Rerank→Prompt→LLM SSE 流式→消息持久化→标题生成）+ `get_selectable_kbs()` KB 选择器 |
+| `backend/app/api/chat.py` | Chat Router：`POST /api/chat` SSE 端点 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/api/knowledge_base.py` | 新增 `GET /api/knowledge-bases/selectable` 端点（在 `/{kb_id}` 之前注册避免路由冲突） |
+| `backend/app/main.py` | 注册 `chat_router`（`prefix="/api"`） |
+| `backend/app/schemas/__init__.py` | 导出 chat 模块 Schema |
+| `docs/ROADMAP.md` | §5.2 后端 Chat API 与 SSE 9 个任务 ⬜→✅ |
+
 ## 2026-06-02 — Phase 3 审查报告修复
 
 ### 修改

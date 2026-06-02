@@ -4,6 +4,7 @@
 - DeepSeek API (OpenAI 兼容)
 - 流式 chat/completions
 - extra_body 控制 thinking
+- reasoning_effort 仅在 deep_thinking=true 时传递
 - 解析 content + reasoning_content
 """
 
@@ -145,7 +146,7 @@ class TestStreamChatCompletion:
 
     @pytest.mark.asyncio
     async def test_deep_thinking关闭(self, mock_llm_client, sample_messages):
-        """deep_thinking=false 应设置 thinking type=disabled"""
+        """deep_thinking=false 应设置 thinking type=disabled 且不传 reasoning_effort"""
         mock_llm_client.chat.completions.create = AsyncMock(
             return_value=AsyncIteratorMock([])
         )
@@ -155,19 +156,24 @@ class TestStreamChatCompletion:
 
         call_args = mock_llm_client.chat.completions.create.call_args
         assert call_args.kwargs["extra_body"]["thinking"]["type"] == "disabled"
+        assert "reasoning_effort" not in call_args.kwargs
 
     @pytest.mark.asyncio
     async def test_reasoning_effort参数(self, mock_llm_client, sample_messages):
-        """reasoning_effort 应传递给 API"""
+        """deep_thinking=true 时 reasoning_effort 应传递给 API"""
         mock_llm_client.chat.completions.create = AsyncMock(
             return_value=AsyncIteratorMock([])
         )
 
-        async for _ in stream_chat_completion(sample_messages, reasoning_effort="high"):
+        async for _ in stream_chat_completion(
+            sample_messages,
+            deep_thinking=True,
+            reasoning_effort="high",
+        ):
             pass
 
         call_args = mock_llm_client.chat.completions.create.call_args
-        assert call_args.kwargs["extra_body"]["reasoning_effort"] == "high"
+        assert call_args.kwargs["reasoning_effort"] == "high"
 
     @pytest.mark.asyncio
     async def test_限流异常(self, mock_llm_client, sample_messages):
@@ -268,3 +274,19 @@ class TestChatCompletion:
 
         call_args = mock_llm_client.chat.completions.create.call_args
         assert call_args.kwargs["extra_body"]["thinking"]["type"] == "enabled"
+        assert call_args.kwargs["reasoning_effort"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_非流式deep_thinking关闭不传reasoning_effort(self, mock_llm_client, sample_messages):
+        """非流式 deep_thinking=false 不应传 reasoning_effort"""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="回答", reasoning_content=""))]
+        mock_response.usage = MagicMock(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+
+        mock_llm_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        await chat_completion(sample_messages, deep_thinking=False)
+
+        call_args = mock_llm_client.chat.completions.create.call_args
+        assert call_args.kwargs["extra_body"]["thinking"]["type"] == "disabled"
+        assert "reasoning_effort" not in call_args.kwargs

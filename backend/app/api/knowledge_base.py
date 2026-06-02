@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseResponse, KnowledgeBaseUpdate
+from app.services.chat_service import get_selectable_kbs
 from app.services.knowledge_base_service import (
     create_kb,
     delete_kb,
@@ -50,6 +51,21 @@ async def list_public_knowledge_bases(
     """获取所有公开知识库列表（分页），跨用户"""
     data = await list_public_kbs(db, page, page_size)
     return {"code": "0", "message": "ok", "data": data.model_dump()}
+
+
+@router.get("/selectable")
+async def list_selectable_knowledge_bases(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """获取当前用户可用于问答的知识库列表，按所有权分组。
+
+    对齐 API.md §3 GET /api/knowledge-bases/selectable：
+    - mine: 当前用户的所有 active KB
+    - public: 其他用户的 public + active KB
+    """
+    data = await get_selectable_kbs(db, current_user["user_id"])
+    return {"code": "0", "message": "ok", "data": data}
 
 
 @router.get("/{kb_id}")

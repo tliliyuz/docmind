@@ -22,3 +22,10 @@ from .document import (  # noqa: F401
     DocumentChunkResponse,
     DocumentChunkListResponse,
 )
+from .chat import (  # noqa: F401
+    ChatRequest,
+    ChatSourceChunk,
+    ChatFinishData,
+    SelectableKBItem,
+    SelectableKBResponse,
+)
