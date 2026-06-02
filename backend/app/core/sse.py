@@ -4,6 +4,7 @@
 - 手动 StreamingResponse（不用 sse-starlette）
 - 6 种事件类型：meta / thinking / message / sources / finish / error
 - 15s 心跳注释帧 : ping\\n\\n，防止 Nginx/Cloudflare 代理超时
+- 使用 asyncio.wait + timeout 方案实时发送心跳，事件流间隙不阻塞
 """
 
 import asyncio
@@ -48,21 +49,18 @@ def format_sse_heartbeat() -> str:
     return ": ping\n\n"
 
 
-async def _heartbeat_generator(interval: int = HEARTBEAT_INTERVAL) -> AsyncIterator[str]:
-    """心跳生成器，定期产出 SSE 注释帧。"""
-    while True:
-        await asyncio.sleep(interval)
-        yield format_sse_heartbeat()
-
-
 async def stream_with_heartbeat(
     event_generator: AsyncIterator[str],
     interval: int = HEARTBEAT_INTERVAL,
 ) -> AsyncIterator[str]:
     """将事件流与心跳流合并输出。
 
-    事件流优先输出；心跳仅在事件间隙定时发送。
-    事件流结束后自动停止心跳。
+    事件流优先输出；当事件流在 interval 秒内无新事件时，自动发送心跳帧。
+    事件流结束后自动停止。
+
+    实现方案：使用 asyncio.wait + timeout 同时等待下一事件和心跳定时器。
+    - 事件先到达 → 立即输出事件，继续等待下一事件
+    - timeout 先触发 → 输出心跳帧，继续等待同一事件（不取消事件任务）
 
     Args:
         event_generator: SSE 事件生成器
@@ -71,27 +69,39 @@ async def stream_with_heartbeat(
     Yields:
         SSE 格式字符串（事件或心跳）
     """
-    heartbeat_task = asyncio.create_task(_collect_heartbeat(interval))
+    event_iter = event_generator.__aiter__()
+    _done = object()  # 哨兵值，标识事件流结束
+
+    async def _fetch_next() -> str:
+        """获取下一个事件，事件流结束时返回哨兵值。"""
+        try:
+            return await event_iter.__anext__()
+        except StopAsyncIteration:
+            return _done  # type: ignore[return-value]
+
+    # 发起第一个事件获取任务
+    pending = asyncio.ensure_future(_fetch_next())
 
     try:
-        async for event in event_generator:
-            yield event
+        while True:
+            done, _ = await asyncio.wait([pending], timeout=interval)
+
+            if pending in done:
+                result = pending.result()
+                if result is _done:
+                    return  # 事件流正常结束
+                yield result
+                # 发起下一个事件获取任务
+                pending = asyncio.ensure_future(_fetch_next())
+            else:
+                # timeout → 事件流静默期间发送心跳
+                yield format_sse_heartbeat()
+                # 不取消 pending，继续等待同一事件
     finally:
-        heartbeat_task.cancel()
-        try:
-            # 收集已产生但未输出的心跳帧
-            for hb in heartbeat_task.result():
-                yield hb
-        except (asyncio.CancelledError, Exception):
-            pass
-
-
-async def _collect_heartbeat(interval: int) -> list[str]:
-    """心跳收集器（后台任务），收集所有心跳帧。
-
-    返回值仅用于任务取消后的残余帧收集，正常流程中此协程不自行结束。
-    """
-    frames: list[str] = []
-    while True:
-        await asyncio.sleep(interval)
-        frames.append(format_sse_heartbeat())
+        # 清理：取消未完成的事件获取任务
+        if not pending.done():
+            pending.cancel()
+            try:
+                await pending
+            except asyncio.CancelledError:
+                pass

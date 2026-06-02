@@ -1,5 +1,43 @@
 # DocMind 变更日志
 
+## 2026-06-02 — Phase 3 Chat API 与 SSE 审查修复
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/core/sse.py` | **重写** `stream_with_heartbeat()`：移除有 bug 的 `_collect_heartbeat()` 后台收集方案，改用 `asyncio.wait` + timeout 实时发送心跳帧。原方案心跳帧仅在 `while True` 循环的本地 list 中堆积，从未被 yield 给客户端，且 `.cancel()` 后 `.result()` 必抛 `CancelledError` 导致已收集帧丢失 |
+| `backend/app/services/chat_service.py` | 检索阶段新增 try/except 包装，检索异常统一包装为 `RetrievalServiceException(E4003)`；会话越权访问改用 `ConversationAccessDeniedException(E3002)` 替代通用 `PermissionDeniedException(E5005)`；**重构** `chat()` 函数：提取 `_validate_and_prepare()`（校验+会话+检索，~70行）和 `_generate_sse_stream()`（SSE 事件生成+LLM 流式+消息持久化，~115行），原 200 行函数缩减至 26 行编排入口 |
+| `backend/app/schemas/chat.py` | 新增 `TokenUsage(BaseModel)` Pydantic 模型，`ChatFinishData.token_usage` 类型从 `dict` 改为 `TokenUsage` |
+| `backend/app/schemas/__init__.py` | 导出新增的 `TokenUsage` |
+| `backend/tests/test_sse_helpers.py` | 新增 2 个心跳行为测试：`test_事件间隙实时发送心跳帧`（验证心跳在事件间隙实时 yield）和 `test_事件流结束后无多余心跳`（验证快速事件流不残留心跳帧） |
+| `backend/tests/test_chat_service.py` | `_consume_sse` 初始化 `current_event = None` 并增加 guard；检索失败测试断言改为 `RetrievalServiceException(E4003)`；会话越权测试断言改为 `ConversationAccessDeniedException(E3002)` 并修复 KB 可见性设置使 KB 权限检查先行通过 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.29→v0.30：U7.62 预期行为修正（检索失败 → E4003 包装）；U7.78 ⬜→✅，备注 DeepSeek 流式 API 不返回 usage → 估算替代的技术偏差 |
+
+## 2026-06-02 — Phase 3 Chat API 与 SSE 测试
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/test_chat_schema.py` | ChatRequest Schema 校验测试（6 用例） |
+| `backend/tests/test_sse_helpers.py` | SSE 工具模块测试（16 用例） |
+| `backend/tests/test_chat_service.py` | Chat Service 单元测试（19 用例） |
+| `backend/tests/test_chat_api.py` | Chat SSE API 集成测试（12 用例） |
+| `backend/tests/test_kb_selectable_api.py` | KB 选择器 API 测试（6 用例） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.28→v0.29：§5.7/§5.9/§5.10/§5.11/§5.12 共 59 用例状态 ⬜→✅ |
+| `docs/ROADMAP.md` | §5.5 Phase 3 测试 5 个任务标记 ✅ |
+
 ## 2026-06-02 — 修复 DeepSeek thinking 与 reasoning_effort 参数冲突
 
 ### 修复

@@ -26,6 +26,7 @@ from .chat import (  # noqa: F401
     ChatRequest,
     ChatSourceChunk,
     ChatFinishData,
+    TokenUsage,
     SelectableKBItem,
     SelectableKBResponse,
 )

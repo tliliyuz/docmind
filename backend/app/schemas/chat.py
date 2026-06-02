@@ -32,6 +32,16 @@ class ChatSourceChunk(BaseModel):
     page: int | None = None
 
 
+class TokenUsage(BaseModel):
+    """Token 消耗统计
+
+    对齐 API.md §6.1 event: finish
+    """
+    prompt: int = Field(0, description="Prompt 消耗 Token 数")
+    completion: int = Field(0, description="生成内容消耗 Token 数")
+    total: int = Field(0, description="总 Token 消耗")
+
+
 class ChatFinishData(BaseModel):
     """SSE finish 事件数据
 
@@ -39,7 +49,7 @@ class ChatFinishData(BaseModel):
     """
     message_id: int
     title: str | None = Field(None, description="自动生成的对话标题（仅首轮返回）")
-    token_usage: dict = Field(default_factory=dict, description="Token 消耗统计")
+    token_usage: TokenUsage = Field(default_factory=TokenUsage, description="Token 消耗统计")
 
 
 class SelectableKBItem(BaseModel):

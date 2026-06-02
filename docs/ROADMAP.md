@@ -261,12 +261,12 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | RRF 融合算法测试 | 单元测试 | k=60 标准合并 / 单路为空 / 两路均空 / 排名相同处理（14 用例） |
 | ✅ | NoopReranker 测试 | 单元测试 | 按长度排序 + top_k 截取 + 输入不足 top_k（12 用例） |
 | ✅ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（15 用例） |
-| ⬜ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（8 用例） |
+| ✅ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（19 用例） |
 | ✅ | LLM 调用与 thinking 解析测试 | 单元测试 | DeepSeek API 流式响应 Mock / `reasoning_content` 解析 / `content` 解析（15 用例） |
-| ⬜ | SSE 流式输出测试 | 单元测试 | `StreamingResponse` 事件序列 / 心跳帧 / 中途错误 / 客户端断开（8 用例） |
-| ⬜ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列（meta→message→sources→finish）+ 错误码（E4001/E4005/E1001）+ kb_id 可见性校验（private KB 非 owner 拒绝）+ deep_thinking 开关（13 用例） |
-| ⬜ | KB 选择器接口测试 | 接口测试 | GET `/knowledge-bases/selectable` 返回 mine+public 分组 + 不重复 + 仅返回 active KB（6 用例） |
-| ⬜ | ChatRequest Schema 校验测试 | 单元测试 | question 空/超长 + kb_id 缺失 + conversation_id 类型 + deep_thinking 默认值（6 用例） |
+| ✅ | SSE 流式输出测试 | 单元测试 | `StreamingResponse` 事件序列 / 心跳帧 / 中途错误 / sources/finish 数据结构（16 用例） |
+| ✅ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列 + 错误码 + 权限校验 + deep_thinking 开关 + 心跳帧（12 用例） |
+| ✅ | KB 选择器接口测试 | 接口测试 | GET `/knowledge-bases/selectable` 返回 mine+public 分组 + 不重复 + 仅返回 active KB（6 用例） |
+| ✅ | ChatRequest Schema 校验测试 | 单元测试 | question 空/超长 + kb_id 缺失 + conversation_id 类型 + deep_thinking 默认值（6 用例） |
 | ⬜ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 各 event 类型解析 + 异常格式容错 + 心跳帧忽略 + 多行 data 拼接（12 用例） |
 | ⬜ | 前端 Markdown 渲染工具测试 | 单元测试 | markdown-it 渲染 + 代码块高亮 + XSS 过滤 + 链接处理（6 用例） |
 | ⬜ | 前端 ChatInput 组件测试 | 组件测试 | 输入/发送/停止/Enter/Shift+Enter/字数计数/空内容拒绝/deep_thinking 开关（10 用例） |

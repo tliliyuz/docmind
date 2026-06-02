@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.28 |
+| 文档版本 | v0.30 |
 | 最后更新 | 2026-06-02 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 测试完成，439 用例全部通过） |
+| 状态 | 进行中（Phase 3 Chat API 测试完成，497 用例全部通过） |
 
 ---
 
@@ -359,14 +359,14 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.60 | Service-正常问答流程 | `chat_service.chat()` | conversation_id=null | 自动创建会话 → 检索 → RRF → Rerank → Prompt → LLM 流式 → SSE 事件 | ⬜ | — | 全链路 Mock |
-| U7.61 | Service-已有会话追加 | `chat_service.chat()` | conversation_id 存在 | 复用已有会话，保存消息到同一 conversation | ⬜ | — | Phase 4 衔接 |
-| U7.62 | Service-检索失败 | `chat_service.chat()` | 检索抛异常 | SSE event: error (E4003)，连接正常关闭 | ⬜ | — | — |
-| U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ⬜ | — | — |
-| U7.64 | Service-kb 无文档 | `chat_service.chat()` | kb chunks=0 | SSE event: error (E4001) | ⬜ | — | — |
-| U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ⬜ | — | — |
-| U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ⬜ | — | — |
-| U7.67 | Service-message_count 递增 | `chat_service.chat()` | 每次问答 | conversation.message_count += 2（user+assistant） | ⬜ | — | — |
+| U7.60 | Service-正常问答流程 | `chat_service.chat()` | conversation_id=null | 自动创建会话 → 检索 → RRF → Rerank → Prompt → LLM 流式 → SSE 事件 | ✅ | 2026-06-02 | 全链路 Mock |
+| U7.61 | Service-已有会话追加 | `chat_service.chat()` | conversation_id 存在 | 复用已有会话，保存消息到同一 conversation | ✅ | 2026-06-02 | — |
+| U7.62 | Service-检索失败 | `chat_service.chat()` | 检索抛异常 | 包装为 `RetrievalServiceException(E4003)`，对齐 API.md §1.3 E4003 | ✅ | 2026-06-02 | — |
+| U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ✅ | 2026-06-02 | — |
+| U7.64 | Service-kb 无文档 | `chat_service.chat()` | kb chunks=0 | SSE event: error (E4001) | ✅ | 2026-06-02 | — |
+| U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ✅ | 2026-06-02 | — |
+| U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-02 | — |
+| U7.67 | Service-message_count 递增 | `chat_service.chat()` | 每次问答 | conversation.message_count += 2（user+assistant） | ✅ | 2026-06-02 | — |
 
 ### 5.8 后端 — LLM 调用与 thinking 解析测试
 
@@ -380,60 +380,60 @@
 | U7.75 | LLM-重试全部失败 | `stream_chat_completion()` | 3 次重试均失败 | 抛出 `LLMCallFailedException(E4002)` | ⬜ | — | — |
 | U7.76 | LLM-限流 | `stream_chat_completion()` | API 返回 429 | 抛出 `LLMRateLimitExceededException(E4004)` | ✅ | 2026-06-02 | — |
 | U7.77 | LLM-thinking 不落库 | `chat_service.chat()` | deep_thinking=true | `messages.thinking_content` 写入 null | ⬜ | — | 仅流式展示 |
-| U7.78 | LLM-token 消耗记录 | `chat_service.chat()` | 正常问答 | `messages.token_count` 写入 API 返回的 usage 值 | ⬜ | — | — |
+| U7.78 | LLM-token 消耗记录 | `chat_service.chat()` | 正常问答 | `messages.token_count` 写入估算值（DeepSeek 流式 API 不返回 usage，使用 `chunker.estimate_tokens()` 估算） | ✅ | 2026-06-02 | 技术偏差：API 不返回 usage → 估算替代 |
 
 ### 5.9 后端 — SSE 流式输出测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.80 | SSE-事件序列 | `sse_helpers` | 正常问答 | meta → (thinking)×N → message×N → sources → finish | ⬜ | — | — |
-| U7.81 | SSE-心跳帧 | `sse_helpers` | 无数据 15s | 发送 `: ping\n\n` 注释帧，浏览器忽略但保持连接 | ⬜ | — | — |
-| U7.82 | SSE-中途错误 | `sse_helpers` | LLM 中途失败 | meta → (message)×N → error → 连接关闭 | ⬜ | — | — |
-| U7.83 | SSE-客户端断开 | `sse_helpers` | 用户关闭页面 | `asyncio.CancelledError` 被捕获，LLM 流被中断 | ⬜ | — | — |
-| U7.84 | SSE-Content-Type | `StreamingResponse` | 正常 | `text/event-stream` + `Cache-Control: no-cache` + `Connection: keep-alive` | ⬜ | — | — |
-| U7.85 | SSE-sources 事件数据 | `sse_helpers._build_sources()` | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ⬜ | — | — |
-| U7.86 | SSE-finish 事件数据 | `sse_helpers._build_finish()` | 正常 | message_id + title（首轮）+ token_usage{prompt,completion,total} | ⬜ | — | — |
+| U7.80 | SSE-事件序列 | `sse_helpers` | 正常问答 | meta → (thinking)×N → message×N → sources → finish | ✅ | 2026-06-02 | — |
+| U7.81 | SSE-心跳帧 | `sse_helpers` | 无数据 15s | 发送 `: ping\n\n` 注释帧，浏览器忽略但保持连接 | ✅ | 2026-06-02 | — |
+| U7.82 | SSE-中途错误 | `sse_helpers` | LLM 中途失败 | meta → (message)×N → error → 连接关闭 | ✅ | 2026-06-02 | 异常向上传播验证 |
+| U7.83 | SSE-客户端断开 | `sse_helpers` | 用户关闭页面 | `asyncio.CancelledError` 被捕获，LLM 流被中断 | ⬜ | — | 需真实 SSE 连接，Phase 4 手动测试 |
+| U7.84 | SSE-Content-Type | `StreamingResponse` | 正常 | `text/event-stream` + `Cache-Control: no-cache` + `Connection: keep-alive` | ✅ | 2026-06-02 | 通过 API 集成测试覆盖 |
+| U7.85 | SSE-sources 事件数据 | `sse_helpers._build_sources()` | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ✅ | 2026-06-02 | — |
+| U7.86 | SSE-finish 事件数据 | `sse_helpers._build_finish()` | 正常 | message_id + title（首轮）+ token_usage{prompt,completion,total} | ✅ | 2026-06-02 | — |
 
 ### 5.10 后端 — ChatRequest Schema 校验测试
 
 | ID | 测试用例 | Schema | 输入 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.90 | question 为空 | `ChatRequest` | `question=""` | `ValidationError`（min_length=1） | ⬜ | — | — |
-| U7.91 | question 超长 | `ChatRequest` | `question="x"×2001` | `ValidationError`（max_length=2000） | ⬜ | — | — |
-| U7.92 | kb_id 缺失 | `ChatRequest` | 不传 kb_id | `ValidationError`（required） | ⬜ | — | — |
-| U7.93 | conversation_id 可选 | `ChatRequest` | 不传 conversation_id | 校验通过，默认 None | ⬜ | — | — |
-| U7.94 | deep_thinking 默认值 | `ChatRequest` | 不传 deep_thinking | 默认 false | ⬜ | — | — |
+| U7.90 | question 为空 | `ChatRequest` | `question=""` | `ValidationError`（min_length=1） | ✅ | 2026-06-02 | — |
+| U7.91 | question 超长 | `ChatRequest` | `question="x"×2001` | `ValidationError`（max_length=2000） | ✅ | 2026-06-02 | — |
+| U7.92 | kb_id 缺失 | `ChatRequest` | 不传 kb_id | `ValidationError`（required） | ✅ | 2026-06-02 | — |
+| U7.93 | conversation_id 可选 | `ChatRequest` | 不传 conversation_id | 校验通过，默认 None | ✅ | 2026-06-02 | — |
+| U7.94 | deep_thinking 默认值 | `ChatRequest` | 不传 deep_thinking | 默认 false | ✅ | 2026-06-02 | — |
 | U7.95 | reasoning_effort 非请求字段 | `ChatRequest` | 请求体不包含 reasoning_effort | 校验通过，后端仅在 `deep_thinking=true` 时内部固定 `"high"` | ⏭️ | — | Phase 3 不开放前端控制，待 Phase 5+ |
 | U7.96 | reasoning_effort 非法值 | `ChatRequest` | reasoning_effort="low" | 不作为请求字段校验；如 Phase 5+ 开放需新增枚举校验 | ⏭️ | — | Phase 3 不开放前端控制 |
-| U7.97 | 正常请求 | `ChatRequest` | 全部合法字段 | 校验通过 | ⬜ | — | — |
+| U7.97 | 正常请求 | `ChatRequest` | 全部合法字段 | 校验通过 | ✅ | 2026-06-02 | — |
 
 ### 5.11 后端 — 问答 SSE 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期 SSE 事件序列 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A4.1 | 正常问答 | POST `/api/chat` | 有效问题 + conversation_id=null | meta → message×N → sources → finish（finish 含新 conversation_id + title） | ⬜ | — | — |
-| A4.2 | 正常问答-已有会话 | POST `/api/chat` | 有效问题 + conversation_id 存在 | meta（复用 conversation_id） → message×N → sources → finish | ⬜ | — | — |
-| A4.3 | 空问题 | POST `/api/chat` | question="" | HTTP 422 (E9003)，非 SSE | ⬜ | — | 连接建立前校验 |
-| A4.4 | kb 无可用文档 | POST `/api/chat` | kb chunks=0 | SSE error event (E4001) | ⬜ | — | — |
-| A4.5 | kb 不存在 | POST `/api/chat` | 无效 kb_id | HTTP 404 (E1001)，非 SSE | ⬜ | — | 连接建立前校验 |
-| A4.6 | private KB 非 owner 拒绝 | POST `/api/chat` | 其他用户访问 private KB | HTTP 403 (E5005) | ⬜ | — | — |
-| A4.7 | public KB 任意用户可检索 | POST `/api/chat` | 其他用户访问 public KB | 正常 SSE 事件序列 | ⬜ | — | — |
-| A4.8 | deep_thinking=true | POST `/api/chat` | `deep_thinking: true` | meta → thinking×N → message×N → sources → finish | ⬜ | — | — |
-| A4.9 | deep_thinking=false（默认） | POST `/api/chat` | 不传 deep_thinking | meta → message×N → sources → finish（无 thinking 事件） | ⬜ | — | — |
-| A4.10 | 未认证 | POST `/api/chat` | 无 Token | HTTP 401 (E5004) | ⬜ | — | — |
+| A4.1 | 正常问答 | POST `/api/chat` | 有效问题 + conversation_id=null | meta → message×N → sources → finish（finish 含新 conversation_id + title） | ✅ | 2026-06-02 | — |
+| A4.2 | 正常问答-已有会话 | POST `/api/chat` | 有效问题 + conversation_id 存在 | meta（复用 conversation_id） → message×N → sources → finish | ✅ | 2026-06-02 | — |
+| A4.3 | 空问题 | POST `/api/chat` | question="" | HTTP 422 (E9003)，非 SSE | ✅ | 2026-06-02 | 连接建立前校验 |
+| A4.4 | kb 无可用文档 | POST `/api/chat` | kb chunks=0 | SSE error event (E4001) | ✅ | 2026-06-02 | — |
+| A4.5 | kb 不存在 | POST `/api/chat` | 无效 kb_id | HTTP 404 (E1001)，非 SSE | ✅ | 2026-06-02 | 连接建立前校验 |
+| A4.6 | private KB 非 owner 拒绝 | POST `/api/chat` | 其他用户访问 private KB | HTTP 403 (E5005) | ✅ | 2026-06-02 | — |
+| A4.7 | public KB 任意用户可检索 | POST `/api/chat` | 其他用户访问 public KB | 正常 SSE 事件序列 | ✅ | 2026-06-02 | — |
+| A4.8 | deep_thinking=true | POST `/api/chat` | `deep_thinking: true` | meta → thinking×N → message×N → sources → finish | ✅ | 2026-06-02 | — |
+| A4.9 | deep_thinking=false（默认） | POST `/api/chat` | 不传 deep_thinking | meta → message×N → sources → finish（无 thinking 事件） | ✅ | 2026-06-02 | — |
+| A4.10 | 未认证 | POST `/api/chat` | 无 Token | HTTP 401 (E5004) | ✅ | 2026-06-02 | — |
 | A4.11 | 流式中断-前端内存保留 | POST `/api/chat` | 中途断连 | 前端内存保留已渲染内容（刷新丢失），conversation 已创建可继续追问。**Phase 3 不持久化半条消息** | ⬜ | — | Phase 4 重访是否需要 message.status 字段 |
-| A4.12 | 心跳帧存在 | POST `/api/chat` | 长回答 >15s | SSE 流中包含 `: ping\n\n` 注释帧 | ⬜ | — | — |
+| A4.12 | 心跳帧存在 | POST `/api/chat` | 长回答 >15s | SSE 流中包含 `: ping\n\n` 注释帧 | ✅ | 2026-06-02 | — |
 
 ### 5.12 后端 — KB 选择器接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A9.1 | 选择器-正常返回 | GET `/api/knowledge-bases/selectable` | 已登录用户 | 200, `{mine: [...], public: [...]}` | ⬜ | — | — |
-| A9.2 | 选择器-mine 含全部自己 KB | GET `/api/knowledge-bases/selectable` | 用户有 private+public KB | mine 包含所有自己的 KB（不论 visibility） | ⬜ | — | — |
-| A9.3 | 选择器-public 不含自己 | GET `/api/knowledge-bases/selectable` | 自己有 public KB | public 数组不包含自己的 KB（避免重复） | ⬜ | — | — |
-| A9.4 | 选择器-仅返回 active | GET `/api/knowledge-bases/selectable` | 有 deleting KB | deleting 状态不在列表中 | ⬜ | — | — |
-| A9.5 | 选择器-未认证拒绝 | GET `/api/knowledge-bases/selectable` | 无 Token | 401 (E5004) | ⬜ | — | — |
-| A9.6 | 选择器-空数据 | GET `/api/knowledge-bases/selectable` | 无 KB | 200, `{mine: [], public: []}` | ⬜ | — | — |
+| A9.1 | 选择器-正常返回 | GET `/api/knowledge-bases/selectable` | 已登录用户 | 200, `{mine: [...], public: [...]}` | ✅ | 2026-06-02 | — |
+| A9.2 | 选择器-mine 含全部自己 KB | GET `/api/knowledge-bases/selectable` | 用户有 private+public KB | mine 包含所有自己的 KB（不论 visibility） | ✅ | 2026-06-02 | — |
+| A9.3 | 选择器-public 不含自己 | GET `/api/knowledge-bases/selectable` | 自己有 public KB | public 数组不包含自己的 KB（避免重复） | ✅ | 2026-06-02 | — |
+| A9.4 | 选择器-仅返回 active | GET `/api/knowledge-bases/selectable` | 有 deleting KB | deleting 状态不在列表中 | ✅ | 2026-06-02 | service 层过滤验证 |
+| A9.5 | 选择器-未认证拒绝 | GET `/api/knowledge-bases/selectable` | 无 Token | 401 (E5004) | ✅ | 2026-06-02 | — |
+| A9.6 | 选择器-空数据 | GET `/api/knowledge-bases/selectable` | 无 KB | 200, `{mine: [], public: []}` | ✅ | 2026-06-02 | — |
 
 ### 5.13 前端 — SSE 解析工具测试
 
