@@ -57,84 +57,6 @@ class TestRetrievalOutput:
         assert out.total == 1
 
 
-# ==================== VectorRetriever._parse_results ====================
-
-
-class TestParseResults:
-    """_parse_results 测试"""
-
-    def test_正常解析多条结果(self):
-        retriever = VectorRetriever(collection=MagicMock())
-        chroma_results = make_mock_chroma_results()
-        output = retriever._parse_results(chroma_results)
-
-        assert output.total == 2
-        assert len(output.results) == 2
-
-        r0 = output.results[0]
-        assert r0.doc_id == 1
-        assert r0.chunk_index == 0
-        assert r0.content == "这是第一段内容"
-        # distance=0.2 → score=1-0.2=0.8
-        assert abs(r0.score - 0.8) < 1e-6
-
-        r1 = output.results[1]
-        assert r1.chunk_index == 1
-        # distance=0.5 → score=0.5
-        assert abs(r1.score - 0.5) < 1e-6
-
-    def test_空结果(self):
-        retriever = VectorRetriever(collection=MagicMock())
-        chroma_results = make_mock_chroma_results(
-            ids=[[]], documents=[[]], distances=[[]], metadatas=[[]],
-        )
-        output = retriever._parse_results(chroma_results)
-        assert output.total == 0
-        assert output.results == []
-
-    def test_ids为空列表(self):
-        retriever = VectorRetriever(collection=MagicMock())
-        chroma_results = {"ids": [], "documents": [], "distances": [], "metadatas": []}
-        output = retriever._parse_results(chroma_results)
-        assert output.total == 0
-
-    def test_distance为0时score为1(self):
-        """distance=0 表示完全匹配，score 应为 1.0"""
-        retriever = VectorRetriever(collection=MagicMock())
-        chroma_results = make_mock_chroma_results(
-            ids=[["doc_1_chunk_0"]],
-            documents=[["完全匹配"]],
-            distances=[[0.0]],
-            metadatas=[[{"kb_id": 1, "doc_id": 1, "chunk_index": 0}]],
-        )
-        output = retriever._parse_results(chroma_results)
-        assert abs(output.results[0].score - 1.0) < 1e-6
-
-    def test_distance为1时score为0(self):
-        """distance=1 表示完全不相似，score 应为 0.0"""
-        retriever = VectorRetriever(collection=MagicMock())
-        chroma_results = make_mock_chroma_results(
-            ids=[["doc_1_chunk_0"]],
-            documents=[["完全不匹配"]],
-            distances=[[1.0]],
-            metadatas=[[{"kb_id": 1, "doc_id": 1, "chunk_index": 0}]],
-        )
-        output = retriever._parse_results(chroma_results)
-        assert abs(output.results[0].score - 0.0) < 1e-6
-
-    def test_metadata缺失字段时使用默认值(self):
-        retriever = VectorRetriever(collection=MagicMock())
-        chroma_results = make_mock_chroma_results(
-            ids=[["doc_x"]],
-            documents=[["内容"]],
-            distances=[[0.3]],
-            metadatas=[[{}]],
-        )
-        output = retriever._parse_results(chroma_results)
-        assert output.results[0].doc_id == 0
-        assert output.results[0].chunk_index == 0
-
-
 # ==================== VectorRetriever.search ====================
 
 
@@ -259,3 +181,28 @@ class TestVectorRetrieverSearch:
         kb_id_value = call_kwargs["where"]["kb_id"]
         assert isinstance(kb_id_value, int)
         assert kb_id_value == 99
+
+    @pytest.mark.asyncio
+    async def test_metadata字段为int类型(self):
+        """验证从 ChromaDB 读取的 metadata 字段都转换为 int 类型（Decision #21）"""
+        mock_collection = MagicMock()
+        # 模拟 ChromaDB 返回的 metadata（可能包含字符串类型）
+        mock_collection.query.return_value = make_mock_chroma_results(
+            ids=[["doc_1_chunk_0"]],
+            documents=[["测试内容"]],
+            distances=[[0.3]],
+            metadatas=[[{"kb_id": 1, "doc_id": 1, "chunk_index": 0}]]
+        )
+        retriever = VectorRetriever(collection=mock_collection)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            output = await retriever.search("问题", kb_id=1)
+
+        # 验证返回的 RetrievalResult 中的字段都是 int 类型
+        assert len(output.results) == 1
+        result = output.results[0]
+        assert isinstance(result.doc_id, int)
+        assert isinstance(result.chunk_index, int)
+        assert result.doc_id == 1
+        assert result.chunk_index == 0

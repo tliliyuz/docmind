@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select, update
 from app.config import settings
 from app.core.redis_client import get_redis
 from app.core.chroma_client import get_collection
+from app.rag.bm25 import invalidate_bm25_cache
 from app.core.database import async_session
 from app.core.storage import local_storage
 from app.ingest.celery_app import celery_app
@@ -384,9 +385,9 @@ async def _ingest_document_async(doc_id: int) -> dict:
                 ]
                 metas_batch = [
                     {
-                        "kb_id": kb_id,
-                        "doc_id": doc_id,
-                        "chunk_index": chunk_rows[i]["chunk_index"],
+                        "kb_id": int(kb_id),
+                        "doc_id": int(doc_id),
+                        "chunk_index": int(chunk_rows[i]["chunk_index"]),
                     }
                     for i in range(chroma_start, chroma_end)
                 ]
@@ -471,7 +472,6 @@ async def _ingest_document_async(doc_id: int) -> dict:
             )
 
         # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
-        from app.rag.bm25 import invalidate_bm25_cache
         invalidate_bm25_cache(get_redis(), kb_id)
 
         return {
@@ -562,7 +562,6 @@ async def _delete_document_async(doc_id: int) -> dict:
                 logger.info("文档 %d MySQL 记录已物理删除，KB %d 计数已更新", doc_id, kb_id)
 
         # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
-        from app.rag.bm25 import invalidate_bm25_cache
         invalidate_bm25_cache(get_redis(), kb_id)
 
         return {"status": "completed", "doc_id": doc_id}
