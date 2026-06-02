@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.27 |
+| 文档版本 | v0.28 |
 | 最后更新 | 2026-06-02 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 测试完成，438 用例全部通过） |
+| 状态 | 进行中（Phase 3 测试完成，439 用例全部通过） |
 
 ---
 
@@ -374,11 +374,11 @@
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U7.70 | LLM-流式调用 | `stream_chat_completion()` | 正常请求 | 返回 async generator，逐 chunk yield delta | ✅ | 2026-06-01 | Mock OpenAI SDK，16 用例全部通过 |
 | U7.71 | LLM-content 事件 | `stream_chat_completion()` | 正常响应 | `delta.content` → `event: message` | ✅ | 2026-06-01 | — |
-| U7.72 | LLM-thinking 事件 | `stream_chat_completion()` | deep_thinking=true | `extra_body={"thinking":{"type":"enabled"}}`，`delta.reasoning_content` → `event: thinking` | ✅ | 2026-06-01 | — |
-| U7.73 | LLM-deep_thinking=false 显式禁用 | `stream_chat_completion()` | deep_thinking=false | `extra_body={"thinking":{"type":"disabled"}}`，仅 message 事件，无 thinking | ✅ | 2026-06-01 | DeepSeek 默认 enabled，须显式传 disabled |
+| U7.72 | LLM-thinking 事件 | `stream_chat_completion()` | deep_thinking=true | `extra_body={"thinking":{"type":"enabled"}}` + `reasoning_effort="high"`，`delta.reasoning_content` → `event: thinking` | ✅ | 2026-06-02 | Mock OpenAI SDK，15 用例全部通过 |
+| U7.73 | LLM-deep_thinking=false 显式禁用 | `stream_chat_completion()` | deep_thinking=false | `extra_body={"thinking":{"type":"disabled"}}`，不传 `reasoning_effort`，仅 message 事件，无 thinking | ✅ | 2026-06-02 | DeepSeek 默认 enabled，须显式传 disabled；disabled 时禁止同时传 effort |
 | U7.74 | LLM-重试 | `stream_chat_completion()` | API 返回 500/503 | max_retries=3 指数退避重试 | ⬜ | — | — |
 | U7.75 | LLM-重试全部失败 | `stream_chat_completion()` | 3 次重试均失败 | 抛出 `LLMCallFailedException(E4002)` | ⬜ | — | — |
-| U7.76 | LLM-限流 | `stream_chat_completion()` | API 返回 429 | 抛出 `LLMRateLimitExceededException(E4004)` | ✅ | 2026-06-01 | — |
+| U7.76 | LLM-限流 | `stream_chat_completion()` | API 返回 429 | 抛出 `LLMRateLimitExceededException(E4004)` | ✅ | 2026-06-02 | — |
 | U7.77 | LLM-thinking 不落库 | `chat_service.chat()` | deep_thinking=true | `messages.thinking_content` 写入 null | ⬜ | — | 仅流式展示 |
 | U7.78 | LLM-token 消耗记录 | `chat_service.chat()` | 正常问答 | `messages.token_count` 写入 API 返回的 usage 值 | ⬜ | — | — |
 
@@ -403,8 +403,8 @@
 | U7.92 | kb_id 缺失 | `ChatRequest` | 不传 kb_id | `ValidationError`（required） | ⬜ | — | — |
 | U7.93 | conversation_id 可选 | `ChatRequest` | 不传 conversation_id | 校验通过，默认 None | ⬜ | — | — |
 | U7.94 | deep_thinking 默认值 | `ChatRequest` | 不传 deep_thinking | 默认 false | ⬜ | — | — |
-| U7.95 | reasoning_effort 默认值 | `ChatRequest` | 不传 reasoning_effort | 默认 `"high"` | ⬜ | — | — |
-| U7.96 | reasoning_effort 非法值 | `ChatRequest` | reasoning_effort="low" | `ValidationError`（仅允许 high/max） | ⬜ | — | — |
+| U7.95 | reasoning_effort 非请求字段 | `ChatRequest` | 请求体不包含 reasoning_effort | 校验通过，后端仅在 `deep_thinking=true` 时内部固定 `"high"` | ⏭️ | — | Phase 3 不开放前端控制，待 Phase 5+ |
+| U7.96 | reasoning_effort 非法值 | `ChatRequest` | reasoning_effort="low" | 不作为请求字段校验；如 Phase 5+ 开放需新增枚举校验 | ⏭️ | — | Phase 3 不开放前端控制 |
 | U7.97 | 正常请求 | `ChatRequest` | 全部合法字段 | 校验通过 | ⬜ | — | — |
 
 ### 5.11 后端 — 问答 SSE 接口测试
@@ -615,7 +615,7 @@
 | 前端 `components/chat/` | ≥ 60% | ⬜ | Phase 3：ChatInput/MessageList/MessageItem/WelcomeScreen |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ⬜ | Phase 3：问答页集成 |
 | 前端 `stores/chat.js` | ≥ 60% | ⬜ | Phase 3：聊天状态管理 |
-| 前端组件 | ≥ 60% | ✅ 59 通过 | LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(12) + PublicKnowledgeList(10) 全部通过 |
+| 前端组件 | ≥ 60% | ✅ 59 通过 | 2026-06-02 运行 `npm.cmd run test`：LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(12) + PublicKnowledgeList(10) 全部通过 |
 
 ---
 

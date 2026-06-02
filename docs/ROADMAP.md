@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.21 |
+| 文档版本 | v0.22 |
 | 最后更新 | 2026-06-02 |
 | 作者 | yuz |
 | 状态 | 进行中 |
@@ -203,22 +203,22 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
 | ✅ | NoopReranker | 占位实现：按 chunk 长度升序排列后截取 top_k=5，保证短 chunk（高信息密度）优先 | 决策 #18 |
 | ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时尝试下一个更短 chunk 而非 break），按 chunk 长度升序择优填充 | 决策 #19 |
-| ✅ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关 + `reasoning_effort="high"` 控制强度，解析 `content` + `reasoning_content` | 决策 #20 |
+| ✅ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅 `deep_thinking=true` 时传 `reasoning_effort="high"`，解析 `content` + `reasoning_content` | 决策 #20 |
 | ✅ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index`，显式 `int()` 转换保障 | 决策 #21 |
 
 ### 5.2 后端：Chat API 与 SSE
 
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
-| ⬜ | ChatRequest Schema | Pydantic model：`conversation_id: int\|None`、`kb_id: int`、`question: str`（≤2000字符）、`deep_thinking: bool=False` | — |
-| ⬜ | Chat Service 核心流程 | `chat_service.chat()` — 检索 → RRF → Rerank → Prompt → LLM SSE 流式，阶段化错误处理（检索失败 E4003 / LLM失败 E4002） | — |
-| ⬜ | SSE 流式输出 | 手动 `StreamingResponse`（不用 sse-starlette），事件类型：meta → thinking → message → sources → finish → error，15s 心跳注释帧 `: ping\n\n` | 决策 #22 |
-| ⬜ | 会话自动创建 | `conversation_id=null` 时自动创建会话（`kb_id` 记录问答目标 KB），不注入历史消息（`history=[]`），数据结构兼容 Phase 4 | 决策 #23 |
-| ⬜ | 标题自动生成 | 截取用户问题前 12 字（`question[:12]`），去除标点。首轮问答后 `event: finish` 返回 title；后续轮次不更新标题 | 决策 #24 |
-| ⬜ | thinking_content 传输 | `deep_thinking=true` 时解析 DeepSeek `reasoning_content` → `event: thinking` 流式推送。**不落库**（`messages.thinking_content=null`），仅前端实时展示 | 决策 #25 |
-| ⬜ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索 | — |
-| ⬜ | KB 选择器接口 | `GET /api/knowledge-bases/selectable` 返回 `{"mine": [...], "public": [...]}`（mine=用户全部 KB，public=他人 public KB），前端直接渲染 `<el-option-group>` | 决策 #26 |
-| ⬜ | Chat Router 注册 | `main.py` 注册 `chat_router`（`prefix="/api"`） | — |
+| ✅ | ChatRequest Schema | Pydantic model：`conversation_id: int\|None`、`kb_id: int`、`question: str`（≤2000字符）、`deep_thinking: bool=False` | — |
+| ✅ | Chat Service 核心流程 | `chat_service.chat()` — 检索 → RRF → Rerank → Prompt → LLM SSE 流式，阶段化错误处理（检索失败 E4003 / LLM失败 E4002） | — |
+| ✅ | SSE 流式输出 | 手动 `StreamingResponse`（不用 sse-starlette），事件类型：meta → thinking → message → sources → finish → error，15s 心跳注释帧 `: ping\n\n` | 决策 #22 |
+| ✅ | 会话自动创建 | `conversation_id=null` 时自动创建会话（`kb_id` 记录问答目标 KB），不注入历史消息（`history=[]`），数据结构兼容 Phase 4 | 决策 #23 |
+| ✅ | 标题自动生成 | 截取用户问题前 12 字（`question[:12]`），去除标点。首轮问答后 `event: finish` 返回 title；后续轮次不更新标题 | 决策 #24 |
+| ✅ | thinking_content 传输 | `deep_thinking=true` 时解析 DeepSeek `reasoning_content` → `event: thinking` 流式推送。**不落库**（`messages.thinking_content=null`），仅前端实时展示 | 决策 #25 |
+| ✅ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索 | — |
+| ✅ | KB 选择器接口 | `GET /api/knowledge-bases/selectable` 返回 `{"mine": [...], "public": [...]}`（mine=用户全部 KB，public=他人 public KB），前端直接渲染 `<el-option-group>` | 决策 #26 |
+| ✅ | Chat Router 注册 | `main.py` 注册 `chat_router`（`prefix="/api"`） | — |
 
 ### 5.3 前端：问答界面
 
@@ -247,7 +247,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | DashScope Rerank API | Phase 3+ | 先用 NoopReranker 占位跑通链路 |
 | 对话历史注入 Prompt | Phase 4 | Phase 3 `history=[]`，数据结构兼容 Phase 4 |
 | thinking_content 持久化 | Phase 5+ | Phase 3 仅流式展示不落库；SSE 中断半条消息持久化见 Phase 4 消息状态机 |
-| reasoning_effort 前端可控 | Phase 5+ | Phase 3 后端固定 `"high"`，前端仅 deep_thinking 开关 |
+| reasoning_effort 前端可控 | Phase 5+ | Phase 3 后端在 `deep_thinking=true` 时固定 `"high"`，前端仅 deep_thinking 开关 |
 
 ### 5.5 Phase 3 测试
 
@@ -287,7 +287,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | 17 | RRF 融合：k=60，单路为空时仅返回另一路 | ARCHITECTURE.md §6.3 |
 | 18 | NoopReranker：按 chunk 长度升序排列后截取 top_k=5 | ARCHITECTURE.md §7.3 |
 | 19 | Prompt 预算：软上限 + 按长度择优填充，chunking 阶段固定 chunk_size 不二次裁剪 | ARCHITECTURE.md §5.1.2 |
-| 20 | LLM：DeepSeek API（OpenAI 兼容），流式 `chat/completions`，通过 `extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关 + `reasoning_effort="high"` 控制强度。**注意**：DeepSeek 默认 thinking=enabled，关闭时须显式传 disabled | ARCHITECTURE.md §5.1.3 |
+| 20 | LLM：DeepSeek API（OpenAI 兼容），流式 `chat/completions`，通过 `extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅开启 thinking 时传 `reasoning_effort="high"` 控制强度。**注意**：DeepSeek 默认 thinking=enabled，关闭时须显式传 disabled 且不传 reasoning_effort | ARCHITECTURE.md §5.1.3 |
 | 21 | ChromaDB metadata 类型一致：保持 int 类型，入库/查询两端统一 | ARCHITECTURE.md §7.1 |
 | 22 | SSE：手动 `StreamingResponse`，6 事件类型 + 15s 心跳注释帧 `: ping\n\n` | ARCHITECTURE.md §5.1.3, API.md §6 |
 | 23 | 会话：Phase 3 自动创建（conversation_id=null），不注入历史（history=[]），数据结构兼容 Phase 4 | ARCHITECTURE.md §5.1 |

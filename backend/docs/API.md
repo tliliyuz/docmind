@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.15 |
-| 最后更新 | 2026-05-28 |
+| 文档版本 | v0.16 |
+| 最后更新 | 2026-06-02 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -899,8 +899,7 @@ Celery Worker（异步）:
   "conversation_id": null,
   "kb_id": 1,
   "question": "报销流程是怎样的？",
-  "deep_thinking": false,
-  "reasoning_effort": "high"
+  "deep_thinking": false
 }
 ```
 
@@ -909,8 +908,7 @@ Celery Worker（异步）:
 | conversation_id | int / null | 否 | 会话 ID，新对话传 null |
 | kb_id | int | 是 | 目标知识库 ID |
 | question | string | 是 | 用户问题（≤ 2000 字符） |
-| deep_thinking | bool | 否 | 是否启用深度思考模式，默认 false。后端映射：true→`extra_body={"thinking":{"type":"enabled"}}`，false→`{"type":"disabled"}`。**注意**：DeepSeek 默认 thinking=enabled，false 时必须显式传 disabled |
-| reasoning_effort | string | 否 | 思考强度控制（仅 deep_thinking=true 时生效），默认 `"high"`。可选 `"high"`/`"max"`（low/medium→high，xhigh→max） |
+| deep_thinking | bool | 否 | 是否启用深度思考模式，默认 false。后端映射：true→`extra_body={"thinking":{"type":"enabled"}}` 并传 `reasoning_effort="high"`；false→`extra_body={"thinking":{"type":"disabled"}}` 且不传 `reasoning_effort`。**注意**：DeepSeek 默认 thinking=enabled，false 时必须显式传 disabled |
 
 **响应**：`text/event-stream` (SSE)
 
@@ -935,7 +933,7 @@ data: {"conversation_id": 1, "task_id": "550e8400-e29b-41d4-a716-446655440000"}
 仅当 `deep_thinking: true` 时输出。包含 LLM 的深度思考链路（来自 DeepSeek `reasoning_content`）。**不落库**（`messages.thinking_content = null`），仅前端实时展示，刷新页面后丢失。
 
 > **设计说明**：thinking_content 可能包含系统 prompt/chain 信息且内容巨大，不使用数据库存储。`messages.thinking_content` 字段已预留但 Phase 3 始终写入 null。
-> **DeepSeek API**：`deep_thinking=true` → `extra_body={"thinking":{"type":"enabled"}}` + `reasoning_effort`；`false` → `{"type":"disabled"}`
+> **DeepSeek API**：`deep_thinking=true` → `extra_body={"thinking":{"type":"enabled"}}` + `reasoning_effort="high"`；`false` → `extra_body={"thinking":{"type":"disabled"}}`，不传 `reasoning_effort`
 
 ```
 event: thinking
@@ -1156,7 +1154,7 @@ Content-Type: application/json
 }
 ```
 
-> 完整参数示例（含思考模式）：`{"conversation_id": 3, "kb_id": 1, "question": "...", "deep_thinking": true, "reasoning_effort": "high"}`
+> 完整参数示例（含思考模式）：`{"conversation_id": 3, "kb_id": 1, "question": "...", "deep_thinking": true}`
 
 **Step 2 — 服务端 SSE 流式返回**：
 
@@ -1230,8 +1228,7 @@ Content-Type: application/json
   "conversation_id": 3,
   "kb_id": 1,
   "question": "入职需要开通哪些账号？",
-  "deep_thinking": true,
-  "reasoning_effort": "high"
+  "deep_thinking": true
 }
 ```
 

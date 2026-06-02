@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.18 |
+| 文档版本 | v0.19 |
 | 最后更新 | 2026-06-02 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 3 实现完成） |
@@ -19,7 +19,7 @@
 | `[Planned: Phase X]` | 计划在 Phase X 实现 |
 | `[Target Architecture]` | 最终目标态，非当前状态 |
 
-**当前开发进度**：Phase 3（核心问答）已完成，详见 [ROADMAP.md](ROADMAP.md)。
+**当前开发进度**：Phase 3（核心问答）后端已完成，详见 [ROADMAP.md](ROADMAP.md)。
 
 ---
 
@@ -40,7 +40,7 @@
 | 智能分块 | RecursiveCharacterTextSplitter | 固定大小分块，分隔符优先级切分 | [Implemented] |
 | 关键词检索 | rank-bm25 (BM25Okapi) + jieba 分词 | 成熟库，支持自定义 tokenizer（见 §7.2） | [Implemented] |
 | 文件存储 | 本地磁盘（可扩展至 OSS） | 抽象 StorageBackend 接口，当前本地实现 | [Implemented] |
-| 流式输出 | SSE (Server-Sent Events) | 实时推送 LLM 生成内容 | [Planned: Phase 3] |
+| 流式输出 | SSE (Server-Sent Events) | 实时推送 LLM 生成内容 | [Implemented] |
 | 前端框架 | Vue 3 + Vite | Composition API + SFC | [Implemented] |
 | UI 组件库 | Element Plus | 企业级 Vue 3 组件库 | [Implemented] |
 | 状态管理 | Pinia | Vue 3 官方推荐 | [Implemented] |
@@ -98,7 +98,7 @@
 ┌──────────────────────────▼───────────────────────────────────┐
 │                      FastAPI 后端                             │
 │                                                              │
-│  api/auth ✅  api/kb ✅  api/doc ✅  api/chat ⬜              │
+│  api/auth ✅  api/kb ✅  api/doc ✅  api/chat ✅              │
 │     │            │           │                                │
 │  auth_service  kb_service  document_service                  │
 │                                                              │
@@ -503,9 +503,9 @@ async def heartbeat_generator(interval: int = 15):
 **thinking_content 处理**：
 - DeepSeek API 流式响应中 `delta.reasoning_content` → `event: thinking`
 - 仅 `deep_thinking=true` 时输出 thinking 事件
-- **参数映射**：`deep_thinking=true` → `extra_body={"thinking": {"type": "enabled"}}`，`deep_thinking=false` → `extra_body={"thinking": {"type": "disabled"}}`
+- **参数映射**：`deep_thinking=true` → `extra_body={"thinking": {"type": "enabled"}}` + `reasoning_effort="high"`，`deep_thinking=false` → `extra_body={"thinking": {"type": "disabled"}}` 且不传 `reasoning_effort`
 - **默认值风险**：DeepSeek 官方默认 `thinking=enabled`，后端在 `false` 时必须显式传 `disabled`，否则每次请求都触发思考模式
-- **思考强度**：`reasoning_effort="high"`（DeepSeek 支持 high/max，low/medium→high，xhigh→max）
+- **思考强度**：仅 thinking enabled 时传 `reasoning_effort="high"`（DeepSeek 支持 high/max，low/medium→high，xhigh→max）；thinking disabled 时禁止同时传 `reasoning_effort`
 - **不落库**：`messages.thinking_content` 写入 `null`，仅前端实时展示
 - 原因：内容巨大、可能泄露系统 prompt/chain、数据库膨胀
 
@@ -550,13 +550,15 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 
     # 6. LLM SSE 流式输出 — [Phase 3]
     extra_body = {"thinking": {"type": "enabled" if deep_thinking else "disabled"}}
+    llm_kwargs = {"extra_body": extra_body}
+    if deep_thinking:
+        llm_kwargs["reasoning_effort"] = "high"
     async def event_stream():
         yield sse_event("meta", {"conversation_id": conv.id, "task_id": uuid4()})
         try:
             async for chunk in llm.stream_chat(
                 prompt_messages,
-                extra_body=extra_body,
-                reasoning_effort="high",
+                **llm_kwargs,
             ):
                 if chunk.reasoning_content and deep_thinking:
                     yield sse_event("thinking", {"delta": chunk.reasoning_content})

@@ -4,6 +4,7 @@
 - DeepSeek API (OpenAI 兼容接口)
 - 流式 chat/completions
 - extra_body 控制 thinking: deep_thinking=true -> {"thinking": {"type": "enabled"}}
+- reasoning_effort 仅在 deep_thinking=true 时传递，避免 disabled + effort 冲突
 - 解析 content + reasoning_content
 """
 
@@ -58,7 +59,7 @@ async def stream_chat_completion(
     对齐 ARCHITECTURE.md §5.1.3:
     - deep_thinking=true -> extra_body={"thinking": {"type": "enabled"}}
     - deep_thinking=false -> extra_body={"thinking": {"type": "disabled"}}
-    - reasoning_effort: 固定 "high"
+    - reasoning_effort: 仅 deep_thinking=true 时传递，固定 "high"
 
     Args:
         messages: OpenAI 格式的消息列表 [{"role": "system/user/assistant", "content": "..."}]
@@ -74,22 +75,24 @@ async def stream_chat_completion(
     """
     client = _get_llm_client()
 
-    # 构建 extra_body（对齐 ARCHITECTURE.md §5.1.3）
+    # 构建请求参数（对齐 ARCHITECTURE.md §5.1.3）
     thinking_type = "enabled" if deep_thinking else "disabled"
     extra_body = {
         "thinking": {"type": thinking_type},
-        "reasoning_effort": reasoning_effort,
     }
+    request_kwargs = {
+        "model": settings.LLM_MODEL,
+        "messages": messages,
+        "stream": True,
+        "extra_body": extra_body,
+    }
+    if deep_thinking:
+        request_kwargs["reasoning_effort"] = reasoning_effort
 
     try:
         logger.info(f"调用 LLM: model={settings.LLM_MODEL}, deep_thinking={deep_thinking}")
 
-        stream = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=messages,
-            stream=True,
-            extra_body=extra_body,
-        )
+        stream = await client.chat.completions.create(**request_kwargs)
 
         async for chunk in stream:
             if not chunk.choices:
@@ -143,18 +146,20 @@ async def chat_completion(
     thinking_type = "enabled" if deep_thinking else "disabled"
     extra_body = {
         "thinking": {"type": thinking_type},
-        "reasoning_effort": reasoning_effort,
     }
+    request_kwargs = {
+        "model": settings.LLM_MODEL,
+        "messages": messages,
+        "stream": False,
+        "extra_body": extra_body,
+    }
+    if deep_thinking:
+        request_kwargs["reasoning_effort"] = reasoning_effort
 
     try:
         logger.info(f"调用 LLM (非流式): model={settings.LLM_MODEL}")
 
-        response = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=messages,
-            stream=False,
-            extra_body=extra_body,
-        )
+        response = await client.chat.completions.create(**request_kwargs)
 
         if not response.choices:
             raise LLMCallFailedException(detail="LLM 返回空结果")
