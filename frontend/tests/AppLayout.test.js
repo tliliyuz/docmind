@@ -54,9 +54,9 @@ describe('AppLayout', () => {
     expect(wrapper.find('.content-scroll').exists()).toBe(true)
   })
 
-  it('Chat 路由显示"智能问答"', () => {
+  it('Chat 路由显示"DocMind"', () => {
     const wrapper = getComponent('Chat')
-    expect(wrapper.find('.page-title').text()).toBe('智能问答')
+    expect(wrapper.find('.page-title').text()).toBe('DocMind')
   })
 
   it('AdminKnowledge 路由显示"知识库管理"', () => {

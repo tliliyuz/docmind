@@ -1,5 +1,92 @@
 # DocMind 变更日志
 
+## 2026-06-03 — Phase 3 前端优化：KB 选择器双下拉框 / 分组标签样式 / 移除 Logo
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | KB 下拉框分组标题「我的知识库」「公共知识库」与可选项字体样式混淆 | Element Plus 默认 `el-option-group__title` 样式视觉差异不够，用户误以为分组标题是可点击的知识库 | ① 新增 `:deep(.el-select-group__title)` 覆盖样式（小号 + 加粗 + tertiary 色 + 大写 + 字间距），与可选项明显区分（随 D 方案改为双下拉框后此规则自然移除）；② 后续改为双独立下拉框彻底消除此问题 |
+| P2 | WelcomeScreen 显示大脑 Logo 冗余 | 空状态页有一颗大 Logo 图标，侧边栏已有独立的 DocMind Logo，多余且占用空间 | 删除 `WelcomeScreen.vue` 中的 `.welcome-logo` 元素及其 CSS 规则块 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/views/ChatPage.vue` | 单一 `el-select` + `el-option-group` 改为双独立 `el-select` 并排——左侧「我的知识库」、右侧「公共知识库」；新增 `selectedMineKBId`/`selectedPublicKBId`/`hasAnyKB` 三个 computed；公共 KB 选项 label 附加 `(username)` 标识所有者；无任何 KB 时显示「暂无可用的知识库」提示；`.kb-selector-inner .el-select` 设 `min-width: 160px` 防止过窄 |
+| `frontend/src/components/chat/WelcomeScreen.vue` | 删除 `.welcome-logo` 元素（`<i class="fas fa-brain">`）及对应 CSS |
+| `frontend/docs/FRONTEND.md` | v0.11→v0.12：§4.1 布局图 + 知识库选择器描述更新为双下拉框方案 |
+
+### 测试结果
+
+- 前端：59/59 全部通过（零回归）
+- 构建：`npm run build` 成功
+
+---
+
+## 2026-06-03 — Phase 3 前端审查修复：Sources 展示 / 布局 / 会话隔离 / 空 KB 提示
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P0 | Sources 引用来源：`content` 分块文本未渲染，`score` 误显示为百分比 | `MessageItem.vue` 只渲染 `doc_name`/`page`/`score*100`，后端传来的 200 字截断分块文本 `content` 字段被完全忽略；RRF 排名融合分数乘以 100 显示百分比没有任何语义意义 | 重写 sources-box：① 新增 `.source-content` 区域渲染 `src.content` 分块文本（灰色引用样式）；② 移除误导性的 `score*100 %` 显示；③ 标题改为「引用 X 个文档（共 N 个片段）」，去重文档计数 |
+| P0 | 输入框不固定在底部，需要滚动才能看到 | `AppLayout.vue` 的 `.content-scroll` 有 `overflow-y: auto`，ChatPage 内容超出时外层产生滚动条把 ChatInput 推走 | ① `AppLayout.vue`：Chat 路由时 `.content-scroll` 改为 `overflow-y: hidden; padding: 0`，ChatPage 内部独立管理滚动；② ChatPage 去掉负 margin hack；③ MessageList/WelcomeScreen 加 `min-height: 0` 防止 flex 子元素撑开父容器 |
+| P0 | 退出登录换账号后还能看到上一个用户的聊天记录 | `authStore.logout()` 只清除 auth 数据，未清空 `chatStore` 的 messages/selectedKBId/selectableKBs；`localStorage.last_kb_id` 跨用户未清理 | ① `chatStore` 新增 `reset()` 方法清空全部状态 + 移除 `last_kb_id`；② `Sidebar.handleLogout` 先调 `chatStore.reset()` 再 `authStore.logout()` |
+| P2 | 未选知识库时发送消息静默失败 | `sendUserMessage` throw Error → ChatPage `catch` 仅 `console.error`；WelcomeScreen 快捷问题空 KB 时直接 `return` 无提示 | `handleSend`/`handleQuickQuestion` 显式判断 `selectedKBId`，空时 `ElMessage.warning('请先选择一个知识库')` |
+| P2 | Chat 页面标题硬编码「智能问答」 | `AppLayout.vue` 路由标题映射 `Chat: '智能问答'` | 改为 `Chat: 'DocMind'`（产品名；后续 Phase 4 可根据 finish 事件 title 动态更新） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/chat/MessageItem.vue` | sources-box 重写：新增 `uniqueDocCount` computed（去重文档计数）；每个 source-item 改为垂直布局，新增 `source-header`（文档名+页码）+ `source-content`（分块文本引用展示）；移除 `source-score` 百分比展示；新增对应 CSS |
+| `frontend/src/components/layout/AppLayout.vue` | `content-scroll` Chat 路由时 class 切换 `chat-active`（`overflow-y: hidden; padding: 0`）避免外层滚动；标题映射 `Chat: '智能问答'`→`Chat: 'DocMind'` |
+| `frontend/src/views/ChatPage.vue` | 移除负 margin hack；新增 `min-height: 0` 到 flex 子元素；导入 `ElMessage`，`handleSend`/`handleQuickQuestion` 增加空 KB 用户提示 |
+| `frontend/src/components/chat/MessageList.vue` | `.message-list` 新增 `min-height: 0` 防止撑开父容器 |
+| `frontend/src/components/chat/WelcomeScreen.vue` | `.welcome-screen` 新增 `min-height: 0; overflow-y: auto` 防止撑开父容器 + 小屏内容溢出时可滚动 |
+| `frontend/src/stores/chat.js` | 新增 `reset()` 方法：清空 messages/conversationId/streaming/currentStream/selectedKBId/selectableKBs/loadingKBs + `localStorage.removeItem('last_kb_id')` |
+| `frontend/src/components/layout/Sidebar.vue` | `handleLogout` 优先调用 `chatStore.reset()` 清空聊天状态 |
+| `frontend/tests/AppLayout.test.js` | `Chat 路由显示"智能问答"` → `Chat 路由显示"DocMind"`，断言同步 |
+
+### 测试结果
+
+- 前端：59/59 全部通过（零回归）
+- 构建：`npm run build` 成功
+
+### 待后续
+
+| 事项 | 状态 | 说明 |
+|:---|:---|:---|
+| KB ID 信息泄露（问题 4） | 暂缓 | 涉及后端 selectable 接口数据 + 前端 `last_kb_id` 按用户隔离，需先明确方案 |
+| 侧边栏产品名布局调整（问题 5b） | 暂缓 | 新增功能——产品名移到 ChatPage 标题 + 字体调大，需先补充 FRONTEND.md 设计文档 |
+| 侧边栏可折叠（问题 6） | 暂缓 | 新增功能，需先补充 FRONTEND.md + UIDESIGN.md |
+
+## 2026-06-03 — Phase 3 前端问答界面：核心组件 + 页面集成
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/chat/ChatInput.vue` | **新建** 输入框组件：textarea 自动高度调整 + ≤2000字实时计数 + Enter发送/Shift+Enter换行 + 深度思考开关（黄色激活态）+ 流式中显示「停止生成」按钮 + 空输入抖动反馈 + `setText()`/`focus()` 暴露方法 |
+| `frontend/src/components/chat/MessageItem.vue` | **新建** 单条消息组件：用户消息右对齐黑底白字气泡 / 助手消息左对齐无背景 + 角色头像 + Markdown 实时渲染（markdown-it + highlight.js）+ thinking 黄色折叠面板（默认展开）+ sources 引用来源卡片（默认展开，含文档名/页码/相似度百分比）+ typing 三点跳动动画 + 完成态 hover「重新生成」按钮 + 错误状态提示 + 代码块复制按钮 |
+| `frontend/src/components/chat/MessageList.vue` | **新建** 消息列表组件：自动滚动到底部（新消息/流式内容变化时）+ 手动上滚时显示 sticky「新消息」浮动按钮 + 点击按钮平滑滚回底部 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/views/ChatPage.vue` | **重写** 占位页 → 完整问答页面：KB 选择器（el-select + el-option-group）+ WelcomeScreen/MessageList 条件切换 + ChatInput 底部固定 + 快捷问题直接发送 + 切换 KB 自动清空对话 + 覆盖 AppLayout padding 全屏布局 |
+| `frontend/src/components/layout/Sidebar.vue` | 新建对话按钮联动 `chatStore.clearMessages()`（已在 /chat 时清空消息；其他页面时跳转）；新对话按钮在 Chat 路由时高亮激活态；新增 `useRoute` + `useChatStore` 导入 |
+| `frontend/src/main.js` | 新增 `highlight.js/styles/github-dark.css` 导入（代码块深色主题，对齐 UIDESIGN.md 规范） |
+
+### 文档同步
+
+| 文件 | 版本变更 | 主要变更 |
+|:---|:---|:---|
+| `frontend/docs/FRONTEND.md` | v0.10→v0.11 | §4.3/§4.4/§4.5 组件行为补充实现状态；§10 模块表组件状态更新；§11 TODO 更新 Phase 3 前端状态 |
+| `docs/TEST_CASES.md` | v0.30→v0.31 | §5.13-§5.19 前端组件测试用例补充「代码已实现」备注；§8 覆盖率表补充实现状态 |
+
 ## 2026-06-02 — Phase 3 Chat API 与 SSE 审查修复
 
 ### 修复

@@ -11,7 +11,7 @@
           <span class="logo-subtitle">知识库问答平台</span>
         </div>
       </div>
-      <button class="new-chat-btn" @click="handleNewChat">
+      <button class="new-chat-btn" :class="{ active: route.path === '/chat' }" @click="handleNewChat">
         <i class="fas fa-plus"></i>
         <span>新建对话</span>
       </button>
@@ -77,18 +77,26 @@
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 
 function handleNewChat() {
-  router.push('/chat')
+  if (route.path === '/chat') {
+    chatStore.clearMessages()
+  } else {
+    router.push('/chat')
+  }
 }
 
 function handleLogout() {
+  chatStore.reset()
   authStore.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
@@ -172,6 +180,13 @@ function handleLogout() {
 .new-chat-btn:hover {
   background: var(--dm-bg-page);
   border-color: var(--dm-text-primary);
+}
+
+.new-chat-btn.active {
+  background: var(--dm-primary-light);
+  color: var(--dm-primary);
+  border-color: var(--dm-primary);
+  font-weight: var(--dm-weight-semibold);
 }
 
 /* ===== 中间区域 ===== */

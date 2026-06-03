@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.10 |
-| 最后更新 | 2026-05-28 |
+| 文档版本 | v0.12 |
+| 最后更新 | 2026-06-03 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -155,12 +155,12 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  Sidebar (280px)              │  Main Content               │
 │  ─────────────────────────────┤  ─────────────────────────  │
-│  Logo + 新建对话               │  Top: 知识库选择器            │
-│  ─────────────────────────────┤    <el-select> +            │
-│  会话区域（Phase 3 空态）       │    <el-option-group>        │
-│  • 新建对话按钮                │    ├─ 我的知识库             │
-│  • 历史会话列表（Phase 4 实现） │    └─ 公共知识库             │
-│  ─────────────────────────────┤    └─ 公共知识库             │
+│  Logo + 新建对话               │  Top: 知识库选择器（双下拉框）  │
+│  ─────────────────────────────┤    [我的知识库 ▼] [公共知识库 ▼]│
+│  会话区域（Phase 3 空态）       │    ├─ 我的知识库             │
+│  • 新建对话按钮                │    └─ 公共知识库             │
+│  • 历史会话列表（Phase 4 实现） │  ─────────────────────────  │
+│  ─────────────────────────────┤                             │
 │  [所有用户] 我的知识库           │  ─────────────────────────  │
 │  • 点击进入 /knowledge-bases   │  MessageList               │
 │  [所有用户] 公共知识库           │  • WelcomeScreen（空态）     │
@@ -180,8 +180,10 @@
 **知识库选择器**（ChatPage 顶部）：
 
 - 数据来源：`GET /api/knowledge-bases/selectable`（Phase 3 新增接口）
-- 渲染方式：`<el-select>` + `<el-option-group label="我的知识库">` + `<el-option-group label="公共知识库">`
-- 默认选中：最近一次使用的 KB（前端 localStorage 缓存 `last_kb_id`）
+- 渲染方式：两个独立的 `<el-select>` 并排——左侧「我的知识库」下拉仅列出当前用户创建的 KB，右侧「公共知识库」下拉列出所有 `visibility=public` 的 KB（含 `username` 标注所有者）
+- 两个下拉框各自独立选中，互不干扰；当用户选择了私有 KB 又选择公共 KB 时，后者覆盖前者（单一 `selectedKBId` 语义）
+- 分组标题样式：`el-select-group__title` 使用 `--dm-text-3xs` + 大写 + 加粗，与可选项明显区分
+- 默认选中：优先 localStorage 缓存 `last_kb_id`，否则选中「我的知识库」第一个；若用户无私有 KB，则选中「公共知识库」第一个
 - 切换 KB：新建会话（`conversation_id=null`），不同 KB 的对话使用不同会话
 
 ### 4.2 核心问答交互流程
@@ -773,8 +775,12 @@ function parseSSEEvent(raw) {
 
 | 模块 | 当前状态 | Phase 3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
-| ChatPage | Phase 3 实现中 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：历史会话列表集成、多轮对话 |
-| ChatPage Sidebar | 空会话列表 + 基本导航 | 会话区域空态 + 「新建对话」按钮（清空消息列表 + conversation_id=null） | Phase 4：历史会话列表、重命名、删除、按时间分组 |
+| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：历史会话列表集成、多轮对话 |
+| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮（清空消息列表 + conversation_id=null，已在 /chat 页时清空；route 高亮） | Phase 4：历史会话列表、重命名、删除、按时间分组 |
+| ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 | — |
+| MessageList | ✅ 已实现 | 自动滚动底部 + 手动上滚「新消息」浮动按钮 + MessageItem 渲染 | — |
+| MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片 + typing 动画 + 重新生成按钮 | — |
+| WelcomeScreen | ✅ 已实现 | Logo + 欢迎语 + 4 个快捷问题卡片 → emit 触发发送 | — |
 | KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | — | — |
 | PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | — | — |
 | KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | — |
@@ -782,9 +788,9 @@ function parseSSEEvent(raw) {
 | AdminDocumentList (`/admin/documents`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/documents` |
 | Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
 | 状态轮询 | ✅ 已实现 | — | Phase 5：可选升级 WebSocket |
-| SSE 流式输出 | Phase 3 实现中 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
-| 会话自动创建 | Phase 3 实现中 | `conversation_id=null` 传参 → `event: meta` 返回新 ID | Phase 4：多轮历史注入 |
-| 标题自动生成 | Phase 3 实现中 | 首轮 `finish` 事件返回 title（截取 question[:12]） | — |
+| SSE 流式输出 | ✅ 已实现 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
+| 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 ID | Phase 4：多轮历史注入 |
+| 标题自动生成 | ✅ 已实现 | 首轮 `finish` 事件返回 title（截取 question[:12]） | — |
 
 ---
 

@@ -5,7 +5,7 @@
       <header class="top-header">
         <h1 class="page-title">{{ pageTitle }}</h1>
       </header>
-      <main class="content-scroll">
+      <main class="content-scroll" :class="{ 'chat-active': route.name === 'Chat' }">
         <slot />
       </main>
     </div>
@@ -21,7 +21,7 @@ const route = useRoute()
 
 const pageTitle = computed(() => {
   const titles = {
-    Chat: '智能问答',
+    Chat: 'DocMind',
     KnowledgeList: '我的知识库',
     KnowledgeDetail: '知识库详情',
     AdminKnowledge: '知识库管理',
@@ -69,5 +69,11 @@ const pageTitle = computed(() => {
   flex: 1;
   overflow-y: auto;
   padding: var(--dm-space-6) 28px;
+}
+
+/* 聊天页内部自行管理滚动，父容器不产生滚动条 */
+.content-scroll.chat-active {
+  overflow-y: hidden;
+  padding: 0;
 }
 </style>
