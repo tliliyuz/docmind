@@ -83,7 +83,7 @@ CREATE TABLE knowledge_bases (
 | user_id | BIGINT | 创建者用户 ID |
 | visibility | ENUM | private（仅 owner 可见可检索）/ public（所有用户可检索），默认 private |
 | status | ENUM | active（正常）/ deleting（异步清理中，随后物理删除行） |
-| chunk_count | INT | 分块总数（冗余缓存，避免 COUNT 查询）。文档/KB 删除时须用 `GREATEST(0, chunk_count - N)` 原子递减 |
+| chunk_count | INT | 分块总数（冗余缓存列，Celery 任务内部维护）。**API 响应使用 Chunk 表实时 COUNT，不读此列**，避免 Celery 任务异常导致僵尸计数值 |
 | doc_count | INT | 文档总数（冗余缓存）。文档删除时须用 `GREATEST(0, doc_count - 1)` 原子递减 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |

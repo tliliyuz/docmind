@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.22 |
-| 最后更新 | 2026-06-02 |
+| 文档版本 | v0.23 |
+| 最后更新 | 2026-06-03 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -224,24 +224,24 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
-| ⬜ | KB 选择器 | ChatPage 顶部 `<el-select>` + `<el-option-group>`（「我的知识库」/「公共知识库」），数据来源 `GET /api/knowledge-bases/selectable`，默认选中最近使用的 KB | 决策 #26 |
-| ⬜ | ChatInput 组件 | 输入框（≤2000字符计数字）+ Enter 发送 / Shift+Enter 换行 + 深度思考开关 + 发送中切换为「停止生成」按钮 | FRONTEND.md §4.3 |
-| ⬜ | MessageList 组件 | 消息列表：用户气泡 + AI 气泡（Markdown 实时渲染）+ thinking 折叠面板 + sources 引用卡片；自动滚动到底部，手动上滚时显示「新消息」浮动按钮 | FRONTEND.md §4.4 |
-| ⬜ | MessageItem 组件 | 单条消息渲染：角色头像 + 内容区（markdown-it 渲染）+ thinking 黄色折叠面板 + sources 文档链接（点击预览分块内容） | — |
-| ⬜ | WelcomeScreen 组件 | 空消息列表时展示：Logo + 欢迎语 + 快捷问题卡片（点击自动填入输入框并发送） | FRONTEND.md §4.6 |
-| ⬜ | SSE 解析工具 `sse.js` | `fetch` + `ReadableStream` 解析 SSE 事件流（`event:` 行 + `data:` 行），支持 6 种事件类型 + 格式异常容错 + 心跳帧忽略 | 决策 #22 |
-| ⬜ | Markdown 渲染工具 `markdown.js` | `markdown-it` 封装，代码块高亮 + 一键复制 + 安全过滤（XSS 防护） | — |
-| ⬜ | ChatStore (Pinia) | 消息列表状态 + `sendMessage()` SSE 流式消费 + `abort()` 中断 + `conversation_id` 管理 | — |
-| ⬜ | Chat API 封装 `api/chat.js` | `sendMessage(params, onEvent, onError)` — fetch SSE 流，回调式事件分发 | — |
-| ⬜ | 来源引用展示 | `event: sources` 事件在消息底部渲染引用文档卡片（doc_name + score + page），点击展开分块预览弹窗 | — |
-| ⬜ | Sidebar 会话入口适配 | 会话区域先展示空态（Phase 4 实现 CRUD），「新建对话」按钮清空消息列表 + conversation_id=null | — |
+| ✅ | KB 选择器 | ChatPage 顶部双独立 `el-select` 并排（左侧「我的知识库」/ 右侧「公共知识库」），公共 KB 选项附加 `(username)` 标识所有者，数据来源 `GET /api/knowledge-bases/selectable`，默认选中最近使用的 KB | 决策 #26 |
+| ✅ | ChatInput 组件 | 输入框（≤2000字符计数字）+ Enter 发送 / Shift+Enter 换行 + 深度思考开关（黄色激活态）+ 发送中切换为「停止生成」按钮 + 空输入抖动反馈 | FRONTEND.md §4.3 |
+| ✅ | MessageList 组件 | 消息列表：用户气泡（右对齐黑底白字）+ AI 气泡（左对齐无背景）+ Markdown 实时渲染 + thinking 黄色折叠面板 + sources 引用卡片（文档计数去重）；自动滚动到底部，手动上滚时显示 sticky「新消息」浮动按钮 | FRONTEND.md §4.4 |
+| ✅ | MessageItem 组件 | 单条消息渲染：角色头像 + 内容区（markdown-it + highlight.js）+ thinking 黄色折叠面板（默认展开）+ sources 引用来源卡片（含分块文本内容预览）+ typing 三点动画 + 完成态 hover「重新生成」+ 错误状态提示 + 代码块复制按钮 | — |
+| ✅ | WelcomeScreen 组件 | 空消息列表时展示：欢迎语 + 快捷问题卡片（点击自动填入输入框并发送）。已移除产品 Logo（侧边栏已有独立 Logo） | FRONTEND.md §4.6 |
+| ✅ | SSE 解析工具 `sse.js` | `fetch` + `ReadableStream` 解析 SSE 事件流（`event:` 行 + `data:` 行），支持 6 种事件类型 + 格式异常容错 + 心跳帧忽略 | 决策 #22 |
+| ✅ | Markdown 渲染工具 `markdown.js` | `markdown-it` 封装 + `highlight.js` 代码块高亮（github-dark 主题）+ 一键复制 + 安全过滤（XSS 防护） | — |
+| ✅ | ChatStore (Pinia) | 消息列表状态 + `sendMessage()` SSE 流式消费 + `abort()` 中断 + `conversation_id` 管理 + `reset()` 方法（退出登录时清空全部状态 + 移除 `last_kb_id`） | — |
+| ✅ | Chat API 封装 `api/chat.js` | `sendMessage(params, onEvent, onError)` — fetch SSE 流，回调式事件分发 | — |
+| ✅ | 来源引用展示 | `event: sources` 事件在消息底部渲染引用文档卡片（doc_name + 分块文本预览 + page），去重文档计数（「引用 X 个文档，共 N 个片段」） | — |
+| ✅ | Sidebar 会话入口适配 | 会话区域展示空态（Phase 4 实现 CRUD），「新建对话」按钮清空消息列表 + conversation_id=null，Chat 路由时高亮激活态 | — |
 
 ### 5.4 本阶段不做的
 
 | 推迟项 | 排期 | 原因 |
 |:---|:---|:---|
 | 结构感知分块（Markdown 标题层级） | Phase 5+ | Phase 3 继续用固定大小分块，检索质量已够用 |
-| 意图识别（知识查询/闲聊分类） | Phase 5 | 单轮问答先跑通核心链路 |
+| 意图识别（知识查询/闲聊分类） | Phase 5 | Phase 3 已加轻量规则级 stopgap（`_is_casual_chat()`：问候/致谢/告别等 6 类正则），跳过检索直接回复。完整意图识别（含问题类型判别）仍排 Phase 5 |
 | 问题重写（多轮上下文补全） | Phase 4 | Phase 3 仅单轮，不注入历史 |
 | 会话 CRUD（列表/重命名/删除） | Phase 4 | Phase 3 仅自动创建 + 标题生成 |
 | DashScope Rerank API | Phase 3+ | 先用 NoopReranker 占位跑通链路 |

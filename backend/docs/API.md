@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
+| 文档版本 | v0.19 |
 | 最后更新 | 2026-06-03 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -82,7 +82,7 @@
 
 | 错误码 | HTTP 状态码 | 说明 |
 |:---|:---|:---|
-| E4001 | 400 | 知识库无可用文档（需先上传文档；仅统计 `completed` / `success_with_warnings` 状态） |
+| E4001 | 400 | 知识库无可用文档（需先上传文档；仅统计 `completed` / `success_with_warnings` / `partial_failed` 状态） |
 | E4002 | 502 | LLM 调用失败 |
 | E4003 | 500 | 检索服务异常 |
 | E4004 | 429 | LLM 调用频率超限 |
@@ -332,12 +332,12 @@
 
 | 分组 | 数据来源 | 说明 |
 |:---|:---|:---|
-| `mine` | 当前用户的所有 KB（`status=active`） | 不含 `deleting` 状态 |
-| `public` | 其他用户的 `visibility=public` + `status=active` KB | 不含当前用户自己的 KB（避免重复） |
+| `mine` | 当前用户所有 `status=active` 且至少有 1 篇可检索文档的 KB | 可检索文档 = `completed` / `success_with_warnings` / `partial_failed`；不含 `deleting` 状态 |
+| `public` | 其他用户的 `visibility=public` + `status=active` 且至少有 1 篇可检索文档的 KB | 不含当前用户自己的 KB（避免重复） |
 
-> **设计意图**：前端直接使用分组数据渲染，无需自行 merge 或去重。后端统一控制权限 scope。
+> **设计意图**：前端直接使用分组数据渲染，无需自行 merge 或去重。后端统一控制权限 scope。接口仅返回有可检索文档的 KB，用户不会看到可选中但无法问答的 KB。
 
-> **空知识库行为**：选择器返回所有 `status=active` 的 KB（含无文档的空 KB）。用户选择空 KB 发问时，后端返回 E4001「知识库无可用文档」。注意：仅有 `completed` 和 `success_with_warnings` 状态的文档视为可检索（`partial_failed` 虽然可能有部分分块入库，但不计入可检索范围）。
+> **空知识库行为**：无任何可检索文档的 KB 不会出现在列表中。`doc_count` 字段为 KnowledgeBase 表的静态计数字段（含所有状态的文档），不代表可检索文档数。
 
 ### GET `/api/knowledge-bases/{id}`
 

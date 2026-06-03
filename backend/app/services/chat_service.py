@@ -52,6 +52,9 @@ _bm25_retriever = BM25Retriever(
 )
 _reranker = NoopReranker()
 
+# 可检索文档状态：文档已入库、分块已写入 ChromaDB、可用于检索
+RETRIEVABLE_STATUSES = ["completed", "success_with_warnings", "partial_failed"]
+
 # 闲谈模式 System Prompt（不注入文档上下文）
 CASUAL_SYSTEM_PROMPT = "你是 DocMind，一个企业知识库助手。请友好、简洁地回答用户的问题。"
 
@@ -260,13 +263,13 @@ async def _validate_and_prepare(
     if kb.visibility == "private" and kb.user_id != user_id and role != "admin":
         raise PermissionDeniedException()
 
-    # 检查 KB 是否有可检索文档（completed / success_with_warnings 均可检索）
+    # 检查 KB 是否有可检索文档（含 partial_failed：部分分块可用）
     doc_count_q = (
         select(func.count())
         .select_from(Document)
         .where(
             Document.kb_id == kb_id,
-            Document.status.in_(["completed", "success_with_warnings"]),
+            Document.status.in_(RETRIEVABLE_STATUSES),
         )
     )
     doc_count = (await db.execute(doc_count_q)).scalar()
@@ -381,24 +384,38 @@ async def get_selectable_kbs(
     """获取当前用户可用于问答的知识库列表，按所有权分组。
 
     对齐 API.md §3 GET /api/knowledge-bases/selectable：
-    - mine: 当前用户的所有 KB（status=active，含 private 和 public）
-    - public: 其他用户的 public + active KB（不含当前用户自己的）
+    - mine: 当前用户所有 active 且有可检索文档的 KB
+    - public: 其他用户 public + active 且有可检索文档的 KB
+
+    仅返回至少有一篇可检索文档（completed / success_with_warnings / partial_failed）的 KB，
+    避免前端展示空 KB 导致用户选中后收到 E4001。
 
     Returns:
         {"mine": [...], "public": [...]}
     """
-    # 我的知识库（所有 status=active 的 KB）
+    from sqlalchemy import and_, exists
+
+    # 子查询：KB 下是否有可检索文档
+    has_retrievable = exists().where(
+        and_(
+            Document.kb_id == KnowledgeBase.id,
+            Document.status.in_(RETRIEVABLE_STATUSES),
+        )
+    )
+
+    # 我的知识库（active + 有可检索文档）
     mine_q = (
         select(KnowledgeBase)
         .where(
             KnowledgeBase.user_id == user_id,
             KnowledgeBase.status == "active",
+            has_retrievable,
         )
         .order_by(KnowledgeBase.created_at.desc())
     )
     mine_rows = (await db.execute(mine_q)).scalars().all()
 
-    # 公共知识库（其他用户的 public + active KB）
+    # 公共知识库（其他用户的 public + active + 有可检索文档）
     public_q = (
         select(KnowledgeBase, User.username)
         .join(User, KnowledgeBase.user_id == User.id)
@@ -406,6 +423,7 @@ async def get_selectable_kbs(
             KnowledgeBase.visibility == "public",
             KnowledgeBase.status == "active",
             KnowledgeBase.user_id != user_id,
+            has_retrievable,
         )
         .order_by(KnowledgeBase.created_at.desc())
     )

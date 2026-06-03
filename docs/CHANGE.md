@@ -1,20 +1,78 @@
 # DocMind 变更日志
 
+## 2026-06-03 — 测试体系修复：补齐缺失的服务层测试 + TEST_CASES.md 审计
+
+### 背景
+
+全量审计 499 用例后发现两类问题：
+1. **测试分层缺失**：`knowledge_base_service.py` 和 `document_service.py` 仅有 API 层序列化测试（全部用 `patch()` mock），零行业务逻辑被执行。`_fill_real_chunk_count` NameError Bug 因此逃逸。
+2. **TEST_CASES.md 覆盖率表不准确**：上述两个模块标记「✅ 100%」，实际覆盖率为 0%（API 序列化测试不计入服务层覆盖率）。
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/test_kb_service.py` | **新建**。33 用例覆盖 `knowledge_base_service.py` 全部 7 个公开函数（`create_kb`/`get_kb`/`list_kbs`/`list_public_kbs`/`update_kb`/`delete_kb`/`_get_real_chunk_counts`）。含关键回归测试 `test_db_refresh后用实时分块数覆写`——验证 `update_kb` 在 `db.refresh()` 后用 `_get_real_chunk_counts` 修正 chunk_count |
+| `backend/tests/test_document_service.py` | **新建**。29 用例覆盖 `document_service.py` 核心函数（`_validate_file`/`_check_kb_ownership`/`list_documents`/`get_document`/`get_document_chunks`/`delete_document`/`reprocess_document`/`upload_document` 权限路径） |
+| `backend/app/services/knowledge_base_service.py` | 修复 `update_kb()` 调用不存在的 `_fill_real_chunk_count` → 改为 `_get_real_chunk_counts` |
+| `docs/TEST_CASES.md` | v0.31→v0.32：① §8 覆盖率表修正 `services/knowledge_base_service.py` 和 `services/document_service.py` 状态（⬜→✅ 真实服务层测试）；② 修正 `rag/chunker.py`(37→36)、`rag/embedder.py`(26→28)、`rag/bm25.py`(25→24)、`rag/prompt_builder.py`(16→13) 用例数；③ 新增 `rag/fusion.py`/`core/llm.py`/`core/sse.py`/`ingest/tasks.py` Phase 3 模块条目；④ 文件头 497→499 |
+| `docs/ROADMAP.md` | v0.22→v0.23：§5.3 全部 11 个前端任务 ⬜→✅ + KB 选择器描述更新为双 `el-select` + §5.4 闲谈 stopgap 说明 |
+| `docs/CHANGE.md` | chunk_count 条目移除不存在的 `chunk.py` 修改记录，修正 `update_kb` 描述 |
+
+### 测试结果
+
+- 后端：561/561 全部通过（原 499 + 新增 62 服务层测试，零回归）
+
+### P2 后续：消除测试代码重复
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/test_chat_service.py` | 新增 `_mock_chat_pipeline()` 共享上下文管理器（ExitStack + contextmanager），封装 ~10 个 `patch()` 调用的样板代码。10 个测试方法从平均 ~15 行 mock 样板缩减为单行 `with _mock_chat_pipeline(...)` 调用。支持 `with_conversation`/`with_messages` 参数控制是否 mock ORM 构造器 |
+| `backend/tests/test_sse_helpers.py` | `TestBuildSources` 3 个测试方法从**复制粘贴生产代码**改为 `from app.services.chat_service import _build_sources` 直接调用。消除源代码逻辑变更时测试不同步的风险 |
+
+**关键收益**：
+- `test_chat_service.py` 净减少 ~120 行重复 mock 代码
+- `test_sse_helpers.py` `TestBuildSources` 从「测试生产代码的副本」变为「验证生产函数的行为」——源代码变更时测试自动跟踪，不再需要手动同步
+
+---
+
+## 2026-06-03 — KB chunk_count 静态缓存→实时查询（消除僵尸计数）
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | 文档物理删除后 KB 前端仍显示旧分块数 | `KnowledgeBase.chunk_count` 是去正规化缓存列，值的更新完全依赖 Celery 异步任务（ingest 递增 / delete 递减）。Celery 未运行、任务崩溃、或直接操作 DB 跳过 Celery 时，KB 计数器永久残留僵尸值 | API 响应的 `chunk_count` 改为从 Chunk 表实时 `COUNT(*) GROUP BY kb_id` 查询，不再读 KB 表的静态缓存列。KB 表 `chunk_count` 列保留给 Celery 内部维护，但对外接口层不再依赖它 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/knowledge_base_service.py` | ① 新增 `_get_real_chunk_counts(db, kb_ids)` 批量查询函数（单次 `GROUP BY` 避免 N+1）；② `get_kb()` 新增 `fill_chunk_count` 参数（默认 True），从 Chunk 表实时取分块数覆写 `kb.chunk_count`；③ `list_kbs()` / `list_public_kbs()` 在返回响应前批量注入实时分块数；④ `update_kb()` 在 `db.refresh()` 后用 `_get_real_chunk_counts` 修正被 DB 缓存列覆盖的分块数 |
+| `backend/docs/DATABASE.md` | `chunk_count` 列描述更新为「冗余缓存列，API 响应使用实时 COUNT」 |
+| `backend/docs/API.md` | v0.18→v0.19 |
+
+### 测试结果
+
+- 后端：499/499 全部通过（零回归）
+
+---
+
 ## 2026-06-03 — Phase 3 后端修复：公共 KB 文档状态 / 闲谈跳过检索
 
 ### 修复
 
 | 优先级 | 问题 | 根因 | 修复方案 |
 |:---|:---|:---|:---|
-| P0 | 公共知识库「知识库无可用文档」E4001 | `chat_service._validate_and_prepare` 仅统计 `Document.status == "completed"` 的文档。`success_with_warnings` 状态的文档已完成入库、分块已写入 ChromaDB、完全可检索，但因 status ≠ completed 被排除 | 改为 `Document.status.in_(["completed", "success_with_warnings"])`（`partial_failed` 部分分块可用，但暂不纳入可检索范围） |
+| P0 | 公共知识库「知识库无可用文档」E4001 | **两层根因**：① `_validate_and_prepare` 仅统计 `Document.status == "completed"`，排除 `success_with_warnings` / `partial_failed`；② **更关键**：`get_selectable_kbs` 只过滤 `KnowledgeBase.status == "active"`，不检查是否有可检索文档——KB 的 `doc_count` 是静态计数器（含处理中/失败文档），即使零可检索文档也在下拉框中可选，选中后 chat 端实时查询才报 E4001 | ① 新增 `RETRIEVABLE_STATUSES = ["completed", "success_with_warnings", "partial_failed"]` 常量；② `_validate_and_prepare` 文档计数改用该常量；③ **`get_selectable_kbs` 增加 `EXISTS` 子查询**——仅返回至少有 1 篇可检索文档的 KB，从源头消除「可选中但不可用」 |
 | P0 | 输入「你好」「谢谢」等闲谈仍触发检索，并引用无关文档片段 | Phase 3 不含完整意图识别，所有 query 强制走检索链路 → chunks 注入 Prompt → `event: sources` 无条件发送。即使 LLM 回答未引用文档，前端仍展示无关 sources | ① 新增 `_is_casual_chat()` 函数（规则级：问候/致谢/告别/极短输入等 6 类模式）；② 闲谈命中时跳过检索、使用 `CASUAL_SYSTEM_PROMPT` 无文档上下文直接回复；③ `event: sources` 仅在 `reranked_output.results` 非空时发送（正常 + 错误分支均 guard） |
 
 ### 修改
 
 | 文件 | 变更 |
 |:---|:---|
-| `backend/app/services/chat_service.py` | ① 新增 `CASUAL_SYSTEM_PROMPT` 常量 + `_CASUAL_PATTERNS` 正则列表 + `_is_casual_chat()` 函数；② `_validate_and_prepare` 中闲谈检测命中时跳过多路检索，构造空 `RetrievalOutput` + 闲谈 Prompt；③ 文档计数 `status == "completed"` → `status.in_(["completed", "success_with_warnings"])`；④ `event: sources` 两处发送点增加 `if reranked_output.results` guard |
-| `backend/docs/API.md` | v0.16→v0.17：① E4001 说明补充可检索文档状态范围；② 空知识库行为注释补充 `success_with_warnings` / `partial_failed` 差异说明；③ §6 新增闲谈检测行为描述 + sources 空结果不发送说明 |
+| `backend/app/services/chat_service.py` | ① 新增 `RETRIEVABLE_STATUSES` 常量（`completed` / `success_with_warnings` / `partial_failed`）；② `CASUAL_SYSTEM_PROMPT` + `_CASUAL_PATTERNS` + `_is_casual_chat()`；③ `_validate_and_prepare`：闲谈跳过检索 + 文档计数用常量；④ `get_selectable_kbs`：`EXISTS` 子查询过滤零可检索文档的 KB；⑤ `event: sources` 两处 guard |
+| `backend/docs/API.md` | v0.16→v0.18：① selectable API 过滤逻辑说明 + doc_count 静态计数器局限；② E4001 补充 `partial_failed`；③ §6 闲谈检测 + sources 空结果行为说明 |
 
 ### 测试结果
 

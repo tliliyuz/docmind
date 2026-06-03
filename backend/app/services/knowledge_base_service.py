@@ -10,6 +10,7 @@ from app.core.exceptions import (
     PermissionDeniedException,
 )
 from app.ingest.tasks import delete_kb as delete_kb_task
+from app.models.chunk import Chunk
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
 from app.schemas.knowledge_base import (
@@ -21,6 +22,24 @@ from app.schemas.knowledge_base import (
     PublicKnowledgeBaseListResponse,
     PublicKnowledgeBaseResponse,
 )
+
+
+async def _get_real_chunk_counts(
+    db: AsyncSession, kb_ids: list[int]
+) -> dict[int, int]:
+    """查询指定 KB 的实时分块总数（从 Chunk 表 COUNT，非 KB 表缓存列）。
+
+    用于替代 KnowledgeBase.chunk_count 静态缓存列，避免 Celery 任务
+    更新延迟或失败导致的僵尸计数值。
+    """
+    if not kb_ids:
+        return {}
+    result = await db.execute(
+        select(Chunk.kb_id, func.count(Chunk.id))
+        .where(Chunk.kb_id.in_(kb_ids))
+        .group_by(Chunk.kb_id)
+    )
+    return {row.kb_id: row[1] for row in result.all()}
 
 
 async def create_kb(
@@ -43,13 +62,22 @@ async def create_kb(
 
 
 async def get_kb(
-    db: AsyncSession, kb_id: int, user_id: int | None = None, role: str | None = None
+    db: AsyncSession,
+    kb_id: int,
+    user_id: int | None = None,
+    role: str | None = None,
+    *,
+    fill_chunk_count: bool = True,
 ) -> KnowledgeBase:
     """获取知识库，不存在时抛出 KnowledgeBaseNotFoundException。
 
     权限规则（visibility 优先于 ownership）：
     - public KB：所有登录用户可读
     - private KB：仅 owner 或 admin 可读
+
+    fill_chunk_count=True（默认）时从 Chunk 表实时查询分块数，
+    替代 KB 表 chunk_count 缓存列，消除 Celery 任务导致的僵尸计数。
+    内部调用（如 check_kb_active）无需此值时传 False 避免额外查询。
     """
     result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
     kb = result.scalar_one_or_none()
@@ -58,6 +86,9 @@ async def get_kb(
     if user_id is not None:
         if kb.visibility == "private" and kb.user_id != user_id and role != "admin":
             raise PermissionDeniedException()
+    if fill_chunk_count:
+        real_counts = await _get_real_chunk_counts(db, [kb_id])
+        kb.chunk_count = real_counts.get(kb_id, kb.chunk_count)
     return kb
 
 
@@ -78,7 +109,16 @@ async def list_kbs(
         .limit(page_size)
     )
     rows = (await db.execute(q)).scalars().all()
-    items = [KnowledgeBaseResponse.model_validate(r) for r in rows]
+
+    # 实时查询分块数（替代 KB 表 chunk_count 缓存列，消除僵尸计数）
+    kb_ids = [r.id for r in rows]
+    real_counts = await _get_real_chunk_counts(db, kb_ids)
+
+    items = []
+    for r in rows:
+        resp = KnowledgeBaseResponse.model_validate(r)
+        resp.chunk_count = real_counts.get(r.id, 0)
+        items.append(resp)
 
     return KnowledgeBaseListResponse(total=total, page=page, page_size=page_size, items=items)
 
@@ -107,6 +147,11 @@ async def list_public_kbs(
         .limit(page_size)
     )
     rows = (await db.execute(q)).all()
+
+    # 实时查询分块数（替代 KB 表 chunk_count 缓存列，消除僵尸计数）
+    kb_ids = [kb.id for kb, _ in rows]
+    real_counts = await _get_real_chunk_counts(db, kb_ids)
+
     items = [
         PublicKnowledgeBaseResponse(
             id=kb.id,
@@ -117,7 +162,7 @@ async def list_public_kbs(
             visibility=kb.visibility,
             status=kb.status,
             doc_count=kb.doc_count,
-            chunk_count=kb.chunk_count,
+            chunk_count=real_counts.get(kb.id, 0),
             created_at=kb.created_at,
             updated_at=kb.updated_at,
         )
@@ -151,7 +196,11 @@ async def update_kb(
         raise KnowledgeBaseNameExistsException(data.name)
 
     await db.refresh(kb)
-    return KnowledgeBaseResponse.model_validate(kb)
+    resp = KnowledgeBaseResponse.model_validate(kb)
+    # db.refresh() 会用 DB 缓存列的僵尸值覆盖 get_kb() 已填充的实时分块数，需重新修正
+    real_counts = await _get_real_chunk_counts(db, [kb_id])
+    resp.chunk_count = real_counts.get(kb_id, resp.chunk_count)
+    return resp
 
 
 async def delete_kb(
