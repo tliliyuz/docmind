@@ -1,5 +1,33 @@
 # DocMind 变更日志
 
+## 2026-06-03 — 公共KB详情返回按钮修复 + Sidebar 折叠/展开
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | 公共知识库详情页返回按钮总是跳转到「我的知识库」 | KnowledgeDetail.vue 两处 `router.push('/knowledge-bases')` 硬编码，且 PublicKnowledgeList 跳转详情时不传来源标识 | KnowledgeDetail 读取 `route.query.from` 参数决定返回目标；PublicKnowledgeList 跳转时附加 `?from=public` |
+
+### 新增
+
+| 优先级 | 功能 | 实现 |
+|:---|:---|:---|
+| P2 | 侧边栏展开/收起 | Sidebar.vue 新增 `collapsed` ref + 切换按钮；展开态 260px / 收起态 64px；CSS `width` transition 动画（0.2s ease）；收起态仅显示图标（导航项含 `title` tooltip）；移除 Logo 中的「DocMind」文字（标题由 AppLayout header 展示）；副标题「知识库问答平台」字体调大（`--dm-text-sm`） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/views/PublicKnowledgeList.vue` | `goDetail` 跳转附加 `?from=public` 查询参数 |
+| `frontend/src/views/KnowledgeDetail.vue` | 新增 `backRoute` computed（读取 `route.query.from`）；返回按钮 + 错误处理使用 `backRoute` 替代硬编码路径 |
+| `frontend/src/components/layout/Sidebar.vue` | 新增 `collapsed` ref + `toggleCollapse()`；模板：切换按钮 + 条件渲染（`v-show="!collapsed"`）+ 移除 `.logo-title` + 收起态 `title` tooltip；CSS：`.collapsed` 规则 + 过渡动画 + 收起态居中样式 + `.logo-subtitle` 字体放大 |
+| `frontend/tests/KnowledgeDetail.test.js` | `mockRoute` 添加 `query: {}`；新增 2 个返回按钮行为测试（from=public / 无 from） |
+| `frontend/docs/UIDESIGN.md` | 新增 `--dm-sidebar-width-collapsed: 64px` 变量；§3.2 补充收起状态规格 |
+| `frontend/docs/FRONTEND.md` | §4.1 布局图更新 sidebar 宽度标注；新增 §4.5.5 侧边栏展开/收起行为；§10 移除「可选实现」标注 |
+| `docs/CHANGE.md` | 记录本次两个变更 |
+
+---
+
 ## 2026-06-03 — 测试体系修复：补齐缺失的服务层测试 + TEST_CASES.md 审计
 
 ### 背景

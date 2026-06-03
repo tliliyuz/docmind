@@ -142,7 +142,7 @@ describe('PublicKnowledgeList', () => {
     })
     const wrapper = getComponent()
     await wrapper.find('.kb-card').trigger('click')
-    expect(mockPush).toHaveBeenCalledWith('/knowledge-bases/8')
+    expect(mockPush).toHaveBeenCalledWith('/knowledge-bases/8?from=public')
   })
 
   // ==================== 生命周期测试 ====================

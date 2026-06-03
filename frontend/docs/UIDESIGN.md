@@ -3,8 +3,8 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.6
-> 日期: 2026-05-22
+> 版本: v0.7
+> 日期: 2026-06-03
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考
 > 说明: 所有样式基于 Vue 3 + Element Plus 项目
 
@@ -118,6 +118,7 @@
     /* ===== 布局 ===== */
     --dm-sidebar-width-admin: 240px;
     --dm-sidebar-width-chat: 260px;
+    --dm-sidebar-width-collapsed: 64px;
     --dm-header-height: 56px;
     --dm-chat-max-width: 768px;
     --dm-content-max-width: 1200px;
@@ -201,9 +202,9 @@ body {
 ```css
 /* 侧边栏 */
 .sidebar {
-    width: var(--dm-sidebar-width-admin);      /* 管理端: 260px */
+    width: var(--dm-sidebar-width-admin);      /* 管理端: 240px */
     /* 或 */
-    width: var(--dm-sidebar-width-chat);       /* 聊天端: 280px */
+    width: var(--dm-sidebar-width-chat);       /* 聊天端: 260px */
 
     background: var(--dm-bg-sidebar);
     border-right: 1px solid var(--dm-border);
@@ -211,8 +212,17 @@ body {
     display: flex;
     flex-direction: column;
     z-index: 10;
+    transition: width var(--dm-transition-normal);
+    overflow-x: hidden;
 }
 ```
+
+**收起状态** (`.sidebar.collapsed`)：
+- 宽度：`var(--dm-sidebar-width-collapsed)` (64px)
+- 仅显示脑图标 Logo（居中）、导航项图标（含 `title` tooltip）、用户头像（居中）
+- 隐藏所有文字标签、分组标题、空状态文案、退出按钮
+- 顶部切换按钮：展开态位于右上角 (`fa-chevron-left`)，收起态居中 (`fa-chevron-right`)
+- Logo 中不显示「DocMind」产品名（标题由 `AppLayout.vue` 顶部 header 展示）
 
 ### 3.3 通用主内容区
 

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.33 |
+| 文档版本 | v0.34 |
 | 最后更新 | 2026-06-03 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 前端核心组件代码完成，组件测试待编写；499 用例全部通过） |
+| 状态 | 进行中（Phase 3 前端核心组件代码完成，组件测试待编写；后端 561 用例 + 前端 61 用例全部通过） |
 
 ---
 
@@ -201,6 +201,8 @@
 | C2.5 | DocumentList 渲染 | `KnowledgeDetail` | 表格 | 文档表格含状态标签 | ✅ | 2026-05-22 | 有文档时表格渲染 + 空状态隐藏 |
 | C2.6 | DocumentList 上传拖拽 | `KnowledgeDetail` | 上传区域 | 上传区域渲染 | ✅ | 2026-05-22 | 上传区域文案 + 格式提示渲染；实际拖拽/文件选择需 e2e 测试 |
 | C2.7 | DocumentList 状态轮询 | `KnowledgeDetail` | 生命周期 | 组件挂载获取数据、卸载清除轮询 | ✅ | 2026-05-22 | 验证 fetchKbDetail/fetchDocList 调用 + clearAllPolling 调用 |
+| C2.8 | 公共KB详情返回按钮 | `KnowledgeDetail` | 导航 | `?from=public` 时返回按钮跳转公共KB列表 | ✅ | 2026-06-03 | 模拟 mockRoute.query.from='public'，点击返回按钮触发 push('/knowledge-bases/public') |
+| C2.9 | 私有KB详情返回按钮 | `KnowledgeDetail` | 导航 | 无 `from` 参数时返回按钮跳转我的KB列表 | ✅ | 2026-06-03 | 模拟 mockRoute.query={}，点击返回按钮触发 push('/knowledge-bases') |
 
 ---
 
@@ -619,7 +621,7 @@
 | 前端 `components/chat/` | ≥ 60% | ⬜ | Phase 3：ChatInput/MessageList/MessageItem/WelcomeScreen |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ⬜ | Phase 3：问答页集成 |
 | 前端 `stores/chat.js` | ≥ 60% | ⬜ | Phase 3：聊天状态管理 |
-| 前端组件 | ≥ 60% | ✅ 59 通过 | 2026-06-02 运行 `npm.cmd run test`：LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(12) + PublicKnowledgeList(10) 全部通过 |
+| 前端组件 | ≥ 60% | ✅ 61 通过 | 2026-06-03 运行 `npm run test`：LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
 
 ---
 

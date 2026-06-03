@@ -22,7 +22,7 @@ const { mockPush, mockFetchKbDetail, mockFetchDocList, mockUploadDoc, mockRemove
 }))
 
 // Mock 路由
-const mockRoute = { params: { id: '1' } }
+const mockRoute = { params: { id: '1' }, query: {} }
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush }),
   useRoute: () => mockRoute,
@@ -137,6 +137,21 @@ describe('KnowledgeDetail', () => {
   it('渲染返回按钮', () => {
     const wrapper = getComponent()
     expect(wrapper.find('.back-btn').exists()).toBe(true)
+  })
+
+  it('从公共知识库进入时返回按钮跳转公共知识库列表', async () => {
+    mockRoute.query = { from: 'public' }
+    const wrapper = getComponent()
+    await wrapper.find('.back-btn').trigger('click')
+    expect(mockPush).toHaveBeenCalledWith('/knowledge-bases/public')
+    mockRoute.query = {}
+  })
+
+  it('无 from 参数时返回按钮跳转我的知识库列表', async () => {
+    mockRoute.query = {}
+    const wrapper = getComponent()
+    await wrapper.find('.back-btn').trigger('click')
+    expect(mockPush).toHaveBeenCalledWith('/knowledge-bases')
   })
 
   it('渲染统计卡片（文档数、分块数、创建时间）', () => {

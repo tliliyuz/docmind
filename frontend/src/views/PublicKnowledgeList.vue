@@ -106,7 +106,7 @@ function onSearch() {
 
 // ==================== 导航 ====================
 function goDetail(id) {
-  router.push(`/knowledge-bases/${id}`)
+  router.push(`/knowledge-bases/${id}?from=public`)
 }
 
 // ==================== 初始化 ====================

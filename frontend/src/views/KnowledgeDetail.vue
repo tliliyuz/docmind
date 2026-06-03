@@ -3,7 +3,7 @@
     <!-- 页面标题栏 -->
     <div class="detail-header">
       <div class="detail-header-left">
-        <button class="back-btn" @click="$router.push('/knowledge-bases')" title="返回知识库列表">
+        <button class="back-btn" @click="router.push(backRoute)" title="返回知识库列表">
           <i class="fas fa-arrow-left"></i>
         </button>
         <div class="detail-header-info">
@@ -341,6 +341,11 @@ const authStore = useAuthStore()
 
 const kbId = computed(() => Number(route.params.id))
 
+/** 返回目标路由（根据来源区分公共/私有） */
+const backRoute = computed(() => {
+  return route.query.from === 'public' ? '/knowledge-bases/public' : '/knowledge-bases'
+})
+
 /** 当前用户是否为 KB 所有者 */
 const isOwner = computed(() => {
   return store.currentKb?.user_id === authStore.user?.id
@@ -365,7 +370,7 @@ async function loadPage() {
     }
   } catch {
     ElMessage.error('知识库不存在或无权访问')
-    router.push('/knowledge-bases')
+    router.push(backRoute.value)
   } finally {
     pageLoading.value = false
   }
