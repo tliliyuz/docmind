@@ -1,7 +1,8 @@
 """问答业务逻辑 — 检索 → RRF → Rerank → Prompt → LLM SSE 流式输出
 
 对齐 ARCHITECTURE.md §5.1 / ROADMAP.md §5.2：
-- 单轮问答核心链路（Phase 3 不含意图识别和问题重写）
+- 单轮问答核心链路（Phase 3 不含完整意图识别和问题重写）
+- 轻量闲谈检测：问候/致谢/告别等跳过检索，直接 LLM 回复
 - conversation_id=null 时自动创建会话，不注入历史（history=[]）
 - 标题自动生成：截取用户问题前 12 字
 - SSE 6 种事件类型 + 15s 心跳
@@ -50,6 +51,38 @@ _bm25_retriever = BM25Retriever(
     session_factory=async_session,
 )
 _reranker = NoopReranker()
+
+# 闲谈模式 System Prompt（不注入文档上下文）
+CASUAL_SYSTEM_PROMPT = "你是 DocMind，一个企业知识库助手。请友好、简洁地回答用户的问题。"
+
+# 闲谈检测模式：问候/致谢/告别等无需检索的输入
+_CASUAL_PATTERNS = [
+    re.compile(r, re.IGNORECASE)
+    for r in [
+        r"^(你好|您好|hi|hello|嗨|hey|halo)[\s！!。.,，~～-]*$",
+        r"^(谢谢|感谢|多谢|thanks|thank|thx)[\s！!。.,，~～-]*$",
+        r"^(在吗|在不在|有人在吗|有人吗)[\s？?！!。.,，]*$",
+        r"^(早上好|下午好|晚上好|早安|午安|晚安|good\s*morning|good\s*afternoon|good\s*evening|good\s*night)[\s！!。.,，]*$",
+        r"^(再见|拜拜|bye|goodbye|see\s*you|88)[\s！!。.,，]*$",
+        r"^(好的|ok|okay|嗯|哦|噢|知道了|了解了|明白了)[\s！!。.,，]*$",
+    ]
+]
+
+
+def _is_casual_chat(question: str) -> bool:
+    """轻量闲谈检测：问候/致谢/告别等无需检索的输入。
+
+    Phase 3 不含完整意图识别模块，此处以规则覆盖高频闲谈场景。
+    完整意图识别（含问题类型判别）排期 Phase 4/5。
+    """
+    cleaned = question.strip()
+    # 极短纯标点/空白（≤1 个非空白字符）
+    if len(cleaned.replace(" ", "")) <= 1:
+        return True
+    for pattern in _CASUAL_PATTERNS:
+        if pattern.match(cleaned):
+            return True
+    return False
 
 
 def _generate_title(question: str) -> str:
@@ -143,8 +176,9 @@ async def _generate_sse_stream(
     except Exception as e:
         logger.exception("LLM 流式调用异常")
         # 即使 LLM 失败，也发送 sources（对齐 API.md §6 错误流程）
-        sources = _build_sources(reranked_output, doc_map)
-        yield format_sse_event("sources", {"chunks": sources})
+        if reranked_output.results:
+            sources = _build_sources(reranked_output, doc_map)
+            yield format_sse_event("sources", {"chunks": sources})
 
         error_code = "E4002"
         error_msg = "LLM 调用失败"
@@ -158,9 +192,10 @@ async def _generate_sse_stream(
         })
         return
 
-    # 发送 sources 事件
-    sources = _build_sources(reranked_output, doc_map)
-    yield format_sse_event("sources", {"chunks": sources})
+    # 发送 sources 事件（仅在有检索结果时发送）
+    if reranked_output.results:
+        sources = _build_sources(reranked_output, doc_map)
+        yield format_sse_event("sources", {"chunks": sources})
 
     # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）
     try:
@@ -225,11 +260,14 @@ async def _validate_and_prepare(
     if kb.visibility == "private" and kb.user_id != user_id and role != "admin":
         raise PermissionDeniedException()
 
-    # 检查 KB 是否有文档（对齐 API.md §6 / E4001）
+    # 检查 KB 是否有可检索文档（completed / success_with_warnings 均可检索）
     doc_count_q = (
         select(func.count())
         .select_from(Document)
-        .where(Document.kb_id == kb_id, Document.status == "completed")
+        .where(
+            Document.kb_id == kb_id,
+            Document.status.in_(["completed", "success_with_warnings"]),
+        )
     )
     doc_count = (await db.execute(doc_count_q)).scalar()
     if doc_count == 0:
@@ -257,16 +295,28 @@ async def _validate_and_prepare(
     conv.message_count += 1
     await db.commit()
 
-    # 多路检索（失败包装为 E4003）
-    try:
-        vector_output = await _vector_retriever.search(question, kb_id)
-        bm25_output = await _bm25_retriever.search(question, kb_id)
-        fused_output = rrf_fusion(vector_output, bm25_output)
-        reranked_output = await _reranker.rerank(question, fused_output)
-        prompt_result = build_prompt(question, reranked_output)
-    except Exception as e:
-        logger.exception("检索链路异常")
-        raise RetrievalServiceException(detail=str(e))
+    # 闲谈检测：跳过检索，直接使用无上下文 Prompt
+    if _is_casual_chat(question):
+        logger.info("检测到闲谈输入，跳过检索: %s", question[:30])
+        reranked_output = RetrievalOutput()
+        prompt_result = PromptBuildResult(
+            system_prompt=CASUAL_SYSTEM_PROMPT,
+            user_prompt=question,
+            used_chunks=[],
+            total_context_tokens=0,
+            chunks_count=0,
+        )
+    else:
+        # 多路检索（失败包装为 E4003）
+        try:
+            vector_output = await _vector_retriever.search(question, kb_id)
+            bm25_output = await _bm25_retriever.search(question, kb_id)
+            fused_output = rrf_fusion(vector_output, bm25_output)
+            reranked_output = await _reranker.rerank(question, fused_output)
+            prompt_result = build_prompt(question, reranked_output)
+        except Exception as e:
+            logger.exception("检索链路异常")
+            raise RetrievalServiceException(detail=str(e))
 
     # 查询涉及的文档名（用于 sources 事件）
     doc_ids = list({c.doc_id for c in reranked_output.results})

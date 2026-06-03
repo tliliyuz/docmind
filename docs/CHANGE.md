@@ -1,5 +1,27 @@
 # DocMind 变更日志
 
+## 2026-06-03 — Phase 3 后端修复：公共 KB 文档状态 / 闲谈跳过检索
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P0 | 公共知识库「知识库无可用文档」E4001 | `chat_service._validate_and_prepare` 仅统计 `Document.status == "completed"` 的文档。`success_with_warnings` 状态的文档已完成入库、分块已写入 ChromaDB、完全可检索，但因 status ≠ completed 被排除 | 改为 `Document.status.in_(["completed", "success_with_warnings"])`（`partial_failed` 部分分块可用，但暂不纳入可检索范围） |
+| P0 | 输入「你好」「谢谢」等闲谈仍触发检索，并引用无关文档片段 | Phase 3 不含完整意图识别，所有 query 强制走检索链路 → chunks 注入 Prompt → `event: sources` 无条件发送。即使 LLM 回答未引用文档，前端仍展示无关 sources | ① 新增 `_is_casual_chat()` 函数（规则级：问候/致谢/告别/极短输入等 6 类模式）；② 闲谈命中时跳过检索、使用 `CASUAL_SYSTEM_PROMPT` 无文档上下文直接回复；③ `event: sources` 仅在 `reranked_output.results` 非空时发送（正常 + 错误分支均 guard） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | ① 新增 `CASUAL_SYSTEM_PROMPT` 常量 + `_CASUAL_PATTERNS` 正则列表 + `_is_casual_chat()` 函数；② `_validate_and_prepare` 中闲谈检测命中时跳过多路检索，构造空 `RetrievalOutput` + 闲谈 Prompt；③ 文档计数 `status == "completed"` → `status.in_(["completed", "success_with_warnings"])`；④ `event: sources` 两处发送点增加 `if reranked_output.results` guard |
+| `backend/docs/API.md` | v0.16→v0.17：① E4001 说明补充可检索文档状态范围；② 空知识库行为注释补充 `success_with_warnings` / `partial_failed` 差异说明；③ §6 新增闲谈检测行为描述 + sources 空结果不发送说明 |
+
+### 测试结果
+
+- 后端：499/499 全部通过（零回归）
+
+---
+
 ## 2026-06-03 — Phase 3 前端优化：KB 选择器双下拉框 / 分组标签样式 / 移除 Logo
 
 ### 修复
