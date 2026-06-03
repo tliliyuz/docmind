@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.31 |
+| 文档版本 | v0.33 |
 | 最后更新 | 2026-06-03 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 前端核心组件代码完成，组件测试待编写；497 用例全部通过） |
+| 状态 | 进行中（Phase 3 前端核心组件代码完成，组件测试待编写；499 用例全部通过） |
 
 ---
 
@@ -391,7 +391,7 @@
 | U7.82 | SSE-中途错误 | `sse_helpers` | LLM 中途失败 | meta → (message)×N → error → 连接关闭 | ✅ | 2026-06-02 | 异常向上传播验证 |
 | U7.83 | SSE-客户端断开 | `sse_helpers` | 用户关闭页面 | `asyncio.CancelledError` 被捕获，LLM 流被中断 | ⬜ | — | 需真实 SSE 连接，Phase 4 手动测试 |
 | U7.84 | SSE-Content-Type | `StreamingResponse` | 正常 | `text/event-stream` + `Cache-Control: no-cache` + `Connection: keep-alive` | ✅ | 2026-06-02 | 通过 API 集成测试覆盖 |
-| U7.85 | SSE-sources 事件数据 | `sse_helpers._build_sources()` | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ✅ | 2026-06-02 | — |
+| U7.85 | SSE-sources 事件数据 | `chat_service._build_sources()`（导入生产函数，非复制） | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ✅ | 2026-06-03 | P2 重构：消除逻辑复制，改为 import 真实函数 |
 | U7.86 | SSE-finish 事件数据 | `sse_helpers._build_finish()` | 正常 | message_id + title（首轮）+ token_usage{prompt,completion,total} | ✅ | 2026-06-02 | — |
 
 ### 5.10 后端 — ChatRequest Schema 校验测试
@@ -596,20 +596,24 @@
 | `models/` | ≥ 70% | ✅ 已覆盖 | U4.1-U4.3 已实现 |
 | `ingest/lock.py` | ≥ 80% | ✅ 100% | 16 个测试全覆盖（幂等锁获取/重复拒绝/过期重入） |
 | `rag/parser.py` | ≥ 80% | ✅ 100% | 35 个测试全覆盖（PDF/DOCX逐段容错/MD/TXT 解析 + 容错分级） |
-| `rag/chunker.py` | ≥ 80% | ✅ 100% | 37 个测试全覆盖（分隔符优先级/偏移量页码追踪/中英文自适应token估算/重叠） |
-| `rag/embedder.py` | ≥ 80% | ✅ 100% | 26 个测试全覆盖（DashScope API/重试/批量/响应解析/指数退避） |
-| `core/storage.py` | ≥ 80% | ✅ 100% | 37 个测试全覆盖（sanitize_filename/generate_stored_filename/LocalStorage save/read/delete/空目录清理） |
+| `rag/chunker.py` | ≥ 80% | ✅ 100% | 36 个测试全覆盖（分隔符优先级/偏移量页码追踪/中英文自适应token估算/重叠） |
+| `rag/embedder.py` | ≥ 80% | ✅ 100% | 28 个测试全覆盖（DashScope API/重试/批量/响应解析/指数退避） |
+| `core/storage.py` | ≥ 80% | ✅ 100% | 29 个测试全覆盖（sanitize_filename/generate_stored_filename/LocalStorage save/read/delete/空目录清理） |
 | `schemas/knowledge_base.py` | ≥ 85% | ✅ 100% | visibility 字段校验 10 用例（U9.1-U9.8），Phase 2.5 |
-| `services/knowledge_base_service.py` | ≥ 80% | ✅ 100% | 权限矩阵 6 用例（A6.1-A6.6）+ 公共列表 5 用例（A7.1-A7.7），Phase 2.5 |
+| `services/knowledge_base_service.py` | ≥ 80% | ✅ 33 用例 | `test_kb_service.py` 全覆盖：`_get_real_chunk_counts`(4) + `create_kb`(3) + `get_kb`(8) + `list_kbs`(3) + `list_public_kbs`(2) + `update_kb`(8) + `delete_kb`(3) + `check_kb_active`(2) |
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
-| `services/document_service.py` | ≥ 80% | ✅ 100% | `owner_only` 权限分离 18 用例（A8.1-A8.18），Phase 2.5 |
-| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖 |
-| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3：BM25 检索 + 缓存已覆盖（25 用例，含 7 个真实 jieba 集成测试） |
-| `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（12 用例） |
-| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（16 用例） |
-| `services/chat_service.py` | ≥ 80% | ⬜ | Phase 3：问答核心流程 + SSE |
-| `api/chat.py` (接口测试) | ≥ 90% | ⬜ | Phase 3：POST /api/chat SSE 接口 |
-| `schemas/chat.py` | ≥ 85% | ⬜ | Phase 3：ChatRequest Schema 校验 |
+| `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`_validate_file`(7) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
+| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例） |
+| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3：BM25 检索 + 缓存已覆盖（24 用例，含 7 个真实 jieba 集成测试） |
+| `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
+| `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例） |
+| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例） |
+| `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
+| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
+| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
+| `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
+| `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
+| `ingest/tasks.py` | — | ✅ | Celery 入库存根测试（10 用例，5 个为常量成员检查） |
 | 前端 `utils/sse.js` | ≥ 80% | ⬜ | Phase 3：SSE 事件解析 |
 | 前端 `utils/markdown.js` | ≥ 80% | ⬜ | Phase 3：Markdown 渲染 |
 | 前端 `components/chat/` | ≥ 60% | ⬜ | Phase 3：ChatInput/MessageList/MessageItem/WelcomeScreen |

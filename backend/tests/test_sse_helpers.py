@@ -183,14 +183,13 @@ class TestStreamWithHeartbeat:
 
 
 class TestBuildSources:
-    """测试 _build_sources — sources 事件数据结构"""
+    """测试 sources 事件数据结构（使用生产函数 _build_sources 避免逻辑重复）"""
 
     def test_sources数据结构完整(self):
         """U7.85 — sources 事件 chunks 应包含 doc_id/doc_name/content/score/page"""
-        from unittest.mock import MagicMock
         from app.rag.retriever import RetrievalResult, RetrievalOutput
+        from app.services.chat_service import _build_sources
 
-        # 构造 reranked_output
         results = [
             RetrievalResult(
                 doc_id=1, chunk_index=0,
@@ -206,16 +205,7 @@ class TestBuildSources:
         reranked_output = RetrievalOutput(results=results, total=2)
         doc_map = {1: "文档A.pdf", 2: "文档B.md"}
 
-        # 直接调用 _build_sources 逻辑（从 chat_service 复制以避免导入模块级单例）
-        sources = []
-        for chunk in reranked_output.results:
-            sources.append({
-                "doc_id": chunk.doc_id,
-                "doc_name": doc_map.get(chunk.doc_id, ""),
-                "content": chunk.content[:200] if chunk.content else "",
-                "score": round(chunk.score, 4),
-                "page": chunk.page,
-            })
+        sources = _build_sources(reranked_output, doc_map)
 
         assert len(sources) == 2
 
@@ -234,32 +224,25 @@ class TestBuildSources:
     def test_content截断至200字符(self):
         """content 超过 200 字符时应截断"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
+        from app.services.chat_service import _build_sources
 
         long_content = "x" * 300
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=long_content, score=0.9)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        sources = []
-        for chunk in reranked_output.results:
-            sources.append({
-                "content": chunk.content[:200] if chunk.content else "",
-            })
+        sources = _build_sources(reranked_output, {1: "x.txt"})
 
         assert len(sources[0]["content"]) == 200
 
     def test_doc_map缺失时doc_name为空(self):
         """doc_map 中找不到 doc_id 时 doc_name 应为空字符串"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
+        from app.services.chat_service import _build_sources
 
         results = [RetrievalResult(doc_id=99, chunk_index=0, content="内容", score=0.5)]
         reranked_output = RetrievalOutput(results=results, total=1)
-        doc_map = {}  # 空 map
 
-        sources = []
-        for chunk in reranked_output.results:
-            sources.append({
-                "doc_name": doc_map.get(chunk.doc_id, ""),
-            })
+        sources = _build_sources(reranked_output, {})  # 空 doc_map
 
         assert sources[0]["doc_name"] == ""
 

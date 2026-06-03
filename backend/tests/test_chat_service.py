@@ -14,6 +14,7 @@
 """
 
 import json
+from contextlib import ExitStack, contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -108,6 +109,86 @@ def _mock_db_with_conversation(db, conv, kb=None, doc_count=1, user_msg=None, as
     return kb, user_msg, assistant_msg
 
 
+@contextmanager
+def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
+                         token_estimate=50, with_conversation=True, with_messages=True):
+    """共享的 chat pipeline mock 上下文管理器。
+
+    消除各测试方法中重复的 ~10 行 patch() 样板代码。
+    返回 mocks dict，包含所有 mock 对象，测试可按需覆盖。
+
+    mocks 字段:
+        vec, bm25, rrf, reranker, prompt, llm, tokens, heartbeat — 各组件 mock
+        conv — Conversation() 返回的 mock 对象
+        user_msg, assistant_msg — Message() 返回的两个 mock 对象
+        retrieval_output — 检索结果
+
+    用法:
+        with _mock_chat_pipeline(db, conv) as mocks:
+            mocks['llm'].return_value = _async_gen_error("自定义错误")
+            response = await chat(...)
+    """
+    if retrieval_output is None:
+        retrieval_output = _make_retrieval_output()
+    if llm_chunks is None:
+        llm_chunks = _make_llm_chunks()
+
+    _mock_db_with_conversation(db, conv)
+
+    mock_conv = MagicMock()
+    mock_conv.id = conv.id
+    mock_conv.user_id = conv.user_id
+    mock_conv.message_count = getattr(conv, 'message_count', 0)
+    mock_conv.title = getattr(conv, 'title', '新对话')
+
+    mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
+    mock_assistant_msg = MagicMock(
+        id=11, role="assistant", content="这是LLM的回答",
+        thinking_content=None, token_count=50,
+    )
+
+    with ExitStack() as stack:
+        mocks = {}
+
+        if with_conversation:
+            mocks['conv_patch'] = stack.enter_context(
+                patch("app.services.chat_service.Conversation", return_value=mock_conv))
+
+        if with_messages:
+            mocks['msg_patch'] = stack.enter_context(
+                patch("app.services.chat_service.Message",
+                      side_effect=[mock_user_msg, mock_assistant_msg]))
+
+        mocks['vec'] = stack.enter_context(patch("app.services.chat_service._vector_retriever"))
+        mocks['bm25'] = stack.enter_context(patch("app.services.chat_service._bm25_retriever"))
+        mocks['rrf'] = stack.enter_context(
+            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output))
+        mocks['reranker'] = stack.enter_context(patch("app.services.chat_service._reranker"))
+        mocks['prompt'] = stack.enter_context(patch("app.services.chat_service.build_prompt"))
+        mocks['llm'] = stack.enter_context(patch("app.services.chat_service.stream_chat_completion"))
+        mocks['tokens'] = stack.enter_context(
+            patch("app.services.chat_service.estimate_tokens", return_value=token_estimate))
+        mocks['heartbeat'] = stack.enter_context(
+            patch("app.services.chat_service.stream_with_heartbeat",
+                  side_effect=lambda g, **kw: g))
+
+        # 默认行为配置
+        mocks['vec'].search = AsyncMock(return_value=retrieval_output)
+        mocks['bm25'].search = AsyncMock(return_value=retrieval_output)
+        mocks['reranker'].rerank = AsyncMock(return_value=retrieval_output)
+        mocks['prompt'].return_value = MagicMock(
+            system_prompt="系统提示", user_prompt="用户提示")
+        mocks['llm'].return_value = _async_gen(llm_chunks)
+
+        # 便捷访问别名
+        mocks['conv'] = mock_conv
+        mocks['user_msg'] = mock_user_msg
+        mocks['assistant_msg'] = mock_assistant_msg
+        mocks['retrieval_output'] = retrieval_output
+
+        yield mocks
+
+
 async def _consume_sse(response):
     """消费 StreamingResponse，返回解析后的事件列表"""
     events = []
@@ -171,46 +252,16 @@ class TestChatNormalFlow:
         conv.message_count = 0
         conv.title = "新对话"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
-
         retrieval_output = _make_retrieval_output()
         llm_chunks = _make_llm_chunks(["这是", "LLM", "的回答"])
 
-        mock_conv = MagicMock()
-        mock_conv.id = 50
-        mock_conv.user_id = 1
-        mock_conv.message_count = 0
-        mock_conv.title = "新对话"
-
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-        mock_assistant_msg = MagicMock(id=11, role="assistant", content="这是LLM的回答", thinking_content=None)
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv),
-            patch("app.services.chat_service.Message", side_effect=[mock_user_msg, mock_assistant_msg]),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=50),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(llm_chunks)
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=None, kb_id=1,
                 question="测试问题", deep_thinking=False,
             )
-
             events = await _consume_sse(response)
 
         # 验证事件序列
@@ -254,28 +305,12 @@ class TestChatAppendConversation:
         conv.message_count = 4
         conv.title = "已有标题"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
         llm_chunks = _make_llm_chunks(["追加回答"])
 
-        with (
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=30),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(llm_chunks)
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks, token_estimate=30,
+                                  with_conversation=False, with_messages=False):
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=100, kb_id=1,
@@ -304,21 +339,8 @@ class TestChatRetrievalFailure:
         conv.user_id = 1
         conv.message_count = 0
 
-        kb, _, _ = _mock_db_with_conversation(db, conv)
-
-        mock_conv = MagicMock()
-        mock_conv.id = 50
-        mock_conv.user_id = 1
-        mock_conv.message_count = 0
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv),
-            patch("app.services.chat_service.Message", return_value=mock_user_msg),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(
+        with _mock_chat_pipeline(db, conv) as mocks:
+            mocks['vec'].search = AsyncMock(
                 side_effect=Exception("ChromaDB 连接失败")
             )
 
@@ -346,34 +368,10 @@ class TestChatLLMFailure:
         conv.user_id = 1
         conv.message_count = 0
 
-        kb, _, _ = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
 
-        mock_conv_obj = MagicMock()
-        mock_conv_obj.id = 50
-        mock_conv_obj.user_id = 1
-        mock_conv_obj.message_count = 0
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv_obj),
-            patch("app.services.chat_service.Message", return_value=mock_user_msg),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=50),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen_error("API 超时")
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output) as mocks:
+            mocks['llm'].return_value = _async_gen_error("API 超时")
 
             response = await chat(
                 db=db, user_id=1, role="user",
@@ -432,38 +430,10 @@ class TestChatMessageSaved:
         conv.message_count = 0
         conv.title = "新对话"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
 
-        mock_conv_obj = MagicMock()
-        mock_conv_obj.id = 50
-        mock_conv_obj.user_id = 1
-        mock_conv_obj.message_count = 0
-        mock_conv_obj.title = "新对话"
-
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-        mock_assistant_msg = MagicMock(id=11, role="assistant", content="回答", thinking_content=None, token_count=50)
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv_obj),
-            patch("app.services.chat_service.Message", side_effect=[mock_user_msg, mock_assistant_msg]),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=50),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(_make_llm_chunks(["回答"]))
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=_make_llm_chunks(["回答"])) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=None, kb_id=1,
@@ -501,27 +471,12 @@ class TestChatMessageCount:
         conv.message_count = 10
         conv.title = "已有标题"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
 
-        with (
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=30),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(_make_llm_chunks(["回答"]))
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=_make_llm_chunks(["回答"]),
+                                  token_estimate=30,
+                                  with_conversation=False, with_messages=False):
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=50, kb_id=1,
@@ -548,38 +503,10 @@ class TestChatTitleGeneration:
         conv.message_count = 0
         conv.title = "新对话"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
 
-        mock_conv_obj = MagicMock()
-        mock_conv_obj.id = 50
-        mock_conv_obj.user_id = 1
-        mock_conv_obj.message_count = 0
-        mock_conv_obj.title = "新对话"
-
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-        mock_assistant_msg = MagicMock(id=11, role="assistant", content="回答", thinking_content=None, token_count=50)
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv_obj),
-            patch("app.services.chat_service.Message", side_effect=[mock_user_msg, mock_assistant_msg]),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=50),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(_make_llm_chunks(["回答"]))
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=_make_llm_chunks(["回答"])) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=None, kb_id=1,
@@ -589,7 +516,7 @@ class TestChatTitleGeneration:
 
         finish = next(e for e in events if e["event"] == "finish")
         assert finish["data"]["title"] == "这是一个测试问题内容很长"[:12]
-        assert mock_conv_obj.title == finish["data"]["title"]
+        assert mocks['conv'].title == finish["data"]["title"]
 
     @pytest.mark.asyncio
     async def test_非首轮不更新标题(self):
@@ -603,27 +530,12 @@ class TestChatTitleGeneration:
         conv.message_count = 10
         conv.title = "旧标题"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
 
-        with (
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=30),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(_make_llm_chunks(["追加回答"]))
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=_make_llm_chunks(["追加回答"]),
+                                  token_estimate=30,
+                                  with_conversation=False, with_messages=False):
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=100, kb_id=1,
@@ -651,38 +563,10 @@ class TestChatTokenUsage:
         conv.message_count = 0
         conv.title = "新对话"
 
-        kb, user_msg, assistant_msg = _mock_db_with_conversation(db, conv)
         retrieval_output = _make_retrieval_output()
 
-        mock_conv_obj = MagicMock()
-        mock_conv_obj.id = 50
-        mock_conv_obj.user_id = 1
-        mock_conv_obj.message_count = 0
-        mock_conv_obj.title = "新对话"
-
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-        mock_assistant_msg = MagicMock(id=11, role="assistant", content="回答内容", thinking_content=None, token_count=50)
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv_obj),
-            patch("app.services.chat_service.Message", side_effect=[mock_user_msg, mock_assistant_msg]),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=50),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(_make_llm_chunks(["回答内容"]))
-
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=_make_llm_chunks(["回答内容"])):
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=None, kb_id=1,
@@ -749,65 +633,8 @@ class TestChatKBNotFound:
         conv.message_count = 0
         conv.title = "新对话"
 
-        kb = MagicMock()
-        kb.id = 1
-        kb.status = "active"
-        kb.visibility = "private"
-        kb.user_id = 1  # owner 是 user 1
-
-        def get_side_effect(model, pk):
-            if model.__name__ == "KnowledgeBase":
-                return kb
-            if model.__name__ == "Conversation":
-                return conv
-            return None
-
-        db.get = AsyncMock(side_effect=get_side_effect)
-
-        count_result = MagicMock()
-        count_result.scalar.return_value = 1
-        row = MagicMock()
-        row.id = 1
-        row.filename = "文档.pdf"
-        names_result = MagicMock()
-        names_result.scalars.return_value.all.return_value = [row]
-        db.execute = AsyncMock(side_effect=[count_result, names_result])
-        db.add = MagicMock()
-        db.flush = AsyncMock()
-        db.commit = AsyncMock()
-        db.refresh = AsyncMock()
-
-        retrieval_output = _make_retrieval_output()
-
-        mock_conv_obj = MagicMock()
-        mock_conv_obj.id = 50
-        mock_conv_obj.user_id = 2
-        mock_conv_obj.message_count = 0
-        mock_conv_obj.title = "新对话"
-
-        mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
-        mock_assistant_msg = MagicMock(id=11, role="assistant", content="回答", thinking_content=None, token_count=50)
-
-        with (
-            patch("app.services.chat_service.Conversation", return_value=mock_conv_obj),
-            patch("app.services.chat_service.Message", side_effect=[mock_user_msg, mock_assistant_msg]),
-            patch("app.services.chat_service._vector_retriever") as mock_vec,
-            patch("app.services.chat_service._bm25_retriever") as mock_bm25,
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output),
-            patch("app.services.chat_service._reranker") as mock_reranker,
-            patch("app.services.chat_service.build_prompt") as mock_prompt,
-            patch("app.services.chat_service.stream_chat_completion") as mock_llm,
-            patch("app.services.chat_service.estimate_tokens", return_value=50),
-            patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g),
-        ):
-            mock_vec.search = AsyncMock(return_value=retrieval_output)
-            mock_bm25.search = AsyncMock(return_value=retrieval_output)
-            mock_reranker.rerank = AsyncMock(return_value=retrieval_output)
-            mock_prompt.return_value = MagicMock(
-                system_prompt="系统提示", user_prompt="用户提示",
-            )
-            mock_llm.return_value = _async_gen(_make_llm_chunks(["回答"]))
-
+        with _mock_chat_pipeline(db, conv,
+                                  llm_chunks=_make_llm_chunks(["回答"])) as mocks:
             # admin（user_id=2）访问 user 1 的 private KB
             response = await chat(
                 db=db, user_id=2, role="admin",
