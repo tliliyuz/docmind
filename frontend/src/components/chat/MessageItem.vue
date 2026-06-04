@@ -61,6 +61,7 @@
             class="source-item"
           >
             <div class="source-header">
+              <span class="source-index">[来源{{ src.chunk_index || idx + 1 }}]</span>
               <span class="source-doc">
                 <i class="fas fa-file-alt"></i>
                 {{ src.doc_name || '未知文档' }}
@@ -433,6 +434,16 @@ const uniqueDocCount = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--dm-space-2);
+}
+
+.source-index {
+  font-weight: var(--dm-weight-bold);
+  color: var(--dm-text-primary);
+  font-size: var(--dm-text-2xs);
+  background: var(--dm-bg-elevated);
+  padding: 1px 6px;
+  border-radius: var(--dm-radius-sm);
+  flex-shrink: 0;
 }
 
 .source-doc {

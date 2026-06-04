@@ -3,8 +3,8 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.7
-> 日期: 2026-06-03
+> 版本: v0.8
+> 日期: 2026-06-04
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考
 > 说明: 所有样式基于 Vue 3 + Element Plus 项目
 
@@ -774,6 +774,16 @@ body {
 
 .source-item:last-child {
     border-bottom: none;
+}
+
+.source-index {
+    font-weight: var(--dm-weight-bold);
+    color: var(--dm-text-primary);
+    font-size: var(--dm-text-2xs);               /* 12px */
+    background: var(--dm-bg-elevated);
+    padding: 1px 6px;
+    border-radius: var(--dm-radius-sm);          /* 6px */
+    flex-shrink: 0;
 }
 
 .source-doc {

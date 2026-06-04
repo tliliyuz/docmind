@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.13 |
-| 最后更新 | 2026-06-03 |
+| 文档版本 | v0.14 |
+| 最后更新 | 2026-06-04 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -201,7 +201,7 @@
   event: meta      → 记录 conversation_id（新对话时后端自动创建）、task_id
   event: thinking  → 展开思考过程框（黄色折叠面板），实时追加内容
   event: message   → 逐字追加到助手消息内容区（Markdown 实时渲染）
-  event: sources   → 在消息底部渲染引用来源卡片
+  event: sources   → 在消息底部渲染引用来源卡片（每个片段标注 [来源N] 编号，与 LLM 回答中的引用一一对应）
   event: finish    → 关闭 typing，更新消息 ID，首轮保存 title
   event: error     → 替换为错误提示，关闭 typing
   : ping\n\n       → SSE 心跳注释帧（15s 间隔），前端忽略
@@ -753,7 +753,7 @@ function parseSSEEvent(raw) {
 | meta | 连接建立后首个事件 | 记录 `conversation_id`（新对话时后端自动创建）、`task_id` |
 | thinking | `deep_thinking=true` 时 | 助手气泡内展开黄色边框折叠面板，内容逐字追加。**仅实时展示，不落库**（刷新丢失） |
 | message | 正常生成 | 逐字追加到助手消息内容区，Markdown 实时渲染 |
-| sources | 检索结果就绪（message 前或后） | 消息底部渲染引用来源卡片（文档名 + 相关度分数 + 页码） |
+| sources | 检索结果就绪（message 前或后） | 消息底部渲染引用来源卡片（[来源N] 编号 + 文档名 + 页码 + 内容摘要），`chunk_index` 与 LLM Prompt 编号一致 |
 | finish | 全部输出完毕 | 关闭 typing 动画，更新消息 ID，首轮保存 title，记录 token_usage |
 | error | 检索/LLM 异常 | 替换 typing 为错误提示卡片，关闭 streaming 状态 |
 | (注释帧) | 每 15s | `: ping\n\n`，解析时跳过，用户不可见 |
@@ -764,7 +764,7 @@ function parseSSEEvent(raw) {
 |:---|:---|
 | thinking | 黄色边框卡片，内容逐字追加，默认展开可手动折叠 |
 | message | Markdown 实时渲染，代码块高亮，支持一键复制 |
-| sources | 折叠面板，默认展开，显示文档名 + 相关度分数 + 页码 |
+| sources | 折叠面板，默认展开，每条显示 [来源N] 标签 + 文档名 + 页码 + 内容摘要（截断 200 字符） |
 
 ---
 
