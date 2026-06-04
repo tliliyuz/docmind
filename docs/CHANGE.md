@@ -1,20 +1,23 @@
 # DocMind 变更日志
 
-## 2026-06-04 — 修复「未找到相关信息」时仍显示不相关引用来源（后端）
+## 2026-06-04 — 修复「未找到相关信息」时仍显示不相关引用来源
 
 ### 修复
 
 | 优先级 | 问题 | 根因 | 修复方案 |
 |:---|:---|:---|:---|
-| P1 | LLM 回答"知识库中未找到相关信息"时，来源面板仍展示不相关的文档片段 | `_generate_sse_stream` 仅检查 `reranked_output.results` 是否非空即发送 sources 事件。即使 LLM 判定所有 chunks 不相关并输出"未找到"，只要检索返回了 top_k chunks（即使相似度为 0），sources 仍被发送 | 在 `chat_service.py` 增加 `_NOT_FOUND_KEYWORDS` 模块级常量，LLM 正常完成后检查回答内容是否包含"未找到相关信息"/"知识库中未找到"，若命中则跳过 sources 事件发送 |
+| P1 | LLM 回答"知识库中未找到相关信息"时，来源面板仍展示不相关的文档片段 | 后端 `_generate_sse_stream` 仅检查 `reranked_output.results` 非空即发送 sources；前端 `MessageItem.vue` 仅检查 `msg.sources.length > 0` 即渲染。即使 LLM 判定所有 chunks 不相关并输出"未找到"，sources 仍被发送并展示 | 后端：`chat_service.py` 新增 `_NOT_FOUND_KEYWORDS` 常量，sources 发送前检查 LLM 回答是否含关键词；前端：`MessageItem.vue` 新增 `isAnswerNotFound` computed，来源面板 `v-if` 增加抑制条件。两层防护确保不一致数据不透出 |
 
 ### 修改
 
 | 文件 | 变更 |
 |:---|:---|
-| `backend/app/services/chat_service.py` | 新增 `_NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]` 常量；`_generate_sse_stream` 第 198-202 行 sources 发送条件增加 `not _not_found` 检查 |
-| `backend/tests/test_chat_service.py` | 新增 `TestChatSourcesSuppression` 类：2 个测试验证 LLM 声明"未找到"时 sources 不发送 + LLM 正常回答时 sources 正常发送 |
-| `backend/docs/API.md` | v0.19→v0.20，§6.1 `event: sources` 补充"LLM 声明未找到时不发送"规则 |
+| `backend/app/services/chat_service.py` | 新增 `_NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]` 常量；`_generate_sse_stream` sources 发送条件增加 `not _not_found` 检查 |
+| `backend/tests/test_chat_service.py` | 新增 `TestChatSourcesSuppression` 类：2 个测试 |
+| `backend/docs/API.md` | v0.19→v0.20，§6.1 补充"LLM 声明未找到时不发送 sources"规则 |
+| `frontend/src/components/chat/MessageItem.vue` | 新增 `isAnswerNotFound` computed（检查 content 是否含"未找到相关信息"），来源面板 `v-if` 增加 `&& !isAnswerNotFound` 条件 |
+| `frontend/tests/MessageItem.test.js` | 新增 2 个测试：回答含"未找到"时隐藏来源面板 + 正常回答时显示来源面板 |
+| `frontend/docs/FRONTEND.md` | v0.13→v0.14，§4.2/§9.4 sources 事件补充抑制条件 |
 
 ---
 

@@ -47,8 +47,8 @@
         </div>
       </div>
 
-      <!-- 引用来源（仅 assistant + 有 sources 时） -->
-      <div v-if="msg.role === 'assistant' && msg.sources && msg.sources.length > 0" class="sources-box">
+      <!-- 引用来源（仅 assistant + 有 sources + LLM 未声明"未找到"时） -->
+      <div v-if="msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && !isAnswerNotFound" class="sources-box">
         <div class="sources-title" @click="sourcesExpanded = !sourcesExpanded">
           <i class="fas fa-book-open"></i>
           <span>引用 {{ uniqueDocCount }} 个文档（共 {{ msg.sources.length }} 个片段）</span>
@@ -108,6 +108,15 @@ const uniqueDocCount = computed(() => {
   if (!props.msg.sources) return 0
   const docIds = new Set(props.msg.sources.map(s => s.doc_id).filter(Boolean))
   return docIds.size
+})
+
+/** LLM 回答是否声明"未找到相关信息"（此时应抑制来源展示）
+    对齐 API.md §6.1：LLM 判定文档不相关时 sources 事件不发送，
+    前端作为安全网兜底同样逻辑。 */
+const isAnswerNotFound = computed(() => {
+  if (!props.msg.content) return false
+  return props.msg.content.includes('未找到相关信息') ||
+    props.msg.content.includes('知识库中未找到')
 })
 </script>
 

@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.23 |
-| 最后更新 | 2026-06-03 |
+| 文档版本 | v0.24 |
+| 最后更新 | 2026-06-04 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -261,19 +261,19 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | RRF 融合算法测试 | 单元测试 | k=60 标准合并 / 单路为空 / 两路均空 / 排名相同处理（14 用例） |
 | ✅ | NoopReranker 测试 | 单元测试 | 按长度排序 + top_k 截取 + 输入不足 top_k（12 用例） |
 | ✅ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（15 用例） |
-| ✅ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（19 用例） |
+| ✅ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock + sources 抑制逻辑（21 用例） |
 | ✅ | LLM 调用与 thinking 解析测试 | 单元测试 | DeepSeek API 流式响应 Mock / `reasoning_content` 解析 / `content` 解析（15 用例） |
 | ✅ | SSE 流式输出测试 | 单元测试 | `StreamingResponse` 事件序列 / 心跳帧 / 中途错误 / sources/finish 数据结构（16 用例） |
 | ✅ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列 + 错误码 + 权限校验 + deep_thinking 开关 + 心跳帧（12 用例） |
 | ✅ | KB 选择器接口测试 | 接口测试 | GET `/knowledge-bases/selectable` 返回 mine+public 分组 + 不重复 + 仅返回 active KB（6 用例） |
 | ✅ | ChatRequest Schema 校验测试 | 单元测试 | question 空/超长 + kb_id 缺失 + conversation_id 类型 + deep_thinking 默认值（6 用例） |
-| ⬜ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 各 event 类型解析 + 异常格式容错 + 心跳帧忽略 + 多行 data 拼接（12 用例） |
-| ⬜ | 前端 Markdown 渲染工具测试 | 单元测试 | markdown-it 渲染 + 代码块高亮 + XSS 过滤 + 链接处理（6 用例） |
-| ⬜ | 前端 ChatInput 组件测试 | 组件测试 | 输入/发送/停止/Enter/Shift+Enter/字数计数/空内容拒绝/deep_thinking 开关（10 用例） |
-| ⬜ | 前端 MessageList 组件测试 | 组件测试 | 消息气泡排列 / 自动滚动 / 手动上滚「新消息」按钮 / 空状态（8 用例） |
-| ⬜ | 前端 MessageItem 组件测试 | 组件测试 | Markdown 渲染 / thinking 折叠面板 / sources 引用卡片 / 重新生成按钮（8 用例） |
-| ⬜ | 前端 WelcomeScreen 组件测试 | 组件测试 | 欢迎语渲染 + 快捷问题卡片点击填入输入框（5 用例） |
-| ⬜ | 前端 ChatPage 集成测试 | 组件测试 | 完整问答流程：选择KB→输入问题→SSE流式渲染→sources展示→停止按钮（8 用例） |
+| ✅ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 各 event 类型解析 + 异常格式容错 + 心跳帧忽略 + 多行 data 拼接（21 用例） |
+| ✅ | 前端 Markdown 渲染工具测试 | 单元测试 | markdown-it 渲染 + 代码块高亮 + XSS 过滤 + 链接处理（14 用例） |
+| ✅ | 前端 ChatInput 组件测试 | 组件测试 | 输入/发送/停止/Enter/Shift+Enter/字数计数/空内容拒绝/deep_thinking 开关（19 用例） |
+| ✅ | 前端 MessageList 组件测试 | 组件测试 | 消息气泡排列 / 自动滚动 / 手动上滚「新消息」按钮 / 空状态（10 用例） |
+| ✅ | 前端 MessageItem 组件测试 | 组件测试 | Markdown 渲染 / thinking 折叠面板 / sources 引用卡片 / 重新生成按钮 / 状态展示 / 来源面板抑制（26 用例） |
+| ✅ | 前端 WelcomeScreen 组件测试 | 组件测试 | 欢迎语渲染 + 快捷问题卡片点击填入输入框（8 用例） |
+| ✅ | 前端 ChatPage 集成测试 | 组件测试 | 完整问答流程：选择KB→输入问题→SSE流式渲染→sources展示→停止按钮（13 用例） |
 | ⬜ | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表（见 TESTING.md §6） |
 | ⬜ | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告（见 TESTING.md §5） |
 | ⬜ | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注（见 TESTING.md §7） |

@@ -289,4 +289,31 @@ describe('MessageItem', () => {
     })
     expect(wrapper.find('.message-item').classes()).toContain('streaming')
   })
+
+  // ==================== 来源面板抑制（"未找到相关信息"） ====================
+
+  it('回答含"未找到相关信息"时隐藏来源面板', () => {
+    const wrapper = getComponent({
+      role: 'assistant',
+      content: '知识库中未找到相关信息。当前文档库覆盖了企业知识库系统的技术架构。',
+      sources: [
+        { doc_id: 1, doc_name: '手册.pdf', content: '不相关内容', page: 1 },
+      ],
+      status: 'complete',
+    })
+    expect(wrapper.find('.sources-box').exists()).toBe(false)
+  })
+
+  it('回答不含"未找到"时正常显示来源面板', () => {
+    const wrapper = getComponent({
+      role: 'assistant',
+      content: '广告投放的主要平台是抖音。',
+      sources: [
+        { doc_id: 1, doc_name: '手册.pdf', content: '相关内容', page: 1 },
+      ],
+      status: 'complete',
+    })
+    expect(wrapper.find('.sources-box').exists()).toBe(true)
+    expect(wrapper.find('.sources-title').text()).toContain('引用 1 个文档')
+  })
 })

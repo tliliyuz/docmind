@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.35 |
-| 最后更新 | 2026-06-03 |
+| 文档版本 | v0.36 |
+| 最后更新 | 2026-06-04 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 前端组件测试全部编写完成；后端 561 用例 + 前端 170 用例全部通过） |
+| 状态 | 进行中（Phase 3 全部测试完成；后端 563 用例 + 前端 172 用例全部通过） |
 
 ---
 
@@ -369,6 +369,8 @@
 | U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ✅ | 2026-06-02 | — |
 | U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-02 | — |
 | U7.67 | Service-message_count 递增 | `chat_service.chat()` | 每次问答 | conversation.message_count += 2（user+assistant） | ✅ | 2026-06-02 | — |
+| U7.68 | Service-LLM 未找到时抑制 sources | `chat_service._generate_sse_stream()` | LLM 输出含"未找到相关信息" | sources 事件不发送，meta/message/finish 正常 | ✅ | 2026-06-04 | 对齐 API.md §6.1 |
+| U7.69 | Service-LLM 正常时发送 sources | `chat_service._generate_sse_stream()` | LLM 正常回答 | sources 事件正常发送，含 chunks 数组 | ✅ | 2026-06-04 | 回归验证 |
 
 ### 5.8 后端 — LLM 调用与 thinking 解析测试
 
@@ -558,6 +560,8 @@
 | C3.51 | MessageItem-用户无重新生成 | `MessageItem` | role=user + complete | 无 .action-btn | ✅ | 2026-06-03 | — |
 | C3.52 | MessageItem-streaming 无重新生成 | `MessageItem` | status=streaming | 无 .action-btn | ✅ | 2026-06-03 | — |
 | C3.53 | MessageItem-streaming class | `MessageItem` | status=streaming | .message-item.streaming 存在 | ✅ | 2026-06-03 | — |
+| C3.54 | MessageItem-未找到隐藏来源 | `MessageItem` | content 含"未找到相关信息" | .sources-box 不存在（即使 sources 非空） | ✅ | 2026-06-04 | 对齐 API.md §6.1 / FRONTEND.md §4.2 |
+| C3.55 | MessageItem-正常显示来源 | `MessageItem` | content 不含"未找到" | .sources-box 存在并正常展示 | ✅ | 2026-06-04 | 回归验证 |
 
 ### 5.18 前端 — WelcomeScreen 组件测试
 
@@ -679,16 +683,16 @@
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例） |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
-| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
+| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（21 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock，含 sources 抑制逻辑 2 用例） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
 | `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
 | `ingest/tasks.py` | — | ✅ | Celery 入库存根测试（10 用例，5 个为常量成员检查） |
 | 前端 `utils/sse.js` | ≥ 80% | ✅ | Phase 3：SSE 事件解析（21 用例，2026-06-03） |
 | 前端 `utils/markdown.js` | ≥ 80% | ✅ | Phase 3：Markdown 渲染（14 用例，2026-06-03） |
-| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) = 61 用例，2026-06-03 |
+| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例，2026-06-04 |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
 | 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
-| 前端组件 | ≥ 60% | ✅ 170 通过 | 2026-06-03 运行 `npm run test`：sse(21) + markdown(14) + ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) + ChatPage(13) + LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
+| 前端组件 | ≥ 60% | ✅ 172 通过 | 2026-06-04 运行 `npm run test`：sse(21) + markdown(14) + ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) + ChatPage(13) + LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
 
 ---
 
