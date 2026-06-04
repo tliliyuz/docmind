@@ -1,5 +1,28 @@
 # DocMind 变更日志
 
+## 2026-06-03 — Phase 3 前端组件测试全部完成
+
+### 新增
+
+| 优先级 | 功能 | 实现 |
+|:---|:---|:---|
+| P1 | Phase 3 前端组件测试 | 7 个测试文件共 109 用例：SSE 解析工具(21) + Markdown 渲染工具(14) + ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) + ChatPage 集成(13)。全部通过，前端总用例数 61→170。 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/tests/sse.test.js` | 新建：`parseSSEEvent`(11) + `createSSEStream`(10)，Mock fetch + ReadableStream |
+| `frontend/tests/markdown.test.js` | 新建：`renderMarkdown`(9) + `wrapCodeBlocks`(5) |
+| `frontend/tests/ChatInput.test.js` | 新建：19 用例覆盖渲染/输入/发送/streaming/deepThinking/expose |
+| `frontend/tests/MessageList.test.js` | 新建：10 用例覆盖渲染/自动滚动/expose API |
+| `frontend/tests/MessageItem.test.js` | 新建：24 用例覆盖布局/Markdown/thinking/sources/状态/操作按钮 |
+| `frontend/tests/WelcomeScreen.test.js` | 新建：8 用例覆盖欢迎语/快捷问题卡片渲染与点击 |
+| `frontend/tests/ChatPage.test.js` | 新建：13 用例覆盖KB选择器/消息发送/停止/空态切换/快捷问题 |
+| `docs/TEST_CASES.md` | v0.34→v0.35，Phase 3 前端测试用例全部标记 ✅，覆盖率表更新 |
+
+---
+
 ## 2026-06-03 — 公共KB详情返回按钮修复 + Sidebar 折叠/展开
 
 ### 修复

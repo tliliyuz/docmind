@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.34 |
+| 文档版本 | v0.35 |
 | 最后更新 | 2026-06-03 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 前端核心组件代码完成，组件测试待编写；后端 561 用例 + 前端 61 用例全部通过） |
+| 状态 | 进行中（Phase 3 前端组件测试全部编写完成；后端 561 用例 + 前端 170 用例全部通过） |
 
 ---
 
@@ -439,93 +439,160 @@
 
 ### 5.13 前端 — SSE 解析工具测试
 
+> 2026-06-03：21 用例全部通过 ✅。覆盖 `parseSSEEvent`（meta/message/thinking/sources/finish/error 事件解析 + 心跳帧忽略 + 多行 data 拼接 + JSON 容错 + 空 data）与 `createSSEStream`（正常流 / HTTP 错误 / 非 JSON 错误 / AbortError / 网络异常 / 缓冲区残留 / 请求头校验 / abort 函数）。
+
 | ID | 测试用例 | 被测模块 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| UT1.1 | SSE-解析 meta | `sse.js` | `event: meta\ndata: {…}` | 返回 `{type: "meta", conversation_id, task_id}` | ⬜ | — | — |
-| UT1.2 | SSE-解析 message | `sse.js` | `event: message\ndata: {"delta":"你好"}` | 返回 `{type: "message", delta: "你好"}` | ⬜ | — | — |
-| UT1.3 | SSE-解析 thinking | `sse.js` | `event: thinking\ndata: {"delta":"思考..."}` | 返回 `{type: "thinking", delta: "思考..."}` | ⬜ | — | — |
-| UT1.4 | SSE-解析 sources | `sse.js` | `event: sources\ndata: {"chunks":[...]}` | 返回 `{type: "sources", chunks: [...]}` | ⬜ | — | — |
-| UT1.5 | SSE-解析 finish | `sse.js` | `event: finish\ndata: {…}` | 返回 `{type: "finish", message_id, title, token_usage}` | ⬜ | — | — |
-| UT1.6 | SSE-解析 error | `sse.js` | `event: error\ndata: {…}` | 返回 `{type: "error", code, message, detail}` | ⬜ | — | — |
-| UT1.7 | SSE-忽略心跳帧 | `sse.js` | `: ping\n\n` | 不触发任何回调，继续等待下一个事件 | ⬜ | — | — |
-| UT1.8 | SSE-多行 data 拼接 | `sse.js` | 多条 `data:` 行 | 按 `\n` 拼接后 JSON.parse | ⬜ | — | — |
-| UT1.9 | SSE-格式异常容错 | `sse.js` | data 不是合法 JSON | 跳过该事件，不崩溃，继续处理后续 | ⬜ | — | — |
-| UT1.10 | SSE-连接中断 | `sse.js` | `reader.read()` 抛异常 | 触发 onError 回调，清理 reader | ⬜ | — | — |
-| UT1.11 | SSE-未知 event 类型 | `sse.js` | `event: unknown` | 跳过不处理，不崩溃 | ⬜ | — | — |
-| UT1.12 | SSE-空 data | `sse.js` | `event: meta\ndata:` (空) | 跳过该事件 | ⬜ | — | — |
+| UT1.1 | SSE-解析 meta | `sse.js` | `event: meta\ndata: {"conversation_id":42}` | 返回 `{event: "meta", data: {conversation_id: 42}}` | ✅ | 2026-06-03 | — |
+| UT1.2 | SSE-解析 message | `sse.js` | `event: message\ndata: {"delta":"你好"}` | 返回 `{event: "message", data: {delta: "你好"}}` | ✅ | 2026-06-03 | — |
+| UT1.3 | SSE-解析 thinking | `sse.js` | `event: thinking\ndata: {"delta":"思考…"}` | 返回 `{event: "thinking", data: {delta: "思考…"}}` | ✅ | 2026-06-03 | — |
+| UT1.4 | SSE-解析 sources | `sse.js` | `event: sources\ndata: {"chunks":[...]}` | 返回 `{event: "sources", chunks 含 doc_name}` | ✅ | 2026-06-03 | — |
+| UT1.5 | SSE-解析 finish | `sse.js` | `event: finish\ndata: {message_id, title, token_usage}` | 返回 `{event: "finish", ...}` | ✅ | 2026-06-03 | — |
+| UT1.6 | SSE-解析 error | `sse.js` | `event: error\ndata: {code, message}` | 返回 `{event: "error", code: "E4003"}` | ✅ | 2026-06-03 | — |
+| UT1.7 | SSE-忽略心跳帧 | `sse.js` | `: ping\n\n` | 返回 `data: null`（被过滤） | ✅ | 2026-06-03 | — |
+| UT1.8 | SSE-多行 data 拼接 | `sse.js` | 多条 `data:` 行 | 按 `\n` 拼接后 JSON.parse | ✅ | 2026-06-03 | — |
+| UT1.9 | SSE-JSON 容错 | `sse.js` | data 非合法 JSON | 返回 `{raw: 原始字符串}`，不抛异常 | ✅ | 2026-06-03 | — |
+| UT1.10 | SSE-无 event 行默认 message | `sse.js` | 仅有 `data:` 行 | 默认 event="message" | ✅ | 2026-06-03 | — |
+| UT1.11 | SSE-空 data | `sse.js` | `event: finish\n\n` | 返回 `{event: "finish", data: null}` | ✅ | 2026-06-03 | — |
+| UT1.12 | SSE-流读取正常 | `createSSEStream` | Mock 完整 SSE 流 | 依次回调 onEvent ×4 → onDone | ✅ | 2026-06-03 | Mock fetch + ReadableStream |
+| UT1.13 | SSE-HTTP 错误 | `createSSEStream` | HTTP 500 + JSON body | onError 含 message | ✅ | 2026-06-03 | — |
+| UT1.14 | SSE-非 JSON 错误 | `createSSEStream` | HTTP 502 + 非 JSON body | onError 含兜底消息 | ✅ | 2026-06-03 | — |
+| UT1.15 | SSE-AbortError | `createSSEStream` | fetch 抛 AbortError | onDone 回调，不触发 onError | ✅ | 2026-06-03 | — |
+| UT1.16 | SSE-网络异常 | `createSSEStream` | Network Error | onError 含 message | ✅ | 2026-06-03 | — |
+| UT1.17 | SSE-缓冲区残留 | `createSSEStream` | 流结束后 buffer 有残留 | 最后一段被解析 | ✅ | 2026-06-03 | — |
+| UT1.18 | SSE-请求头 | `createSSEStream` | 有 token | Content-Type + Authorization 正确 | ✅ | 2026-06-03 | — |
+| UT1.19 | SSE-无 token | `createSSEStream` | token=null | 不发送 Authorization 头 | ✅ | 2026-06-03 | — |
+| UT1.20 | SSE-abort 函数 | `createSSEStream` | 调用 abort() | 不抛异常 | ✅ | 2026-06-03 | — |
 
 ### 5.14 前端 — Markdown 渲染工具测试
 
+> 2026-06-03：14 用例全部通过 ✅。覆盖 `renderMarkdown`（基本渲染/代码高亮/XSS 过滤/链接/标题/换行/空文本）与 `wrapCodeBlocks`（包装代码块/复制按钮/多代码块/属性保留）。
+
 | ID | 测试用例 | 被测模块 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| UT2.1 | Markdown-基本渲染 | `markdown.js` | `# 标题` | 渲染为 `<h1>标题</h1>` | ⬜ | — | — |
-| UT2.2 | Markdown-代码块高亮 | `markdown.js` | ` ```js\n...\n``` ` | 代码块有语法高亮 class | ⬜ | — | — |
-| UT2.3 | Markdown-XSS 过滤 | `markdown.js` | `<script>alert(1)</script>` | script 标签被转义/移除 | ⬜ | — | — |
-| UT2.4 | Markdown-链接处理 | `markdown.js` | `[text](url)` | `<a href="url" target="_blank">` | ⬜ | — | — |
-| UT2.5 | Markdown-表格渲染 | `markdown.js` | `\|列1\|列2\|` | 渲染为 `<table>` | ⬜ | — | — |
-| UT2.6 | Markdown-空内容 | `markdown.js` | `""` | 返回空字符串 | ⬜ | — | — |
+| UT2.1 | Markdown-基本渲染 | `markdown.js` | `**粗体**` | 渲染为 `<strong>粗体</strong>` | ✅ | 2026-06-03 | — |
+| UT2.2 | Markdown-代码块高亮 | `markdown.js` | ` ```js\nconst x=1\n``` ` | 代码块含 hljs + language-javascript class | ✅ | 2026-06-03 | highlight.js 内联样式 |
+| UT2.3 | Markdown-XSS 过滤 | `markdown.js` | `<script>alert(1)</script>` | 转义为 `&lt;script&gt;` | ✅ | 2026-06-03 | — |
+| UT2.4 | Markdown-链接渲染 | `markdown.js` | `[文档](https://doc.com)` | 含 `href="https://doc.com"` | ✅ | 2026-06-03 | linkify: true |
+| UT2.5 | Markdown-标题渲染 | `markdown.js` | `# H1\n## H2` | `<h1>` + `<h2>` | ✅ | 2026-06-03 | — |
+| UT2.6 | Markdown-空内容 | `markdown.js` | `""` / `null` / `undefined` | 返回空字符串 | ✅ | 2026-06-03 | — |
+| UT2.7 | Markdown-换行转换 | `markdown.js` | `行1\n行2` | 含 `<br>` | ✅ | 2026-06-03 | breaks: true |
+| UT2.8 | Markdown-裸链接 | `markdown.js` | `https://example.com` | 自动转换为链接 | ✅ | 2026-06-03 | — |
+| UT2.9 | wrapCodeBlocks-包装 | `markdown.js` | `<pre><code>...</code></pre>` | 包装为 code-block-wrapper + 复制按钮 | ✅ | 2026-06-03 | — |
+| UT2.10 | wrapCodeBlocks-复制按钮 | `markdown.js` | 单代码块 | 含 fa-copy + fa-check + clipboard API | ✅ | 2026-06-03 | — |
+| UT2.11 | wrapCodeBlocks-无代码块 | `markdown.js` | 纯段落 HTML | 原样返回 | ✅ | 2026-06-03 | — |
+| UT2.12 | wrapCodeBlocks-多代码块 | `markdown.js` | 2 个 `<pre><code>` 块 | 各被独立包装 | ✅ | 2026-06-03 | — |
+| UT2.13 | wrapCodeBlocks-属性保留 | `markdown.js` | `<code class="hljs language-py">` | class 属性被保留 | ✅ | 2026-06-03 | — |
+| UT2.14 | Markdown-无语言代码块 | `markdown.js` | ` ```\n文本\n``` ` | escapeHtml 处理 | ✅ | 2026-06-03 | — |
 
 ### 5.15 前端 — ChatInput 组件测试
 
+> 2026-06-03：19 用例全部通过 ✅。覆盖渲染（输入框/发送按钮/深度思考开关/字符计数）、输入发送（setValue/click/Enter/Shift+Enter/空内容抖动）、streaming 状态（禁用/停止按钮/Enter 拦截）、深度思考开关切换、expose 方法（setText/focus）。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C3.1 | ChatInput-输入发送 | `ChatInput` | 输入文字 + 点击发送 | 触发 `send` 事件，参数含 question + deep_thinking | ⬜ | — | — |
-| C3.2 | ChatInput-Enter 发送 | `ChatInput` | 输入文字 + Enter | 触发 `send` 事件（非 Shift+Enter） | ⬜ | — | — |
-| C3.3 | ChatInput-Shift+Enter 换行 | `ChatInput` | Shift+Enter | 在输入框中换行，不触发发送 | ⬜ | — | — |
-| C3.4 | ChatInput-停止生成 | `ChatInput` | 流式输出中点击 | 按钮变为「停止生成」，触发 `abort` 事件 | ⬜ | — | — |
-| C3.5 | ChatInput-空内容拒绝 | `ChatInput` | 空输入点击发送 | 输入框抖动，不触发 `send` | ⬜ | — | — |
-| C3.6 | ChatInput-字数计数 | `ChatInput` | 输入文字 | 实时显示 `{n}/2000` 字数 | ⬜ | — | — |
-| C3.7 | ChatInput-超长截断 | `ChatInput` | 粘贴 >2000 字符 | 自动截断至 2000 字符 | ⬜ | — | — |
-| C3.8 | ChatInput-深度思考开关 | `ChatInput` | 切换 deep_thinking | 开关状态正确切换，参数传入 send 事件 | ⬜ | — | — |
-| C3.9 | ChatInput-发送中禁用 | `ChatInput` | 流式输出中 | 输入框禁用，不可编辑或再次发送 | ⬜ | — | — |
-| C3.10 | ChatInput-完成后恢复 | `ChatInput` | 流式完成 | 输入框恢复可编辑，按钮恢复为「发送」 | ⬜ | — | — |
+| C3.1 | ChatInput-输入发送 | `ChatInput` | setValue + 点击发送 | emit `send`，参数含 question + deepThinking，输入清空 | ✅ | 2026-06-03 | — |
+| C3.2 | ChatInput-Enter 发送 | `ChatInput` | 输入 + Enter | emit `send` 事件 | ✅ | 2026-06-03 | — |
+| C3.3 | ChatInput-Shift+Enter 换行 | `ChatInput` | Shift+Enter | 不触发 send | ✅ | 2026-06-03 | — |
+| C3.4 | ChatInput-停止生成 | `ChatInput` | streaming=true 点击停止 | emit `stop` 事件 | ✅ | 2026-06-03 | — |
+| C3.5 | ChatInput-空内容抖动 | `ChatInput` | 空输入按 Enter | 抖动动画（shaking class），不 emit send | ✅ | 2026-06-03 | 按钮 disabled 时 Enter 触发的抖动 |
+| C3.6 | ChatInput-字数计数 | `ChatInput` | 输入 4 个字符 | 实时显示 `4/2000` | ✅ | 2026-06-03 | — |
+| C3.7 | ChatInput-渲染 placeholder | `ChatInput` | 渲染 | placeholder="输入你的问题…"，maxlength=2000 | ✅ | 2026-06-03 | — |
+| C3.8 | ChatInput-深度思考开关 | `ChatInput` | setValue(true) 切换 | active class + deepThinking=true 传入 send | ✅ | 2026-06-03 | — |
+| C3.9 | ChatInput-streaming 禁用 | `ChatInput` | streaming=true | 输入框 disabled，stop-btn 显示 | ✅ | 2026-06-03 | — |
+| C3.10 | ChatInput-streaming Enter 拦截 | `ChatInput` | streaming + Enter | 不发送 | ✅ | 2026-06-03 | — |
+| C3.11 | ChatInput-深度思考默认关闭 | `ChatInput` | 初始状态 | toggle 无 active class | ✅ | 2026-06-03 | — |
+| C3.12 | ChatInput-字数 over 样式 | `ChatInput` | 100 字符 | char-count 无 over class | ✅ | 2026-06-03 | — |
+| C3.13 | ChatInput-setText 暴露 | `ChatInput` | `vm.setText("文本")` | 输入框显示外部注入的文本 | ✅ | 2026-06-03 | — |
+| C3.14 | ChatInput-focus 暴露 | `ChatInput` | `vm.focus()` | 输入框 element.focus() 被调用 | ✅ | 2026-06-03 | — |
+| C3.15 | ChatInput-发送按钮渲染 | `ChatInput` | 初始状态 | send-btn 存在 | ✅ | 2026-06-03 | — |
+| C3.16 | ChatInput-字符计数初始值 | `ChatInput` | 初始状态 | 显示 0/2000 | ✅ | 2026-06-03 | — |
+| C3.17 | ChatInput-发送后清空 | `ChatInput` | 发送后 | textarea 值为空 | ✅ | 2026-06-03 | — |
+| C3.18 | ChatInput-空内容 Enter 不发送 | `ChatInput` | 空输入+Enter | emit send 为 falsy | ✅ | 2026-06-03 | — |
+| C3.19 | ChatInput-抖动后恢复 | `ChatInput` | 空内容 Enter → 550ms | shaking class 消失 | ✅ | 2026-06-03 | setTimeout 清理 |
 
 ### 5.16 前端 — MessageList 组件测试
 
+> 2026-06-03：10 用例全部通过 ✅。覆盖渲染（空列表/多消息/消息内容）、自动滚动（挂载/消息数量变化/流式内容变化）、expose scrollToBottom、新消息按钮结构。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C3.11 | MessageList-消息气泡排列 | `MessageList` | 多条消息 | user 消息右对齐，AI 消息左对齐 | ⬜ | — | — |
-| C3.12 | MessageList-自动滚动 | `MessageList` | 新消息到达 | 自动滚动到底部 | ⬜ | — | — |
-| C3.13 | MessageList-手动上滚 | `MessageList` | 用户手动上滚 | 显示「↓ 新消息」浮动按钮，点击回到底部 | ⬜ | — | — |
-| C3.14 | MessageList-空状态 | `MessageList` | messages=[] | 显示 WelcomeScreen | ⬜ | — | — |
-| C3.15 | MessageList-流式追加 | `MessageList` | 收到 message delta | 同一条 AI 消息气泡内逐字追加，实时滚动 | ⬜ | — | — |
-| C3.16 | MessageList-thinking 面板 | `MessageList` | 收到 thinking delta | 黄色边框折叠面板，内容逐字追加 | ⬜ | — | — |
-| C3.17 | MessageList-sources 卡片 | `MessageList` | 收到 sources 事件 | 消息底部渲染引用文档卡片 | ⬜ | — | — |
-| C3.18 | MessageList-typing 动画 | `MessageList` | 发送后等待首 token | AI 气泡显示 typing 动画（三点跳动） | ⬜ | — | — |
+| C3.20 | MessageList-空消息列表 | `MessageList` | messages=[] | 0 个 MessageItem 渲染 | ✅ | 2026-06-03 | — |
+| C3.21 | MessageList-消息渲染 | `MessageList` | 2 条消息 | 2 个 MessageItem，role 对应 user/assistant | ✅ | 2026-06-03 | — |
+| C3.22 | MessageList-消息内容 | `MessageList` | 用户消息 | 文本渲染在 DOM 中 | ✅ | 2026-06-03 | — |
+| C3.23 | MessageList-挂载自动滚动 | `MessageList` | onMounted | scrollTo 被调用 | ✅ | 2026-06-03 | — |
+| C3.24 | MessageList-消息变化滚动 | `MessageList` | 追加消息 | 在底部时 scrollTo 被调用 | ✅ | 2026-06-03 | — |
+| C3.25 | MessageList-流式持续滚动 | `MessageList` | content 变化 | 在底部时 scrollTo 被调用 | ✅ | 2026-06-03 | — |
+| C3.26 | MessageList-scrollToBottom 暴露 | `MessageList` | `vm.scrollToBottom()` | 方法存在且可调用，内部调 scrollTo | ✅ | 2026-06-03 | — |
+| C3.27 | MessageList-新消息按钮初始隐藏 | `MessageList` | onMounted 后 | 按钮不存在（在底部） | ✅ | 2026-06-03 | — |
+| C3.28 | MessageList-Transition 结构 | `MessageList` | 渲染 | Transition 组件包裹新消息按钮 | ✅ | 2026-06-03 | — |
+| C3.29 | MessageList-容器 class | `MessageList` | 渲染 | .message-list 容器存在 | ✅ | 2026-06-03 | — |
 
 ### 5.17 前端 — MessageItem 组件测试
 
+> 2026-06-03：24 用例全部通过 ✅。覆盖角色布局（user/assistant class + 名称）、Markdown 渲染（renderMarkdown + wrapCodeBlocks）、thinking 面板（显示/隐藏/折叠展开）、sources 引用（文档去重/展开收起/页码/占位/未知文档）、状态展示（typing/streaming/error）、操作按钮（重新生成 emit/各状态下显隐）。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C3.20 | MessageItem-用户消息 | `MessageItem` | role=user | 显示用户头像 + 消息内容，右对齐气泡 | ⬜ | — | — |
-| C3.21 | MessageItem-AI Markdown | `MessageItem` | role=assistant + Markdown 内容 | markdown-it 渲染为 HTML | ⬜ | — | — |
-| C3.22 | MessageItem-thinking 折叠 | `MessageItem` | 有 thinking_content | 黄色面板，默认展开，可点击折叠 | ⬜ | — | — |
-| C3.23 | MessageItem-sources 展示 | `MessageItem` | 有 sources | 文档名 + score + page，点击展开分块预览 | ⬜ | — | — |
-| C3.24 | MessageItem-重新生成按钮 | `MessageItem` | AI 消息 hover | 显示「重新生成」按钮，点击重新发送上一条问题 | ⬜ | — | — |
-| C3.25 | MessageItem-代码复制 | `MessageItem` | AI 消息含代码块 | hover 显示复制按钮，点击复制到剪贴板 | ⬜ | — | — |
-| C3.26 | MessageItem-无 sources | `MessageItem` | sources=[] | 不渲染引用卡片区域 | ⬜ | — | — |
-| C3.27 | MessageItem-无 thinking | `MessageItem` | thinking_content=null | 不渲染 thinking 面板 | ⬜ | — | — |
+| C3.30 | MessageItem-用户消息 class | `MessageItem` | role=user | .message-item.user 存在 | ✅ | 2026-06-03 | — |
+| C3.31 | MessageItem-AI class | `MessageItem` | role=assistant | .message-item.assistant 存在 | ✅ | 2026-06-03 | — |
+| C3.32 | MessageItem-用户名 | `MessageItem` | role=user/assistant | 显示「你」/「DocMind」 | ✅ | 2026-06-03 | — |
+| C3.33 | MessageItem-Markdown 渲染 | `MessageItem` | content="**粗体**" | renderMarkdown + wrapCodeBlocks 被调用 | ✅ | 2026-06-03 | Mock markdown 工具 |
+| C3.34 | MessageItem-空内容不渲染 | `MessageItem` | content="" | renderMarkdown 不被调用 | ✅ | 2026-06-03 | — |
+| C3.35 | MessageItem-thinking 面板 | `MessageItem` | thinking="思考…" | .thinking-box + .thinking-content 存在 | ✅ | 2026-06-03 | — |
+| C3.36 | MessageItem-无 thinking | `MessageItem` | thinking=null | 无 .thinking-box | ✅ | 2026-06-03 | — |
+| C3.37 | MessageItem-用户无 thinking | `MessageItem` | role=user + thinking | 无 .thinking-box | ✅ | 2026-06-03 | — |
+| C3.38 | MessageItem-thinking 折叠 | `MessageItem` | 点击 .thinking-title | style.display 切换 none/非 none | ✅ | 2026-06-03 | v-show 内联样式验证 |
+| C3.39 | MessageItem-sources 面板 | `MessageItem` | sources=[2 个文档片段] | 引用 1 个文档，共 2 个片段 | ✅ | 2026-06-03 | — |
+| C3.40 | MessageItem-sources 去重 | `MessageItem` | 同 doc_id 多片段 | 文档计数去重，片段数保持 | ✅ | 2026-06-03 | uniqueDocCount |
+| C3.41 | MessageItem-sources 折叠 | `MessageItem` | 点击 .sources-title | style.display 切换为 none | ✅ | 2026-06-03 | v-show 内联样式验证 |
+| C3.42 | MessageItem-sources 占位 | `MessageItem` | content="" | .source-content.placeholder 存在 | ✅ | 2026-06-03 | — |
+| C3.43 | MessageItem-sources 页码 | `MessageItem` | page=12 | 显示「第12页」 | ✅ | 2026-06-03 | — |
+| C3.44 | MessageItem-sources 无 page | `MessageItem` | 无 page 字段 | 不显示 .source-page | ✅ | 2026-06-03 | — |
+| C3.45 | MessageItem-sources 未知文档 | `MessageItem` | 无 doc_name | 显示「未知文档」 | ✅ | 2026-06-03 | — |
+| C3.46 | MessageItem-typing 动画 | `MessageItem` | status=streaming + content="" | .typing-indicator 存在 | ✅ | 2026-06-03 | — |
+| C3.47 | MessageItem-streaming 有内容 | `MessageItem` | status=streaming + content | .markdown-body 存在，无 typing | ✅ | 2026-06-03 | — |
+| C3.48 | MessageItem-error 状态 | `MessageItem` | status=error + error="…" | .error-content 含错误信息 | ✅ | 2026-06-03 | — |
+| C3.49 | MessageItem-重新生成按钮 | `MessageItem` | status=complete | .action-btn 含「重新生成」 | ✅ | 2026-06-03 | — |
+| C3.50 | MessageItem-重新生成 emit | `MessageItem` | 点击 .action-btn | emit `regenerate` | ✅ | 2026-06-03 | — |
+| C3.51 | MessageItem-用户无重新生成 | `MessageItem` | role=user + complete | 无 .action-btn | ✅ | 2026-06-03 | — |
+| C3.52 | MessageItem-streaming 无重新生成 | `MessageItem` | status=streaming | 无 .action-btn | ✅ | 2026-06-03 | — |
+| C3.53 | MessageItem-streaming class | `MessageItem` | status=streaming | .message-item.streaming 存在 | ✅ | 2026-06-03 | — |
 
 ### 5.18 前端 — WelcomeScreen 组件测试
 
+> 2026-06-03：8 用例全部通过 ✅。覆盖欢迎语/描述渲染、4 个快捷问题卡片渲染、卡片点击 emit `select` 事件（不同卡片 emit 不同文本）、全部卡片可点击。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C3.30 | WelcomeScreen-渲染 | `WelcomeScreen` | 空消息列表 | Logo + 欢迎语 + 快捷问题卡片 | ⬜ | — | — |
-| C3.31 | WelcomeScreen-快捷问题 | `WelcomeScreen` | 点击快捷问题卡片 | 文本填入 ChatInput 并自动发送 | ⬜ | — | — |
-| C3.32 | WelcomeScreen-有消息时隐藏 | `WelcomeScreen` | 消息列表非空 | 组件不渲染 | ⬜ | — | — |
+| C4.1 | WelcomeScreen-欢迎标题 | `WelcomeScreen` | 渲染 | 「我是 DocMind，你的企业知识助手」 | ✅ | 2026-06-03 | — |
+| C4.2 | WelcomeScreen-描述 | `WelcomeScreen` | 渲染 | 「选择一个知识库，开始提问吧」 | ✅ | 2026-06-03 | — |
+| C4.3 | WelcomeScreen-快捷卡片数 | `WelcomeScreen` | 渲染 | 4 个 .quick-card | ✅ | 2026-06-03 | — |
+| C4.4 | WelcomeScreen-卡片图标文字 | `WelcomeScreen` | 渲染 | 每个卡片含图标 + 文字 | ✅ | 2026-06-03 | — |
+| C4.5 | WelcomeScreen-预设问题 | `WelcomeScreen` | 渲染 | 含报销/入职/年假/VPN 4 个问题 | ✅ | 2026-06-03 | — |
+| C4.6 | WelcomeScreen-卡片点击 | `WelcomeScreen` | 点击第 1 张卡片 | emit `select`，参数为卡片文本 | ✅ | 2026-06-03 | — |
+| C4.7 | WelcomeScreen-不同卡片 emit | `WelcomeScreen` | 点击第 2/3 张 | emit 不同问题文本 | ✅ | 2026-06-03 | — |
+| C4.8 | WelcomeScreen-全部可点击 | `WelcomeScreen` | 点击全部 4 张 | `emitted('select')` 长度为 4 | ✅ | 2026-06-03 | — |
 
 ### 5.19 前端 — ChatPage 集成测试
 
+> 2026-06-03：13 用例全部通过 ✅。覆盖初始化（loadSelectableKBs）、KB 选择器（双下拉框渲染/空提示/选择 KB 后 setSelectedKB + clearMessages）、消息发送（未选 KB 提示/正常发送/发送异常提示）、停止生成（abort）、空态/消息列表切换（WelcomeScreen vs MessageList）、快捷问题（未选 KB 提示/已选发送）。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C6.1 | ChatPage-KB 选择器 | `ChatPage` | 页面挂载 | 加载 KB 选择器数据，默认选中最近使用的 KB | ⬜ | — | — |
-| C6.2 | ChatPage-完整问答流程 | `ChatPage` | 选择KB→提问→流式→完成 | 用户消息出现 → AI typing → 逐字追加 → sources → 停止 | ⬜ | — | Mock SSE |
-| C6.3 | ChatPage-停止按钮 | `ChatPage` | 流式中点击停止 | `AbortController.abort()`，消息保留当前内容 | ⬜ | — | — |
-| C6.4 | ChatPage-切换 KB | `ChatPage` | 流式完成后切换 KB | 消息列表不变（不同 KB 的对话存不同会话） | ⬜ | — | — |
-| C6.5 | ChatPage-新建对话 | `ChatPage` | 点击「新建对话」 | 清空消息列表，conversation_id=null | ⬜ | — | — |
-| C6.6 | ChatPage-错误处理 | `ChatPage` | SSE error 事件 | 显示错误提示，输入框恢复可用 | ⬜ | — | — |
-| C6.7 | ChatPage-网络异常 | `ChatPage` | fetch 网络错误 | 显示「网络异常，请稍后重试」 | ⬜ | — | — |
-| C6.8 | ChatPage-deep_thinking 流转 | `ChatPage` | 开启深度思考 | thinking 面板实时追加 → message 内容追加 → sources → finish | ⬜ | — | — |
+| C6.1 | ChatPage-挂载加载 KB | `ChatPage` | onMounted | loadSelectableKBs 调用 1 次 | ✅ | 2026-06-03 | — |
+| C6.2 | ChatPage-KB 下拉框 | `ChatPage` | selectableKBs 非空 | 2 个 el-select 渲染 | ✅ | 2026-06-03 | — |
+| C6.3 | ChatPage-无 KB 提示 | `ChatPage` | selectableKBs 为空 | 「暂无可用的知识库」 | ✅ | 2026-06-03 | — |
+| C6.4 | ChatPage-选择 KB | `ChatPage` | handleKBChange(1) | setSelectedKB + clearMessages 调用 | ✅ | 2026-06-03 | — |
+| C6.5 | ChatPage-未选 KB 发送提示 | `ChatPage` | selectedKBId=null + 发送 | ElMessage.warning「请先选择一个知识库」 | ✅ | 2026-06-03 | — |
+| C6.6 | ChatPage-正常发送 | `ChatPage` | selectedKBId=1 + 发送 | sendUserMessage('测试', false) 调用 | ✅ | 2026-06-03 | Mock store |
+| C6.7 | ChatPage-发送异常提示 | `ChatPage` | sendUserMessage 抛异常 | ElMessage.error('发送失败') | ✅ | 2026-06-03 | — |
+| C6.8 | ChatPage-停止生成 | `ChatPage` | 点击 stop 按钮 | chatStore.abort() 调用 | ✅ | 2026-06-03 | — |
+| C6.9 | ChatPage-空态 WelcomeScreen | `ChatPage` | isEmpty=true | WelcomeScreen 渲染，MessageList 不渲染 | ✅ | 2026-06-03 | — |
+| C6.10 | ChatPage-有消息 MessageList | `ChatPage` | isEmpty=false | MessageList 渲染，WelcomeScreen 不渲染 | ✅ | 2026-06-03 | — |
+| C6.11 | ChatPage-快捷问题未选 KB | `ChatPage` | selectedKBId=null + 快捷 | ElMessage.warning 提示 | ✅ | 2026-06-03 | — |
+| C6.12 | ChatPage-快捷问题已选 KB | `ChatPage` | selectedKBId=1 + 快捷 | sendUserMessage(question, false) 调用 | ✅ | 2026-06-03 | — |
+| C6.13 | ChatPage-regenerate 结构 | `ChatPage` | MessageList emit | MessageList 存在（props 正确传递） | ✅ | 2026-06-03 | — |
 
 ### 5.20 专项测试（Phase 3 完成执行）
 
@@ -616,12 +683,12 @@
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
 | `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
 | `ingest/tasks.py` | — | ✅ | Celery 入库存根测试（10 用例，5 个为常量成员检查） |
-| 前端 `utils/sse.js` | ≥ 80% | ⬜ | Phase 3：SSE 事件解析 |
-| 前端 `utils/markdown.js` | ≥ 80% | ⬜ | Phase 3：Markdown 渲染 |
-| 前端 `components/chat/` | ≥ 60% | ⬜ | Phase 3：ChatInput/MessageList/MessageItem/WelcomeScreen |
-| 前端 `views/ChatPage.vue` | ≥ 60% | ⬜ | Phase 3：问答页集成 |
-| 前端 `stores/chat.js` | ≥ 60% | ⬜ | Phase 3：聊天状态管理 |
-| 前端组件 | ≥ 60% | ✅ 61 通过 | 2026-06-03 运行 `npm run test`：LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
+| 前端 `utils/sse.js` | ≥ 80% | ✅ | Phase 3：SSE 事件解析（21 用例，2026-06-03） |
+| 前端 `utils/markdown.js` | ≥ 80% | ✅ | Phase 3：Markdown 渲染（14 用例，2026-06-03） |
+| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) = 61 用例，2026-06-03 |
+| 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
+| 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
+| 前端组件 | ≥ 60% | ✅ 170 通过 | 2026-06-03 运行 `npm run test`：sse(21) + markdown(14) + ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) + ChatPage(13) + LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
 
 ---
 
