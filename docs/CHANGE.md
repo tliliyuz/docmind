@@ -1,5 +1,181 @@
 # DocMind 变更日志
 
+## 2026-06-04 — Phase 3 第 1 轮人工答案评分完成
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/human_eval_template.md` | 填写全部 10 题评估记录（系统答案 + 4 维度评分 + 评语），汇总表 + 逐题备注 + 总体评价 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.41→v0.42；E6 人工评分状态 ⬜→✅，实际值 4.38/5.0；文件头状态更新 |
+| `docs/ROADMAP.md` | v0.28→v0.29；Phase 3 §5.5 人工评分状态 ⬜→✅ |
+| `docs/TESTING.md` | v0.9→v0.10；§9 人工评分行新增完成状态 + 日期；文件头状态更新 |
+
+### 评估结论
+
+- **平均综合分**：4.38/5.0 ✅ 满足 ≥ 4.0 目标
+- **满分题**：Q1（入职手续）、Q5（打印机卡纸）、Q22（离职资产+报销）、Q29（负向测试）
+- **最低分题**：Q18（绩效 C 档，3.1/5.0）— 核心问题：过度推断 + 编造细节
+- **主要问题模式**：过度推断/编造细节、概念混淆、引用标注不规范、细节扩展失准
+- 详见 `backend/tests/human_eval_template.md`
+
+---
+
+## 2026-06-04 — sources 引用过滤：仅发送 LLM 实际引用的 chunk
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | 新增 `_extract_citation_indices()` 提取 LLM 回答中的 `[来源N]` 编号；`_CITATION_PATTERN` 增加捕获组 `(\d+)`；`_generate_sse_stream` sources 发送逻辑增加引用过滤：仅发送被实际引用的 chunk（保持原始 Prompt 编号不重新编号），零引用时抑制 sources，LLM 失败时回退全量发送 |
+| `backend/tests/test_chat_service.py` | 新增 `TestExtractCitationIndices`（5 用例）+ `TestChatCitationFiltering`（4 用例）；修复 2 个已有测试：LLM chunks 增加 `[来源1]` 引用（零引用时 sources 不再发送）；`_mock_chat_pipeline` 已含 `used_chunks` |
+| `backend/tests/test_sse_helpers.py` | `TestBuildSources` 3 个测试修复：`_build_sources(reranked_output, ...)` → `_build_sources(reranked_output.results, ...)`（6月4日重构遗漏） |
+| `docs/ARCHITECTURE.md` | v0.21→v0.22；§5.1.3 SSE 事件序列 + sources 引用过滤规格（5 条规则）；§5.2 伪代码更新 |
+| `backend/docs/API.md` | v0.20→v0.21；§6.1 `event: sources` 重写发送规则（引用过滤 / 未找到抑制 / 零引用抑制 / 检索无结果 / LLM 失败）；字段说明更新 |
+| `docs/ROADMAP.md` | v0.27→v0.28；Phase 3 §5.2 新增 sources 引用过滤任务 + §5.5 新增测试任务；决策索引新增 #27；Phase 5 新增 sources 智能预览优化项 |
+| `docs/TEST_CASES.md` | v0.40→v0.41；新增 U7.63d（`_extract_citation_indices` + 引用过滤集成 7 用例）；文件头状态更新 |
+
+### 说明
+
+**问题**：LLM 回答中仅引用 `[来源1]` 和 `[来源3]`，但 `event: sources` 将进入 Prompt 的全部 chunk（含不相关的 [来源2]/[来源4]）都发给前端。用户看到 4 个引用来源，但 LLM 只用了 2 个，第一眼看着不相关。
+
+**修复**：LLM 流式结束后从 `assistant_content` 中提取所有 `[来源N]` 编号，`event: sources` 仅发送被实际引用的 chunk。编号保持与 Prompt 一致（不重新编号），确保前端 `[来源N]` 标签与 LLM 回答中的引用精确对应。
+
+**边界处理**：
+- LLM 引用全部 chunk → 全量发送（行为不变）
+- LLM 零引用 → sources 不发送（与「未找到」抑制互补）
+- LLM 失败 → 回退全量发送（无 assistant_content 无法过滤）
+- 幻觉编号 → 忽略，仅取有效范围
+
+---
+
+## 2026-06-04 — sources 事件增加 chunk_index 字段 + 前端 [来源N] 标签
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | `_build_sources` 重构：接受 chunks 列表（替代 `RetrievalOutput`），每条增加 `chunk_index` 字段；两处调用改用 `prompt_result.used_chunks`（与 LLM Prompt 编号一致），LLM 失败时回退 `reranked_output.results` |
+| `frontend/src/components/chat/MessageItem.vue` | 来源项增加 `[来源N]` 标签（`source-index`），读取 `src.chunk_index`；新增 `.source-index` CSS |
+| `backend/docs/API.md` | §6.1 `event: sources` 文档增加 `chunks[].chunk_index` 字段 + JSON 示例更新 |
+| `frontend/docs/FRONTEND.md` | v0.13→v0.14；§4.2/§9.4/§9.5 三处 sources 描述增加 [来源N] 标签说明 |
+| `frontend/docs/UIDESIGN.md` | v0.7→v0.8；§4.7 新增 `.source-index` CSS |
+| `docs/TEST_CASES.md` | v0.39→v0.40；新增 U7.63b（sources 抑制 4 用例）+ U7.63c（chunk_index） |
+| `backend/tests/test_chat_service.py` | mock `build_prompt` 返回值增加 `used_chunks` 字段 |
+
+### 说明
+
+**问题**：LLM 回答中引用 `[来源1]`，但前端来源面板展示的 5 个片段没有编号标签，用户无法将回答中的引用映射到具体的文档片段。
+
+**修复**：三层编号一致性——
+- Prompt 层：`_format_chunk_reference` 按 `[来源N]` 格式编号
+- SSE 层：`_build_sources` 传入 `prompt_result.used_chunks`，`chunk_index` 与 Prompt 编号一致
+- 前端层：`[来源N]` 标签渲染在每条来源项开头
+
+---
+
+## 2026-06-04 — sources 抑制关键词从全文字串匹配改为前缀匹配
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | LLM 给出有价值回答+[来源N]引用，但因回答后文提及"未找到相关信息"（如"文档提到X，但未找到相关信息关于Y"），`_NOT_FOUND_KEYWORDS` 全文子串匹配误判为真阴性，错误抑制 sources 事件 | System Prompt 指示 LLM 在真正无法回答时以"知识库中未找到相关信息"**开头**，但 `any(kw in assistant_content)` 匹配了回答任何位置的子串。部分回答场景下 LLM 先给出有信息量的回答，仅在后文对某个子问题声明未找到，此时关键词出现在回答中部/后部，不应抑制 sources | `_NOT_FOUND_KEYWORDS` 匹配范围从全文改为**前 35 字符**（`assistant_content.strip()[:35]`）。真"未找到"回答首句即声明（"知识库中未找到相关信息"=13 字符），35 字符覆盖了"抱歉，知识库中未找到相关信息"（~16 字符）等礼貌前缀，同时排除假阳性（回答开头为"根据文档内容..."等，关键词出现在 ~40 字符后） |
+
+**涉及文件**：
+- `backend/app/services/chat_service.py` — `_NOT_FOUND_KEYWORDS` 注释 + `_not_found` 前缀匹配逻辑
+- `backend/tests/test_chat_service.py` — 新增 `test_LLM部分回答后文提及未找到时sources仍发送` 防假阳性测试
+- `backend/tests/regression_test.py` — 增强诊断输出：`answer_text` + `answer_not_found_count` + 失败题显示 LLM 回答片段
+
+### 诊断过程
+
+回归测试失败题可分为两类：
+
+| 类别 | 数量 | 表现 | 例 |
+|:---|:---|:---|:---|
+| **假阳性**（本次修复目标） | ~10 题 | LLM 给出含 [来源N] 的有价值回答，但后文提及"未找到" | Q2 "员工请病假需要提交**医院证明**[来源1]...但是，关于提前几天，文档中未找到..." |
+| **真阴性**（知识库缺失） | ~4 题 | LLM 首句即"知识库中未找到相关信息" | Q12 "知识库中未找到相关信息。所提供的文档..." |
+
+---
+
+## 2026-06-04 — prompt_builder 移除第二层 sorted(key=len)
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | 回归测试仍有 8/30 题缺失 sources 事件（Q12/13/15/17/18/24/26/30，全为 medium/hard 语义复杂题） | `prompt_builder.py:94` 对上游 NoopReranker 输出再次执行 `sorted(key=len)`，将 RRF 相关性排序重新按长度打乱。短但不相关的 chunk 优先占满 token 预算，真正相关的长 chunk 被挤出 → LLM 看不到相关内容 → 输出"未找到" | 移除 `sorted(key=len)`，改为直接使用 `retrieval_output.results`（保持上游 RRF 相关性降序）。软上限跳过逻辑保留，但理由从"尝试下一个更短的"改为"跳过当前尝试下一个能否塞入" |
+
+**涉及文件**：
+- `backend/app/rag/prompt_builder.py` — 第 94 行移除 `sorted(key=len)`；模块/docstring/注释同步修正
+- `backend/tests/test_prompt_builder.py` — 更新 2 个测试：`test_保持输入排序_不按长度重排` + `test_软上限控制_预算不足时跳过后续chunk`
+- `docs/ARCHITECTURE.md` — v0.20→v0.21；§5.1.2 策略描述从"按长度排序择优"改为"相关性优先填充"
+- `docs/ROADMAP.md` — v0.26→v0.27；§2 Prompt 组装行 + 决策 #19 同步修正
+- `docs/TEST_CASES.md` — v0.38→v0.39；U7.50/U7.52 更新
+
+### 说明
+
+**根因链**：RRF 融合（相关性降序）→ NoopReranker（✅ 第一次修复：保持 RRF 排序）→ **prompt_builder `sorted(key=len)`（❌ 第二次打乱）**→ LLM 拿到不相关短 chunk。
+
+第一次修复（`reranker.py`）是必要但不充分的——prompt_builder 有自己独立的长度排序，注释称"防御性重新排序，消除对上游排序行为的隐式依赖"，在 reranker 按长度排序时两者一致所以未暴露。reranker 改为 RRF 排序后，prompt_builder 的防御排序反而变成了反向破坏。
+
+---
+
+## 2026-06-04 — NoopReranker 策略文档修正
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.19→v0.20；§5.1.2 检索后排序行 + §5.2 伪代码注释 + §7.3 整个段落（表、代码块、要点）：NoopReranker 策略从「按 chunk 长度升序排列（短 chunk 优先）」修正为「保持 RRF 融合排序（相关性降序），仅截取 top_k」 |
+| `docs/ROADMAP.md` | v0.25→v0.26；§2 NoopReranker 任务行 + §5.5 测试描述 + 决策 #18：同步修正 NoopReranker 策略描述 |
+| `docs/TEST_CASES.md` | v0.37→v0.38；§5.5 U7.40-U7.44：用例名/预期行为/用例数/日期同步更新 |
+| `backend/app/rag/reranker.py` | 模块 docstring + `NoopReranker` 类 docstring 同步修正 |
+
+### 说明
+
+**根本问题**：ARCHITECTURE.md §7.3 将 NoopReranker 描述为「按 chunk 长度升序排列（短 chunk 优先，信息密度高）」，这是一个错误的启发式策略——在 RAG 场景中，相关性 >> 长度，用长度排序会完全打乱 RRF 融合计算出的相关性排名。
+
+**实际影响**：短 chunk 优先导致语义匹配/跨文档场景下 LLM 拿到不相关短 chunk → 误判「未找到相关信息」→ sources 被抑制 → 回归测试 17/30 失败。
+
+**修复**：代码（`reranker.py`）和文档（4 份）均已修正为「保持 RRF 原始排序，仅截取 top_k」。
+
+---
+
+## 2026-06-04 — Phase 3 评估基础设施：测试集 + 评估脚本 + 回归脚本
+
+### 新增
+
+| 优先级 | 功能 | 实现 |
+|:---|:---|:---|
+| P1 | 示例知识库文档目录 | `backend/knowledge_samples/` 创建 20 份空 Markdown 文档（11 份来自 TESTING.md 示例 + 9 份补充），覆盖 HR/财务/IT/安全/行政/研发等企业场景 |
+| P1 | 共享评估测试集 | `backend/tests/eval_test_set.py` — 30 题测试集（不含项目依赖），供 eval_retrieval.py 和 regression_test.py 共用 |
+| P1 | 离线检索评估脚本 | `backend/tests/eval_retrieval.py` — 三路检索对比（向量/BM25/RRF），计算 Recall@5/Recall@10/MRR/Precision@5，输出汇总表 + 逐题明细 + 未召回分析 |
+| P1 | 回归测试脚本 | `backend/tests/regression_test.py` — 端到端 SSE 问答验证：答案非空/引用来源有效/SSE 格式正确/无系统错误，每次提交前运行 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/eval_retrieval.py` | 测试集提取到 `eval_test_set.py`，改为 `from tests.eval_test_set import EVAL_TEST_SET` |
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | 回归测试 17/30 题缺失 sources 事件 | NoopReranker 按内容长度重排 RRF 结果，LLM 拿到不相关的短 chunk → 误判"未找到"→ sources 被抑制。离线评估直接测 RRF（Recall@5=1.000），但 chat 链路经 NoopReranker 后相关 chunk 被丢弃 | NoopReranker 改为保持 RRF 原始排序（已按相关性降序），仅截取 top_k，不再按长度重排 |
+
+**涉及文件**：
+- `backend/app/rag/reranker.py` — `NoopReranker.rerank()` 移除 `sorted(key=len)`，改为直接 `retrieval_output.results[:top_k]`
+- `backend/tests/test_reranker.py` — 更新 4 个测试：保持 RRF 排序、截取 top_k、top_k=1、不改变内容
+
+---
+
 ## 2026-06-04 — 修复「未找到相关信息」时仍显示不相关引用来源（后端）
 
 ### 修复
