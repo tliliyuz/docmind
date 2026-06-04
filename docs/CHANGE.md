@@ -1,5 +1,23 @@
 # DocMind 变更日志
 
+## 2026-06-04 — 修复「未找到相关信息」时仍显示不相关引用来源（后端）
+
+### 修复
+
+| 优先级 | 问题 | 根因 | 修复方案 |
+|:---|:---|:---|:---|
+| P1 | LLM 回答"知识库中未找到相关信息"时，来源面板仍展示不相关的文档片段 | `_generate_sse_stream` 仅检查 `reranked_output.results` 是否非空即发送 sources 事件。即使 LLM 判定所有 chunks 不相关并输出"未找到"，只要检索返回了 top_k chunks（即使相似度为 0），sources 仍被发送 | 在 `chat_service.py` 增加 `_NOT_FOUND_KEYWORDS` 模块级常量，LLM 正常完成后检查回答内容是否包含"未找到相关信息"/"知识库中未找到"，若命中则跳过 sources 事件发送 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | 新增 `_NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]` 常量；`_generate_sse_stream` 第 198-202 行 sources 发送条件增加 `not _not_found` 检查 |
+| `backend/tests/test_chat_service.py` | 新增 `TestChatSourcesSuppression` 类：2 个测试验证 LLM 声明"未找到"时 sources 不发送 + LLM 正常回答时 sources 正常发送 |
+| `backend/docs/API.md` | v0.19→v0.20，§6.1 `event: sources` 补充"LLM 声明未找到时不发送"规则 |
+
+---
+
 ## 2026-06-03 — Phase 3 前端组件测试全部完成
 
 ### 新增

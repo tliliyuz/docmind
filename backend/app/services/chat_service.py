@@ -58,6 +58,10 @@ RETRIEVABLE_STATUSES = ["completed", "success_with_warnings", "partial_failed"]
 # 闲谈模式 System Prompt（不注入文档上下文）
 CASUAL_SYSTEM_PROMPT = "你是 DocMind，一个企业知识库助手。请友好、简洁地回答用户的问题。"
 
+# LLM "未找到相关信息" 关键词：匹配后跳过 sources 事件发送
+# 对齐 API.md §6.1：LLM 判定文档不相关时应抑制引用来源
+_NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]
+
 # 闲谈检测模式：问候/致谢/告别等无需检索的输入
 _CASUAL_PATTERNS = [
     re.compile(r, re.IGNORECASE)
@@ -195,8 +199,10 @@ async def _generate_sse_stream(
         })
         return
 
-    # 发送 sources 事件（仅在有检索结果时发送）
-    if reranked_output.results:
+    # 发送 sources 事件（有检索结果 且 LLM 未声明"未找到相关信息"时发送）
+    # 对齐 API.md §6.1：LLM 判定文档不相关时抑制引用来源，避免展示无关片段
+    _not_found = any(kw in assistant_content for kw in _NOT_FOUND_KEYWORDS)
+    if reranked_output.results and not _not_found:
         sources = _build_sources(reranked_output, doc_map)
         yield format_sse_event("sources", {"chunks": sources})
 

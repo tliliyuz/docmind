@@ -717,6 +717,81 @@ class TestChatConversationNotFound:
         assert exc_info.value.error_code == "E3002"
 
 
+class TestChatSourcesSuppression:
+    """U7.63b — LLM 声明"未找到相关信息"时抑制 sources 事件"""
+
+    @pytest.mark.asyncio
+    async def test_LLM输出未找到时sources不发送(self):
+        """当 LLM 回答包含"未找到相关信息"时，不发送 event: sources"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = _make_retrieval_output()
+        # LLM 回答声明"未找到相关信息"（检索有结果但内容不相关）
+        llm_chunks = _make_llm_chunks([
+            "知识库中未找到相关信息。",
+            "当前文档库覆盖了企业知识库系统的技术架构",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="广告投放主要在哪个平台", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        # 验证事件序列中不存在 sources 事件
+        event_types = [e["event"] for e in events]
+        assert "sources" not in event_types, (
+            f"LLM 回答含'未找到相关信息'时不应发送 sources，但实际事件序列含 sources: {event_types}"
+        )
+        # 验证仍有 meta / message / finish
+        assert "meta" in event_types
+        assert "message" in event_types
+        assert "finish" in event_types
+
+    @pytest.mark.asyncio
+    async def test_LLM正常回答时sources正常发送(self):
+        """当 LLM 正常回答且不含'未找到'关键词时，sources 应正常发送"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = _make_retrieval_output()
+        llm_chunks = _make_llm_chunks([
+            "广告投放的主要平台是抖音。",
+            "抖音日活7亿，18-45岁用户占比七成。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="广告投放主要在哪个平台", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        # 验证事件序列中存在 sources 事件
+        event_types = [e["event"] for e in events]
+        assert "sources" in event_types, (
+            f"LLM 正常回答时应发送 sources，但实际事件序列不含 sources: {event_types}"
+        )
+        sources = next(e for e in events if e["event"] == "sources")
+        assert len(sources["data"]["chunks"]) >= 1
+
+
 # ==================== 辅助 async generator ====================
 
 
