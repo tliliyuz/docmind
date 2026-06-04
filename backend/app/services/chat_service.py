@@ -58,9 +58,12 @@ RETRIEVABLE_STATUSES = ["completed", "success_with_warnings", "partial_failed"]
 # 闲谈模式 System Prompt（不注入文档上下文）
 CASUAL_SYSTEM_PROMPT = "你是 DocMind，一个企业知识库助手。请友好、简洁地回答用户的问题。"
 
-# LLM "未找到相关信息" 关键词：匹配后跳过 sources 事件发送
-# 对齐 API.md §6.1：LLM 判定文档不相关时应抑制引用来源
+# LLM "未找到相关信息" 关键词：两级匹配策略
+# 1. 前缀匹配（前 35 字符）：LLM 首句声明"知识库中未找到"= 真阴性
+# 2. 引用标注兜底：全文含"未找到" 且 无 [来源N] 引用 = LLM 未找到可用 chunk
+#    有 [来源N] 标注 = LLM 认为自己有价值引用 → sources 应保留
 _NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]
+_CITATION_PATTERN = re.compile(r'\[来源(\d+)\]')
 
 # 闲谈检测模式：问候/致谢/告别等无需检索的输入
 _CASUAL_PATTERNS = [
@@ -102,16 +105,36 @@ def _generate_title(question: str) -> str:
     return title.strip() or "新对话"
 
 
-def _build_sources(reranked_output: RetrievalOutput, doc_map: dict[int, str]) -> list[dict]:
+def _extract_citation_indices(text: str) -> set[str]:
+    """从 LLM 回答中提取所有 [来源N] 的编号 N，去重返回。
+
+    用于 sources 引用过滤：仅发送 LLM 实际引用的 chunk，
+    过滤进入 Prompt 但未被引用的无关 chunk。
+
+    Args:
+        text: LLM 完整回答文本
+
+    Returns:
+        去重后的编号集合（字符串形式），如 {"1", "3"}。
+        空字符串或无引用时返回空集合。
+    """
+    if not text:
+        return set()
+    return set(_CITATION_PATTERN.findall(text))
+
+
+def _build_sources(chunks: list, doc_map: dict[int, str]) -> list[dict]:
     """构建 sources 事件的 chunks 列表。
 
     对齐 API.md §6.1 event: sources：
+    - chunk_index 与 LLM 回答中的 [来源N] 编号一一对应
     - content 截断至 200 字符
     - doc_name 从 doc_map 查询
     """
     sources = []
-    for chunk in reranked_output.results:
+    for i, chunk in enumerate(chunks):
         sources.append({
+            "chunk_index": i + 1,  # 与 LLM Prompt 中 [来源N] 编号一致
             "doc_id": chunk.doc_id,
             "doc_name": doc_map.get(chunk.doc_id, ""),
             "content": chunk.content[:200] if chunk.content else "",
@@ -183,8 +206,10 @@ async def _generate_sse_stream(
     except Exception as e:
         logger.exception("LLM 流式调用异常")
         # 即使 LLM 失败，也发送 sources（对齐 API.md §6 错误流程）
-        if reranked_output.results:
-            sources = _build_sources(reranked_output, doc_map)
+        # 优先使用 prompt_result.used_chunks（与 [来源N] 编号一致），为空时回退
+        _error_chunks = prompt_result.used_chunks or reranked_output.results
+        if _error_chunks:
+            sources = _build_sources(_error_chunks, doc_map)
             yield format_sse_event("sources", {"chunks": sources})
 
         error_code = "E4002"
@@ -199,12 +224,37 @@ async def _generate_sse_stream(
         })
         return
 
-    # 发送 sources 事件（有检索结果 且 LLM 未声明"未找到相关信息"时发送）
-    # 对齐 API.md §6.1：LLM 判定文档不相关时抑制引用来源，避免展示无关片段
-    _not_found = any(kw in assistant_content for kw in _NOT_FOUND_KEYWORDS)
+    # 发送 sources 事件（有检索结果 + LLM 未声明"未找到"+ LLM 实际引用了来源时发送）
+    # 对齐 API.md §6.1：
+    #   1. "未找到相关信息"抑制（两级匹配，见下）
+    #   2. 引用过滤：仅发送 LLM 回答中 [来源N] 实际引用的 chunk
+    #   3. 零引用：LLM 未引用任何来源时抑制（与"未找到"互补）
+    _answer_stripped = assistant_content.strip()
+    _answer_head = _answer_stripped[:35]
+    _has_citation = bool(_CITATION_PATTERN.search(_answer_stripped))
+    _not_found = (
+        any(kw in _answer_head for kw in _NOT_FOUND_KEYWORDS)
+        or (any(kw in _answer_stripped for kw in _NOT_FOUND_KEYWORDS) and not _has_citation)
+    )
     if reranked_output.results and not _not_found:
-        sources = _build_sources(reranked_output, doc_map)
-        yield format_sse_event("sources", {"chunks": sources})
+        # 使用 prompt_result.used_chunks：与 LLM Prompt 中 [来源N] 编号一一对应
+        _send_chunks = prompt_result.used_chunks or reranked_output.results
+        # 引用过滤：仅保留 LLM 实际引用的 chunk
+        _cited_indices = _extract_citation_indices(_answer_stripped)
+        if _cited_indices:
+            _cited_with_orig_index = [
+                (i + 1, c) for i, c in enumerate(_send_chunks)
+                if str(i + 1) in _cited_indices
+            ]
+            if _cited_with_orig_index:
+                sources = _build_sources(
+                    [c for _, c in _cited_with_orig_index],
+                    doc_map,
+                )
+                # 保持原始 Prompt 编号（与 LLM 回答中 [来源N] 一致），不重新编号
+                for j, (orig_idx, _) in enumerate(_cited_with_orig_index):
+                    sources[j]["chunk_index"] = orig_idx
+                yield format_sse_event("sources", {"chunks": sources})
 
     # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）
     try:

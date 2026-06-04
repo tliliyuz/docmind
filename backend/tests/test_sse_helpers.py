@@ -205,7 +205,7 @@ class TestBuildSources:
         reranked_output = RetrievalOutput(results=results, total=2)
         doc_map = {1: "文档A.pdf", 2: "文档B.md"}
 
-        sources = _build_sources(reranked_output, doc_map)
+        sources = _build_sources(reranked_output.results, doc_map)
 
         assert len(sources) == 2
 
@@ -230,7 +230,7 @@ class TestBuildSources:
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=long_content, score=0.9)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        sources = _build_sources(reranked_output, {1: "x.txt"})
+        sources = _build_sources(reranked_output.results, {1: "x.txt"})
 
         assert len(sources[0]["content"]) == 200
 
@@ -242,7 +242,7 @@ class TestBuildSources:
         results = [RetrievalResult(doc_id=99, chunk_index=0, content="内容", score=0.5)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        sources = _build_sources(reranked_output, {})  # 空 doc_map
+        sources = _build_sources(reranked_output.results, {})  # 空 doc_map
 
         assert sources[0]["doc_name"] == ""
 

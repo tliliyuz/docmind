@@ -177,7 +177,12 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
         mocks['bm25'].search = AsyncMock(return_value=retrieval_output)
         mocks['reranker'].rerank = AsyncMock(return_value=retrieval_output)
         mocks['prompt'].return_value = MagicMock(
-            system_prompt="系统提示", user_prompt="用户提示")
+            system_prompt="系统提示",
+            user_prompt="用户提示",
+            used_chunks=retrieval_output.results,  # 与 LLM Prompt 中 [来源N] 对应
+            total_context_tokens=500,
+            chunks_count=len(retrieval_output.results),
+        )
         mocks['llm'].return_value = _async_gen(llm_chunks)
 
         # 便捷访问别名
@@ -253,7 +258,7 @@ class TestChatNormalFlow:
         conv.title = "新对话"
 
         retrieval_output = _make_retrieval_output()
-        llm_chunks = _make_llm_chunks(["这是", "LLM", "的回答"])
+        llm_chunks = _make_llm_chunks(["这是[来源1]", "LLM", "的回答"])
 
         with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
                                   llm_chunks=llm_chunks) as mocks:
@@ -278,7 +283,7 @@ class TestChatNormalFlow:
         msg_content = "".join(
             e["data"]["delta"] for e in events if e["event"] == "message"
         )
-        assert msg_content == "这是LLM的回答"
+        assert msg_content == "这是[来源1]LLM的回答"
 
         # 验证 sources 事件
         sources = next(e for e in events if e["event"] == "sources")
@@ -722,7 +727,7 @@ class TestChatSourcesSuppression:
 
     @pytest.mark.asyncio
     async def test_LLM输出未找到时sources不发送(self):
-        """当 LLM 回答包含"未找到相关信息"时，不发送 event: sources"""
+        """当 LLM 回答以"未找到相关信息"开头时，不发送 event: sources"""
         from app.services.chat_service import chat
 
         db = AsyncMock()
@@ -732,7 +737,7 @@ class TestChatSourcesSuppression:
         conv.message_count = 0
 
         retrieval_output = _make_retrieval_output()
-        # LLM 回答声明"未找到相关信息"（检索有结果但内容不相关）
+        # LLM 回答以"知识库中未找到相关信息"开头（真阴性）
         llm_chunks = _make_llm_chunks([
             "知识库中未找到相关信息。",
             "当前文档库覆盖了企业知识库系统的技术架构",
@@ -750,12 +755,80 @@ class TestChatSourcesSuppression:
         # 验证事件序列中不存在 sources 事件
         event_types = [e["event"] for e in events]
         assert "sources" not in event_types, (
-            f"LLM 回答含'未找到相关信息'时不应发送 sources，但实际事件序列含 sources: {event_types}"
+            f"LLM 回答以'未找到相关信息'开头时应抑制 sources，但实际事件序列含 sources: {event_types}"
         )
         # 验证仍有 meta / message / finish
         assert "meta" in event_types
         assert "message" in event_types
         assert "finish" in event_types
+
+    @pytest.mark.asyncio
+    async def test_LLM部分回答后文提及未找到时sources仍发送(self):
+        """当 LLM 给出有价值回答、仅后文提及'未找到'时，sources 应正常发送（防假阳性）"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = _make_retrieval_output()
+        # LLM 先给出有价值回答 + [来源] 引用，仅后文提及子问题未找到（假阳性场景）
+        llm_chunks = _make_llm_chunks([
+            "根据文档内容，员工请假需要提供医院证明[来源1]。",
+            "但是，关于提前几天申请，文档中未找到相关信息。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="员工请病假需要提前几天申请", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        # 验证事件序列中存在 sources 事件（前缀匹配不应命中后文的"未找到"）
+        event_types = [e["event"] for e in events]
+        assert "sources" in event_types, (
+            f"LLM 仅后文提及'未找到'时 sources 应保留，但实际事件序列不含 sources: {event_types}"
+        )
+        sources = next(e for e in events if e["event"] == "sources")
+        assert len(sources["data"]["chunks"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_LLM全文含未找到且无引用标注时sources不发送(self):
+        """当 LLM 回答含"未找到"且无任何 [来源N] 引用时，视为真阴性，抑制 sources（引用兜底）"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = _make_retrieval_output()
+        # LLM 先解释了一圈，最后才说"未找到"，且无 [来源N] 引用（Q29 风格但无引用）
+        llm_chunks = _make_llm_chunks([
+            "根据提供的文档内容，其中没有包含公司Wi-Fi密码的信息。",
+            "所有文档均未提及相关密码配置。知识库中未找到相关信息。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="Wi-Fi密码是多少", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        # 无引用标注 + 全文含"未找到" → 引用兜底抑制 sources
+        event_types = [e["event"] for e in events]
+        assert "sources" not in event_types, (
+            f"LLM 全文含'未找到'且无 [来源N] 引用时应抑制 sources，但实际含 sources: {event_types}"
+        )
 
     @pytest.mark.asyncio
     async def test_LLM正常回答时sources正常发送(self):
@@ -770,7 +843,7 @@ class TestChatSourcesSuppression:
 
         retrieval_output = _make_retrieval_output()
         llm_chunks = _make_llm_chunks([
-            "广告投放的主要平台是抖音。",
+            "广告投放的主要平台是抖音[来源1]。",
             "抖音日活7亿，18-45岁用户占比七成。",
         ])
 
@@ -790,6 +863,219 @@ class TestChatSourcesSuppression:
         )
         sources = next(e for e in events if e["event"] == "sources")
         assert len(sources["data"]["chunks"]) >= 1
+
+
+class TestExtractCitationIndices:
+    """U7.63d — _extract_citation_indices 单元测试"""
+
+    def test_单个引用编号提取(self):
+        from app.services.chat_service import _extract_citation_indices
+        result = _extract_citation_indices("根据文档[来源1]，报销需要提交申请单。")
+        assert result == {"1"}
+
+    def test_多个引用编号提取(self):
+        from app.services.chat_service import _extract_citation_indices
+        result = _extract_citation_indices(
+            "入职需要提交材料[来源1]，并参加培训[来源3]。"
+            "系统权限由IT部门开通[来源1]。"
+        )
+        assert result == {"1", "3"}
+
+    def test_无引用返回空集合(self):
+        from app.services.chat_service import _extract_citation_indices
+        result = _extract_citation_indices("根据文档内容，员工请假需要提前三天申请。")
+        assert result == set()
+
+    def test_空字符串返回空集合(self):
+        from app.services.chat_service import _extract_citation_indices
+        result = _extract_citation_indices("")
+        assert result == set()
+
+    def test_包含未找到关键词但有引用(self):
+        """回归：后文含'未找到'但有 [来源N] 引用时，仍能提取引用编号"""
+        from app.services.chat_service import _extract_citation_indices
+        result = _extract_citation_indices(
+            "根据文档，请假需要医院证明[来源1]。"
+            "但是关于提前几天，文档中未找到相关信息。"
+        )
+        assert result == {"1"}
+
+
+class TestChatCitationFiltering:
+    """U7.63d — sources 引用过滤集成测试"""
+
+    @pytest.mark.asyncio
+    async def test_LLM仅引用部分chunk时sources仅含被引用chunk(self):
+        """LLM 回答中仅引用 [来源1] 和 [来源3]，sources 应只含这 2 个 chunk"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        # 构造 4 个 chunk 的检索结果
+        retrieval_output = RetrievalOutput(
+            results=[
+                RetrievalResult(doc_id=1, chunk_index=0,
+                                content="入职需要提交身份证和学历证书", score=0.95, page=1),
+                RetrievalResult(doc_id=2, chunk_index=0,
+                                content="离职交接需要部门签字确认", score=0.82, page=3),
+                RetrievalResult(doc_id=3, chunk_index=0,
+                                content="系统权限由IT部门在入职当日开通", score=0.78, page=1),
+                RetrievalResult(doc_id=4, chunk_index=0,
+                                content="病假需提供二级甲等以上医院证明", score=0.71, page=5),
+            ],
+            total=4,
+        )
+        # LLM 只引用 [来源1] 和 [来源3]
+        llm_chunks = _make_llm_chunks([
+            "入职需要提交身份证和学历证书[来源1]。",
+            "此外，系统权限由IT部门在入职当日开通[来源3]。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="入职第一天需要完成哪些手续", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1, (
+            f"应有 1 个 sources 事件，实际: {len(sources_events)}"
+        )
+        chunks = sources_events[0]["data"]["chunks"]
+        assert len(chunks) == 2, (
+            f"仅引用 2 个 chunk，sources 应含 2 个，实际: {len(chunks)}"
+        )
+        cited_indices = {c["chunk_index"] for c in chunks}
+        assert cited_indices == {1, 3}, (
+            f"sources chunk_index 应为 {{1, 3}}，实际: {cited_indices}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_LLM引用全部chunk时sources全量发送(self):
+        """LLM 引用了全部 chunk，sources 应包含全部"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = RetrievalOutput(
+            results=[
+                RetrievalResult(doc_id=1, chunk_index=0,
+                                content="入职需要提交身份证", score=0.95, page=1),
+                RetrievalResult(doc_id=2, chunk_index=0,
+                                content="入职当天参加培训", score=0.88, page=2),
+            ],
+            total=2,
+        )
+        llm_chunks = _make_llm_chunks([
+            "入职需要提交身份证[来源1]，",
+            "并在当天参加培训[来源2]。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="入职第一天做什么", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1
+        chunks = sources_events[0]["data"]["chunks"]
+        assert len(chunks) == 2, (
+            f"LLM 引用了全部 2 个 chunk，sources 应含 2 个，实际: {len(chunks)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_LLM零引用时sources不发送(self):
+        """LLM 回答未引用任何 [来源N]（用自身知识回答），sources 事件不发送"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = RetrievalOutput(
+            results=[
+                RetrievalResult(doc_id=1, chunk_index=0,
+                                content="检索到的相关内容", score=0.95, page=1),
+            ],
+            total=1,
+        )
+        # LLM 回答没有 [来源N] 引用，也未说"未找到"
+        llm_chunks = _make_llm_chunks([
+            "入职手续通常包括报到签约、领取物品、系统开通等步骤。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="入职第一天需要完成哪些手续", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        event_types = [e["event"] for e in events]
+        assert "sources" not in event_types, (
+            f"LLM 未引用任何 [来源N] 且未声明'未找到'时，"
+            f"sources 不应发送（LLM 使用了自身知识），实际: {event_types}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_LLM失败时sources回退全量发送(self):
+        """LLM 流式调用失败时，无 assistant_content，sources 回退到全量 chunk"""
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = RetrievalOutput(
+            results=[
+                RetrievalResult(doc_id=1, chunk_index=0,
+                                content="检索内容A", score=0.95, page=1),
+                RetrievalResult(doc_id=2, chunk_index=0,
+                                content="检索内容B", score=0.82, page=3),
+            ],
+            total=2,
+        )
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output) as mocks:
+            # 让 LLM 抛出异常
+            mocks['llm'].return_value = _async_gen_error("LLM API 500 错误")
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="测试问题", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        # LLM 失败时仍应发送 sources（含全部 chunk）
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1, (
+            f"LLM 失败后应回退发送全量 sources，实际 sources 事件数: {len(sources_events)}"
+        )
+        chunks = sources_events[0]["data"]["chunks"]
+        assert len(chunks) == 2, (
+            f"LLM 失败回退应发送全部 2 个 chunk，实际: {len(chunks)}"
+        )
 
 
 # ==================== 辅助 async generator ====================
