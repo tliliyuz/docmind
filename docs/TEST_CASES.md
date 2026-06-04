@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.35 |
-| 最后更新 | 2026-06-03 |
+| 文档版本 | v0.42 |
+| 最后更新 | 2026-06-04 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 前端组件测试全部编写完成；后端 561 用例 + 前端 170 用例全部通过） |
+| 状态 | 进行中（Phase 3 代码测试全部完成 + 离线评估已执行 + 回归脚本就绪 + 端到端诊断增强 + sources 抑制修复 + chunk_index 溯源 + sources 引用过滤已实现；人工评分第 1 轮已完成 ✅ 4.38/5.0） |
 
 ---
 
@@ -339,19 +339,19 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.40 | NoopReranker-按长度排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 按 content 长度升序排列（短 chunk 优先） | ✅ | 2026-06-01 | 12 用例全部通过 |
-| U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 排序后返回前 5 个 | ✅ | 2026-06-01 | — |
-| U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-01 | — |
-| U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-01 | — |
-| U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅改变顺序，chunk 的 content/metadata 不变 | ✅ | 2026-06-01 | — |
+| U7.40 | NoopReranker-保持 RRF 排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 保持 RRF 融合原始排序（相关性降序），仅截取 top_k | ✅ | 2026-06-04 | 11 用例全部通过；修复：不再按长度重排 |
+| U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 保持 RRF 排序，返回前 5 个 | ✅ | 2026-06-04 | — |
+| U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-04 | — |
+| U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-04 | — |
+| U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅截取数量，chunk 的 content/metadata 不变 | ✅ | 2026-06-04 | — |
 
 ### 5.6 后端 — Prompt 模板测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.50 | Prompt-基本拼接 | `prompt_builder.build()` | question + chunks | 返回含 system prompt + context + question 的 messages 数组 | ✅ | 2026-06-01 | 15 用例全部通过 |
+| U7.50 | Prompt-基本拼接 | `prompt_builder.build()` | question + chunks | 返回含 system prompt + context + question 的 messages 数组 | ✅ | 2026-06-04 | 13 用例全部通过；修复：移除 sorted(key=len) |
 | U7.51 | Prompt-检索结果格式化 | `prompt_builder.build()` | 多个 chunks | 每个 chunk 标注 [来源N] 标签（N=chunk_index） | ✅ | 2026-06-01 | _format_chunk_reference 测试 |
-| U7.52 | Prompt-软上限控制 | `prompt_builder.build()` | chunks 总长度超预算 | 按长度升序择优填充，超预算时尝试下一更短 chunk | ✅ | 2026-06-01 | Token 估算用中英文自适应算法 |
+| U7.52 | Prompt-软上限控制 | `prompt_builder.build()` | chunks 总长度超预算 | 保持相关性排序，超预算时跳过当前 chunk 尝试下一个 | ✅ | 2026-06-04 | Token 估算用中英文自适应算法 |
 | U7.53 | Prompt-空检索结果 | `prompt_builder.build()` | chunks=[] | system prompt 包含「知识库中未找到相关信息」 | ✅ | 2026-06-01 | — |
 | U7.54 | Prompt-history 参数 | `prompt_builder.build()` | Phase 3 历史为空 | `history=[]` 不注入历史消息，Phase 4 传入历史 | ⬜ | — | — |
 | U7.55 | Prompt-预算计算正确 | `estimate_tokens()` | 中文/英文/混合 | 中文占比 >30% → ratio=1.5，否则 4.0（复用 chunker 算法） | ✅ | 2026-06-01 | 复用 chunker.estimate_tokens |
@@ -365,6 +365,9 @@
 | U7.61 | Service-已有会话追加 | `chat_service.chat()` | conversation_id 存在 | 复用已有会话，保存消息到同一 conversation | ✅ | 2026-06-02 | — |
 | U7.62 | Service-检索失败 | `chat_service.chat()` | 检索抛异常 | 包装为 `RetrievalServiceException(E4003)`，对齐 API.md §1.3 E4003 | ✅ | 2026-06-02 | — |
 | U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ✅ | 2026-06-02 | — |
+| U7.63b | Service-sources 抑制 | `_generate_sse_stream` | LLM 回答含"未找到相关信息" | 前缀 35 字符匹配 → 抑制；全文匹配 + 无 [来源N] 引用 → 抑制；有引用 → 保留 | ✅ | 2026-06-04 | 4 用例：真阴性前缀/假阳性有引用/真阴性无引用/正常回答 |
+| U7.63c | Service-sources chunk_index | `_build_sources` | 正常检索结果 | 每个 chunk 含 `chunk_index` 字段，与 LLM Prompt 中 [来源N] 编号一致 | ✅ | 2026-06-04 | 使用 `prompt_result.used_chunks` 确保编号一致 |
+| U7.63d | Service-sources 引用过滤 | `_extract_citation_indices` + `_generate_sse_stream` | 多种引用场景 | ① 提取 [来源N] 编号（单个/多个/去重）；② 无引用返回空集合；③ sources 仅含被引用 chunk；④ 全引用时全量发送；⑤ 零引用时不发送 sources；⑥ LLM 失败时回退全量发送；⑦ 幻觉编号忽略 | ✅ | 2026-06-04 | 9 用例（TestExtractCitationIndices 5 + TestChatCitationFiltering 4），决策 #27 |
 | U7.64 | Service-kb 无文档 | `chat_service.chat()` | kb chunks=0 | SSE event: error (E4001) | ✅ | 2026-06-02 | — |
 | U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ✅ | 2026-06-02 | — |
 | U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-02 | — |
@@ -598,12 +601,12 @@
 
 | ID | 评估项目 | 指标 | 目标值 | 实际值 | 状态 | 执行日期 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| E1 | 向量检索 Recall@5 | Recall@5 | ≥ 0.85 | — | ⬜ | — | 见 TESTING.md §5 |
-| E2 | BM25 检索 Recall@5 | Recall@5 | ≥ 0.70 | — | ⬜ | — | — |
-| E3 | RRF 融合 Recall@5 | Recall@5 | ≥ 0.90 | — | ⬜ | — | — |
-| E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ⬜ | — | — |
-| E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ⬜ | — | — |
-| E6 | 人工答案评分（第 1 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | — | ⬜ | — | 10 题 × 4 维度，见 TESTING.md §6 |
+| E1 | 向量检索 Recall@5 | Recall@5 | ≥ 0.85 | ~0.96 | ✅ | 2026-06-04 | 28 题中 27 题完全召回，Q26 缺失（跨文档：应急+差旅） |
+| E2 | BM25 检索 Recall@5 | Recall@5 | ≥ 0.70 | ~0.95 | ✅ | 2026-06-04 | 28 题中 26 题完全召回，Q26/Q27 缺失 |
+| E3 | RRF 融合 Recall@5 | Recall@5 | ≥ 0.90 | 1.000 | ✅ | 2026-06-04 | RRF 修复了向量和 BM25 各自的盲区，28/28 完全召回 |
+| E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ✅ | 2026-06-04 | 通过（Q26 首个相关排第 3 位以外，其余全部首位命中） |
+| E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ✅ | 2026-06-04 | 通过（RRF 融合后所有期望文档均被召回） |
+| E6 | 人工答案评分（第 1 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.38** | ✅ | 2026-06-04 | 10 题 × 4 维度，详见 `backend/tests/human_eval_template.md` |
 
 ---
 

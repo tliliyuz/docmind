@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.23 |
-| 最后更新 | 2026-06-03 |
+| 文档版本 | v0.29 |
+| 最后更新 | 2026-06-04 |
 | 作者 | yuz |
 | 状态 | 进行中 |
 
@@ -201,8 +201,8 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | BM25 关键词检索器 | `rank-bm25` (BM25Okapi) + `jieba.lcut` 分词，每个 KB 独立索引 | 决策 #16 |
 | ✅ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建 | 决策 #16 |
 | ✅ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
-| ✅ | NoopReranker | 占位实现：按 chunk 长度升序排列后截取 top_k=5，保证短 chunk（高信息密度）优先 | 决策 #18 |
-| ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时尝试下一个更短 chunk 而非 break），按 chunk 长度升序择优填充 | 决策 #19 |
+| ✅ | NoopReranker | 占位实现：保持 RRF 融合排序（相关性降序），截取 top_k=5 | 决策 #18 |
+| ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时跳过当前 chunk 尝试下一个），保持 RRF 相关性排序（相关性降序） | 决策 #19 |
 | ✅ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅 `deep_thinking=true` 时传 `reasoning_effort="high"`，解析 `content` + `reasoning_content` | 决策 #20 |
 | ✅ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index`，显式 `int()` 转换保障 | 决策 #21 |
 
@@ -219,6 +219,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索 | — |
 | ✅ | KB 选择器接口 | `GET /api/knowledge-bases/selectable` 返回 `{"mine": [...], "public": [...]}`（mine=用户全部 KB，public=他人 public KB），前端直接渲染 `<el-option-group>` | 决策 #26 |
 | ✅ | Chat Router 注册 | `main.py` 注册 `chat_router`（`prefix="/api"`） | — |
+| ✅ | sources 引用过滤 | LLM 流式结束后从 `assistant_content` 提取 `[来源N]` 编号，`event: sources` 仅发送被实际引用的 chunk（过滤未引用/幻觉编号）；LLM 失败时回退全量发送 | 决策 #27 |
 
 ### 5.3 前端：问答界面
 
@@ -259,24 +260,25 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ✅ | BM25 检索器单元测试 | 单元测试 | BM25Okapi 初始化 + `get_scores()` 排序 + jieba 分词 + 空语料处理（12 用例） |
 | ✅ | BM25 索引缓存测试 | 单元测试 | Redis 缓存命中/未命中懒加载/Celery 触发重建/缓存失效（8 用例） |
 | ✅ | RRF 融合算法测试 | 单元测试 | k=60 标准合并 / 单路为空 / 两路均空 / 排名相同处理（14 用例） |
-| ✅ | NoopReranker 测试 | 单元测试 | 按长度排序 + top_k 截取 + 输入不足 top_k（12 用例） |
+| ✅ | NoopReranker 测试 | 单元测试 | 保持 RRF 排序 + top_k 截取 + 输入不足 top_k（11 用例） |
 | ✅ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（15 用例） |
 | ✅ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（19 用例） |
+| ✅ | sources 引用过滤测试 | 单元测试 | `_extract_citation_indices` 提取/去重/无效编号；SSE sources 仅含被引用 chunk / 全引用 / 零引用 / LLM 失败回退（9 用例全部通过） |
 | ✅ | LLM 调用与 thinking 解析测试 | 单元测试 | DeepSeek API 流式响应 Mock / `reasoning_content` 解析 / `content` 解析（15 用例） |
 | ✅ | SSE 流式输出测试 | 单元测试 | `StreamingResponse` 事件序列 / 心跳帧 / 中途错误 / sources/finish 数据结构（16 用例） |
 | ✅ | 问答 SSE 接口测试 | 接口测试 | POST `/api/chat` SSE 事件序列 + 错误码 + 权限校验 + deep_thinking 开关 + 心跳帧（12 用例） |
 | ✅ | KB 选择器接口测试 | 接口测试 | GET `/knowledge-bases/selectable` 返回 mine+public 分组 + 不重复 + 仅返回 active KB（6 用例） |
 | ✅ | ChatRequest Schema 校验测试 | 单元测试 | question 空/超长 + kb_id 缺失 + conversation_id 类型 + deep_thinking 默认值（6 用例） |
-| ⬜ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 各 event 类型解析 + 异常格式容错 + 心跳帧忽略 + 多行 data 拼接（12 用例） |
-| ⬜ | 前端 Markdown 渲染工具测试 | 单元测试 | markdown-it 渲染 + 代码块高亮 + XSS 过滤 + 链接处理（6 用例） |
-| ⬜ | 前端 ChatInput 组件测试 | 组件测试 | 输入/发送/停止/Enter/Shift+Enter/字数计数/空内容拒绝/deep_thinking 开关（10 用例） |
-| ⬜ | 前端 MessageList 组件测试 | 组件测试 | 消息气泡排列 / 自动滚动 / 手动上滚「新消息」按钮 / 空状态（8 用例） |
-| ⬜ | 前端 MessageItem 组件测试 | 组件测试 | Markdown 渲染 / thinking 折叠面板 / sources 引用卡片 / 重新生成按钮（8 用例） |
-| ⬜ | 前端 WelcomeScreen 组件测试 | 组件测试 | 欢迎语渲染 + 快捷问题卡片点击填入输入框（5 用例） |
-| ⬜ | 前端 ChatPage 集成测试 | 组件测试 | 完整问答流程：选择KB→输入问题→SSE流式渲染→sources展示→停止按钮（8 用例） |
-| ⬜ | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表（见 TESTING.md §6） |
-| ⬜ | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告（见 TESTING.md §5） |
-| ⬜ | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注（见 TESTING.md §7） |
+| ✅ | 前端 SSE 解析工具测试 | 单元测试 | `sse.js` 各 event 类型解析 + 异常格式容错 + 心跳帧忽略 + 多行 data 拼接（21 用例） |
+| ✅ | 前端 Markdown 渲染工具测试 | 单元测试 | markdown-it 渲染 + 代码块高亮 + XSS 过滤 + 链接处理（14 用例） |
+| ✅ | 前端 ChatInput 组件测试 | 组件测试 | 输入/发送/停止/Enter/Shift+Enter/字数计数/空内容拒绝/deep_thinking 开关（19 用例） |
+| ✅ | 前端 MessageList 组件测试 | 组件测试 | 消息气泡排列 / 自动滚动 / 手动上滚「新消息」按钮 / 空状态（10 用例） |
+| ✅ | 前端 MessageItem 组件测试 | 组件测试 | Markdown 渲染 / thinking 折叠面板 / sources 引用卡片 / 重新生成按钮 / 来源抑制（26 用例） |
+| ✅ | 前端 WelcomeScreen 组件测试 | 组件测试 | 欢迎语渲染 + 快捷问题卡片点击填入输入框（8 用例） |
+| ✅ | 前端 ChatPage 集成测试 | 组件测试 | 完整问答流程：选择KB→输入问题→SSE流式渲染→sources展示→停止按钮（13 用例） |
+| ✅ | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表，平均综合分 4.38/5.0 ✅ 满足目标（见 `backend/tests/human_eval_template.md`） |
+| ✅ | 离线检索评估 | 检索评估 | RRF 融合 Recall@5=1.000（28/28 完全召回），修复向量和 BM25 各自盲区。脚本：`tests/eval_retrieval.py` |
+| ✅ | 回归测试集初版建立 | 回归测试 | 30 题固定测试集（`tests/eval_test_set.py`）+ 回归脚本（`tests/regression_test.py`） |
 
 ### 5.6 关键决策索引
 
@@ -285,8 +287,8 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | 15 | 向量检索：ChromaDB `query()` + `where={"kb_id": kb_id}` metadata 过滤，top_k=10 | ARCHITECTURE.md §5.1.1 |
 | 16 | BM25 索引生命周期：终态后 Celery 触发重建 + Redis 缓存 `tokenized_corpus` + 查询时懒加载 BM25Okapi 实例化 | ARCHITECTURE.md §5.1.1, §6.2 |
 | 17 | RRF 融合：k=60，单路为空时仅返回另一路 | ARCHITECTURE.md §6.3 |
-| 18 | NoopReranker：按 chunk 长度升序排列后截取 top_k=5 | ARCHITECTURE.md §7.3 |
-| 19 | Prompt 预算：软上限 + 按长度择优填充，chunking 阶段固定 chunk_size 不二次裁剪 | ARCHITECTURE.md §5.1.2 |
+| 18 | NoopReranker：保持 RRF 融合排序（相关性降序），截取 top_k=5 | ARCHITECTURE.md §7.3 |
+| 19 | Prompt 预算：软上限 + 相关性优先填充（保持 RRF 排序），超预算时跳过当前 chunk；chunking 阶段固定 chunk_size 不二次裁剪 | ARCHITECTURE.md §5.1.2 |
 | 20 | LLM：DeepSeek API（OpenAI 兼容），流式 `chat/completions`，通过 `extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅开启 thinking 时传 `reasoning_effort="high"` 控制强度。**注意**：DeepSeek 默认 thinking=enabled，关闭时须显式传 disabled 且不传 reasoning_effort | ARCHITECTURE.md §5.1.3 |
 | 21 | ChromaDB metadata 类型一致：保持 int 类型，入库/查询两端统一 | ARCHITECTURE.md §7.1 |
 | 22 | SSE：手动 `StreamingResponse`，6 事件类型 + 15s 心跳注释帧 `: ping\n\n` | ARCHITECTURE.md §5.1.3, API.md §6 |
@@ -294,6 +296,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | 24 | 标题：截取用户问题前 12 字，首轮 `event: finish` 返回 | ARCHITECTURE.md §5.1 |
 | 25 | thinking_content：`event: thinking` 流式推送，不落库（`messages.thinking_content=null`），仅前端实时展示。`deep_thinking` 通过 `extra_body` 映射到 DeepSeek `thinking` 参数 | API.md §6.1, ARCHITECTURE.md §5.1.3 |
 | 26 | KB 选择器：`GET /knowledge-bases/selectable` 返回 `{mine, public}` 分组，前端 `<el-option-group>` 渲染 | API.md §3, FRONTEND.md §4.1 |
+| 27 | sources 引用过滤：LLM 流式结束后从 `assistant_content` 提取 `[来源N]` 编号，仅发送被实际引用的 chunk；LLM 失败时回退全量发送；零引用时不发送 sources | ARCHITECTURE.md §5.1.3, API.md §6.1 |
 
 ---
 
@@ -339,6 +342,7 @@ Week 1            Week 2           Week 2-3         Week 3         Week 3-4
 | ⬜ | 日志 | 结构化日志 + 关键节点埋点 |
 | ⬜ | README + 部署文档 | 项目说明 + Docker Compose 部署方案 |
 | ⬜ | 简历描述文案 | 项目亮点提炼，技术选型理由 |
+| ⬜ | sources 智能预览 | Phase 3 sources content 固定截取前 200 字符，用户看到的片段可能与 LLM 引用的段落不对齐（chunk 较长时被引段落可能在 200 字符之后）。优化方案：利用 LLM 回答中 `[来源N]` 附近的文字在 chunk 内定位被引段落，截取围绕该位置的上下文窗口 |
 
 ### 7.1 Phase 5 测试
 
