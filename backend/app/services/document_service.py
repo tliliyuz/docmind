@@ -45,14 +45,17 @@ from app.ingest.tasks import delete_document as _delete_doc_task
 from app.ingest.tasks import ingest_document as _ingest_doc_task
 from app.services.knowledge_base_service import check_kb_active
 
-# 允许的文件类型
-ALLOWED_EXTENSIONS = {"pdf", "docx", "md", "txt"}
-# 最大文件大小 50MB
-MAX_FILE_SIZE = 50 * 1024 * 1024
 # 允许的排序字段
 SORT_ALLOWED_FIELDS = {"created_at", "updated_at", "filename", "file_size", "status"}
 # 分块预览截断长度
 CHUNK_PREVIEW_LENGTH = 200
+
+# 从 settings 解析允许的文件类型（逗号分隔 → set）
+ALLOWED_EXTENSIONS = set(
+    ext.strip().lower()
+    for ext in settings.ALLOWED_EXTENSIONS.split(",")
+    if ext.strip()
+)
 
 
 def _validate_file(file: UploadFile) -> None:
@@ -65,7 +68,7 @@ def _validate_file(file: UploadFile) -> None:
         raise UnsupportedFileFormatException(ext)
 
     # 读取内容并校验大小（UploadFile.size 可能为 None）
-    if file.size is not None and file.size > MAX_FILE_SIZE:
+    if file.size is not None and file.size > settings.UPLOAD_MAX_SIZE:
         raise FileSizeExceededException()
 
 

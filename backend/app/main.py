@@ -1,5 +1,6 @@
 """FastAPI 应用入口"""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -16,11 +17,27 @@ from app.core.chroma_client import init_chroma
 from app.core.exceptions import AppException
 from app.middleware.auth_middleware import AuthMiddleware
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时初始化 ChromaDB"""
+    """应用生命周期：启动时初始化 ChromaDB + 配置安全检查"""
     init_chroma()
+
+    # JWT 密钥默认值校验：生产环境使用默认值将拒绝启动
+    if settings.JWT_SECRET_KEY == "change-me":
+        if settings.DEBUG:
+            logger.warning(
+                "⚠ JWT_SECRET_KEY 仍为默认值 'change-me'，开发环境继续运行，"
+                "生产环境请务必通过 .env 覆盖"
+            )
+        else:
+            raise RuntimeError(
+                "JWT_SECRET_KEY 不能为默认值 'change-me'，"
+                "请通过 .env 文件设置 JWT_SECRET_KEY"
+            )
+
     yield
 
 
@@ -31,9 +48,10 @@ app = FastAPI(
 )
 
 # CORS — 开发阶段允许前端跨域（最先添加 = 最外层）
+# 多个来源用逗号分隔，通过 .env 的 CORS_ORIGINS 覆盖
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
