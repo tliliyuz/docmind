@@ -1,8 +1,8 @@
 """Prompt 组装模块测试
 
 对齐 ARCHITECTURE.md §5.1.2:
-- 按 chunk 长度升序排列（短者优先）
-- 软上限择优填充
+- 保持 RRF 相关性排序（相关性降序）
+- 软上限相关性优先填充
 - Token 预算控制
 """
 
@@ -130,31 +130,40 @@ class TestBuildPrompt:
         assert result.used_chunks == []
         assert result.chunks_count == 0
 
-    def test_按长度升序排列(self, sample_chunks):
-        """chunks 应按长度升序排列"""
-        output = RetrievalOutput(results=sample_chunks)
+    def test_保持输入排序_不按长度重排(self):
+        """chunks 应保持输入顺序（相关性降序），不按长度重排"""
+        # 输入顺序：score 降序（0.9→0.8→0.7），长度非升序（长→短→中）
+        # 验证不按长度重排（旧逻辑会变成：短→中→长）
+        chunks = [
+            RetrievalResult(doc_id=1, chunk_index=0, content="长内容" * 10, score=0.9),
+            RetrievalResult(doc_id=1, chunk_index=1, content="短", score=0.8),
+            RetrievalResult(doc_id=1, chunk_index=2, content="中等内容", score=0.7),
+        ]
+        output = RetrievalOutput(results=chunks)
         result = build_prompt("测试问题", output)
 
-        # 验证 chunks 按长度升序
-        used_lengths = [len(r.content) for r in result.used_chunks]
-        assert used_lengths == sorted(used_lengths)
+        # 验证保持 RRF 相关性排序（score 降序），而非按长度升序
+        used_scores = [r.score for r in result.used_chunks]
+        assert used_scores == [0.9, 0.8, 0.7]
 
-    def test_软上限控制(self):
-        """超预算时应跳过较长 chunk"""
-        # 创建不同长度的 chunks
+    def test_软上限控制_预算不足时跳过后续chunk(self):
+        """超预算时跳过后续 chunk，首个 chunk 即使超预算也加入"""
+        # 输入按相关性降序：score 0.9→0.8→0.7，长度 200→50→100
+        # 旧逻辑按长度排(50→100→200)会选 score 0.8+0.7，新逻辑应优先选 score 0.9
         chunks = [
-            RetrievalResult(doc_id=1, chunk_index=0, content="A" * 100, score=0.9),
+            RetrievalResult(doc_id=1, chunk_index=0, content="A" * 200, score=0.9),
             RetrievalResult(doc_id=1, chunk_index=1, content="B" * 50, score=0.8),
-            RetrievalResult(doc_id=1, chunk_index=2, content="C" * 200, score=0.7),
+            RetrievalResult(doc_id=1, chunk_index=2, content="C" * 100, score=0.7),
         ]
         output = RetrievalOutput(results=chunks)
 
-        # 设置较小的 token 预算
-        result = build_prompt("测试问题", output, max_context_tokens=50)
+        # 设置预算=20 tokens：首个 chunk(0.9, ~50 tokens) 超预算但仍加入
+        # 后续 chunk 因预算不足被跳过
+        result = build_prompt("测试问题", output, max_context_tokens=20)
 
-        # 应该优先选择较短的 chunks
-        assert result.chunks_count <= len(chunks)
-        assert result.total_context_tokens <= 50 or result.chunks_count == 1
+        # 首个 chunk 即使超预算也加入，验证选中的是最相关的 chunk
+        assert result.chunks_count == 1
+        assert result.used_chunks[0].score == 0.9
 
     def test_最大chunk数限制(self, sample_chunks):
         """不超过最大 chunk 数"""
@@ -211,5 +220,3 @@ class TestBuildPrompt:
         """返回类型应为 PromptBuildResult"""
         result = build_prompt("测试问题", retrieval_output)
         assert isinstance(result, PromptBuildResult)
-
-

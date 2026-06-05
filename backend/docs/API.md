@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.20 |
+| 文档版本 | v0.21 |
 | 最后更新 | 2026-06-04 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -884,9 +884,9 @@ Celery Worker（异步）:
 >   - 前端保留当前已渲染内容（仅内存态）
 >   - 后端丢弃未完成 assistant message
 
-> **LLM 失败时 sources 仍发送**：检索结果在 LLM 调用前已完成，即使 LLM 失败（E4002），也先发送 `event: sources`，再发送 `event: error`。注意：若检索无结果则 `sources` 事件不发送。
+> **LLM 失败时 sources 仍发送**：检索结果在 LLM 调用前已完成，即使 LLM 失败（E4002），也先发送 `event: sources`（含全部 chunk，因无 `assistant_content` 无法做引用过滤），再发送 `event: error`。注意：若检索无结果则 `sources` 事件不发送。
 
-> **LLM 声明「未找到相关信息」时 sources 不发送**：当 LLM 回答中包含"未找到相关信息"或"知识库中未找到"时（即检索返回了 chunks 但 LLM 判定内容不相关），不发送 `event: sources`。此规则与"检索无结果"效果一致——前端均不展示引用来源面板。
+> **sources 引用过滤**：正常流程下，`event: sources` 仅发送 LLM 回答中实际通过 `[来源N]` 引用的 chunk。LLM 未引用任何来源时（含「未找到相关信息」场景），sources 事件不发送。此规则确保前端展示的引用来源与 LLM 回答中的引用标注精确对应。
 
 > **闲谈检测（轻量）**：Phase 3 内置规则级闲谈检测（问候/致谢/告别等），命中时跳过检索链路，直接以无文档上下文 Prompt 调用 LLM。此时不发送 `event: sources`。完整意图识别排期 Phase 4/5。
 
@@ -963,16 +963,24 @@ data: {"delta": "根据公司报销制度，差旅报销需要提交以下材料
 
 #### `event: sources` — 引用来源
 
-检索到的文档分块，用于溯源。在所有 message 事件之后发送。**若检索无结果，或 LLM 回答明确表示"未找到相关信息"，则不发送此事件。**
+LLM 实际引用的文档分块，用于溯源。在所有 message 事件之后发送。
+
+**发送规则**：
+1. **引用过滤**：从 LLM 回答中提取 `[来源N]` 引用编号，仅发送被实际引用的 chunk（而非进入 Prompt 的全部 chunk）
+2. **未找到抑制**：LLM 回答首句声明"未找到相关信息"时，不发送此事件
+3. **零引用抑制**：LLM 未引用任何 `[来源N]` 时，不发送此事件
+4. **检索无结果**：不发送此事件
+5. **LLM 失败**：检索结果在 LLM 调用前已完成，即使 LLM 失败也先发送 sources（含全部 chunk），再发送 error
 
 ```
 event: sources
-data: {"chunks": [{"doc_id": 5, "doc_name": "报销制度.md", "content": "差旅报销需提交：1. 差旅申请单...", "score": 0.92, "page": 3}, {"doc_id": 8, "doc_name": "财务审批流程.md", "content": "报销金额超过5000元需部门总监审批...", "score": 0.87, "page": 1}]}
+data: {"chunks": [{"chunk_index": 1, "doc_id": 5, "doc_name": "报销制度.md", "content": "差旅报销需提交：1. 差旅申请单...", "score": 0.92, "page": 3}]}
 ```
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| chunks | array | 引用来源数组 |
+| chunks | array | 引用来源数组（仅含 LLM 实际引用的 chunk） |
+| chunks[].chunk_index | int | 来源编号，与 LLM 回答中的 `[来源N]` 一一对应（编号保持与 Prompt 一致，不重新编号） |
 | chunks[].doc_id | int | 文档 ID |
 | chunks[].doc_name | string | 文档名称 |
 | chunks[].content | string | 分块文本（摘要，截断至 200 字符） |

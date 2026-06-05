@@ -54,7 +54,7 @@ export function wrapCodeBlocks(html) {
     /<pre><code(.*?)>([\s\S]*?)<\/code><\/pre>/g,
     (match, attrs, code) => {
       return `<div class="code-block-wrapper">
-        <button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.code-block-wrapper').querySelector('code').textContent).then(()=>{this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),1500})">
+        <button class="code-copy-btn" title="复制代码">
           <i class="fas fa-copy"></i>
           <i class="fas fa-check"></i>
         </button>

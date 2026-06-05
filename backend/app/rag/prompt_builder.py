@@ -1,9 +1,9 @@
 """Prompt 组装 — 检索结果拼接 + 用户问题，软上限预算控制
 
 对齐 ARCHITECTURE.md §5.1.2 / ROADMAP.md §5.1:
-- 策略: chunking 阶段控制 + 软上限 + 按长度排序择优
-- 检索后按 chunk 长度升序排列（短者优先，信息密度高）
-- Prompt 组装采用软上限 + 择优填充: 超预算时尝试下一个更短 chunk，而非直接 break
+- 策略: chunking 阶段控制 + 软上限 + 相关性优先填充
+- 检索后保持 RRF 融合排序（相关性降序），Prompt 组装阶段维持此顺序
+- Prompt 组装采用软上限 + 相关性优先填充: 超预算时跳过当前 chunk 尝试下一个，而非直接 break
 - TopK 控制: RRF -> NoopReranker 截取 top_k=5
 """
 
@@ -65,8 +65,8 @@ def build_prompt(
     """组装 Prompt：检索结果拼接 + 用户问题，软上限预算控制。
 
     对齐 ARCHITECTURE.md §5.1.2:
-    - 按 chunk 长度升序排列（短者优先，信息密度高）
-    - 软上限 + 择优填充: 超预算时尝试下一个更短 chunk，而非直接 break
+    - 保持输入排序（相关性降序，由上游 RRF 融合 + NoopReranker 决定）
+    - 软上限 + 相关性优先填充: 超预算时跳过当前 chunk 尝试下一个，而非直接 break
 
     Args:
         question: 用户问题
@@ -87,11 +87,10 @@ def build_prompt(
             chunks_count=0,
         )
 
-    # 按 chunk 长度升序排列（短者优先，信息密度高）
-    # 注：输入已由 NoopReranker.rerank() 按相同键排序，此处为防御性重新排序，
-    # 消除对上游排序行为的隐式依赖。两处排序服务于不同语义（Rerank 截取 top_k
-    # vs Prompt 择优填充），不应合并。
-    sorted_chunks = sorted(retrieval_output.results, key=lambda r: len(r.content))
+    # 保持 RRF 相关性排序（已由上游 NoopReranker 按相关性降序排列）
+    # 不再按长度重排：短 chunk 优先策略在语义匹配/跨文档场景下会破坏相关性排名，
+    # 导致不相关的短 chunk 先占满预算，LLM 拿到低质量上下文 → 误判"未找到"
+    sorted_chunks = retrieval_output.results
 
     # 软上限择优填充
     used_chunks: list[RetrievalResult] = []
@@ -105,9 +104,9 @@ def build_prompt(
 
         chunk_tokens = estimate_tokens(chunk.content)
 
-        # 软上限检查: 超预算时尝试下一个更短 chunk
+        # 软上限检查: 超预算时跳过当前 chunk，尝试下一个能否塞入
         if total_tokens + chunk_tokens > max_context_tokens:
-            # 如果已有 chunks，跳过当前 chunk 尝试下一个更短的
+            # 如果已有 chunks，跳过当前 chunk 尝试下一个
             if used_chunks:
                 logger.debug(
                     f"跳过 chunk（{chunk_tokens} tokens），"

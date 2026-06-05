@@ -25,6 +25,7 @@ class ChatSourceChunk(BaseModel):
 
     对齐 API.md §6.1 event: sources
     """
+    chunk_index: int = Field(description="来源编号，与 LLM 回答中的 [来源N] 一一对应")
     doc_id: int
     doc_name: str
     content: str = Field(description="分块文本（截断至 200 字符）")

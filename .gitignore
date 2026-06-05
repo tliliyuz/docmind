@@ -34,3 +34,5 @@ frontend/dist/
 Thumbs.db
 /CLAUDE.md
 /AGENTS.md
+/backend/knowledge_samples/
+/.workbuddy/

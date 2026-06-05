@@ -68,12 +68,13 @@ describe('wrapCodeBlocks', () => {
     expect(result).toContain('</div>')
   })
 
-  it('复制按钮含 fa-copy 和 fa-check 图标', () => {
+  it('复制按钮含 fa-copy 和 fa-check 图标（不含内联 onclick，改为事件委托）', () => {
     const input = '<pre><code>hello</code></pre>'
     const result = wrapCodeBlocks(input)
     expect(result).toContain('fa-copy')
     expect(result).toContain('fa-check')
-    expect(result).toContain('navigator.clipboard.writeText')
+    // M4: 内联 onclick 已移除，复制逻辑改为 MessageItem 事件委托
+    expect(result).not.toContain('navigator.clipboard.writeText')
   })
 
   it('无代码块时不修改 HTML', () => {

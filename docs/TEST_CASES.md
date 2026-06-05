@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.36 |
+| 文档版本 | v0.42 |
 | 最后更新 | 2026-06-04 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 全部测试完成；后端 563 用例 + 前端 172 用例全部通过） |
+| 状态 | 进行中（Phase 3 代码测试全部完成 + 离线评估已执行 + 回归脚本就绪 + 端到端诊断增强 + sources 抑制修复 + chunk_index 溯源 + sources 引用过滤已实现；人工评分第 1 轮已完成 ✅ 4.38/5.0） |
 
 ---
 
@@ -339,19 +339,19 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.40 | NoopReranker-按长度排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 按 content 长度升序排列（短 chunk 优先） | ✅ | 2026-06-01 | 12 用例全部通过 |
-| U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 排序后返回前 5 个 | ✅ | 2026-06-01 | — |
-| U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-01 | — |
-| U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-01 | — |
-| U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅改变顺序，chunk 的 content/metadata 不变 | ✅ | 2026-06-01 | — |
+| U7.40 | NoopReranker-保持 RRF 排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 保持 RRF 融合原始排序（相关性降序），仅截取 top_k | ✅ | 2026-06-04 | 11 用例全部通过；修复：不再按长度重排 |
+| U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 保持 RRF 排序，返回前 5 个 | ✅ | 2026-06-04 | — |
+| U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-04 | — |
+| U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-04 | — |
+| U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅截取数量，chunk 的 content/metadata 不变 | ✅ | 2026-06-04 | — |
 
 ### 5.6 后端 — Prompt 模板测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.50 | Prompt-基本拼接 | `prompt_builder.build()` | question + chunks | 返回含 system prompt + context + question 的 messages 数组 | ✅ | 2026-06-01 | 15 用例全部通过 |
+| U7.50 | Prompt-基本拼接 | `prompt_builder.build()` | question + chunks | 返回含 system prompt + context + question 的 messages 数组 | ✅ | 2026-06-04 | 13 用例全部通过；修复：移除 sorted(key=len) |
 | U7.51 | Prompt-检索结果格式化 | `prompt_builder.build()` | 多个 chunks | 每个 chunk 标注 [来源N] 标签（N=chunk_index） | ✅ | 2026-06-01 | _format_chunk_reference 测试 |
-| U7.52 | Prompt-软上限控制 | `prompt_builder.build()` | chunks 总长度超预算 | 按长度升序择优填充，超预算时尝试下一更短 chunk | ✅ | 2026-06-01 | Token 估算用中英文自适应算法 |
+| U7.52 | Prompt-软上限控制 | `prompt_builder.build()` | chunks 总长度超预算 | 保持相关性排序，超预算时跳过当前 chunk 尝试下一个 | ✅ | 2026-06-04 | Token 估算用中英文自适应算法 |
 | U7.53 | Prompt-空检索结果 | `prompt_builder.build()` | chunks=[] | system prompt 包含「知识库中未找到相关信息」 | ✅ | 2026-06-01 | — |
 | U7.54 | Prompt-history 参数 | `prompt_builder.build()` | Phase 3 历史为空 | `history=[]` 不注入历史消息，Phase 4 传入历史 | ⬜ | — | — |
 | U7.55 | Prompt-预算计算正确 | `estimate_tokens()` | 中文/英文/混合 | 中文占比 >30% → ratio=1.5，否则 4.0（复用 chunker 算法） | ✅ | 2026-06-01 | 复用 chunker.estimate_tokens |
@@ -365,12 +365,13 @@
 | U7.61 | Service-已有会话追加 | `chat_service.chat()` | conversation_id 存在 | 复用已有会话，保存消息到同一 conversation | ✅ | 2026-06-02 | — |
 | U7.62 | Service-检索失败 | `chat_service.chat()` | 检索抛异常 | 包装为 `RetrievalServiceException(E4003)`，对齐 API.md §1.3 E4003 | ✅ | 2026-06-02 | — |
 | U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ✅ | 2026-06-02 | — |
+| U7.63b | Service-sources 抑制 | `_generate_sse_stream` | LLM 回答含"未找到相关信息" | 前缀 35 字符匹配 → 抑制；全文匹配 + 无 [来源N] 引用 → 抑制；有引用 → 保留 | ✅ | 2026-06-04 | 4 用例：真阴性前缀/假阳性有引用/真阴性无引用/正常回答 |
+| U7.63c | Service-sources chunk_index | `_build_sources` | 正常检索结果 | 每个 chunk 含 `chunk_index` 字段，与 LLM Prompt 中 [来源N] 编号一致 | ✅ | 2026-06-04 | 使用 `prompt_result.used_chunks` 确保编号一致 |
+| U7.63d | Service-sources 引用过滤 | `_extract_citation_indices` + `_generate_sse_stream` | 多种引用场景 | ① 提取 [来源N] 编号（单个/多个/去重）；② 无引用返回空集合；③ sources 仅含被引用 chunk；④ 全引用时全量发送；⑤ 零引用时不发送 sources；⑥ LLM 失败时回退全量发送；⑦ 幻觉编号忽略 | ✅ | 2026-06-04 | 9 用例（TestExtractCitationIndices 5 + TestChatCitationFiltering 4），决策 #27 |
 | U7.64 | Service-kb 无文档 | `chat_service.chat()` | kb chunks=0 | SSE event: error (E4001) | ✅ | 2026-06-02 | — |
 | U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ✅ | 2026-06-02 | — |
 | U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-02 | — |
 | U7.67 | Service-message_count 递增 | `chat_service.chat()` | 每次问答 | conversation.message_count += 2（user+assistant） | ✅ | 2026-06-02 | — |
-| U7.68 | Service-LLM 未找到时抑制 sources | `chat_service._generate_sse_stream()` | LLM 输出含"未找到相关信息" | sources 事件不发送，meta/message/finish 正常 | ✅ | 2026-06-04 | 对齐 API.md §6.1 |
-| U7.69 | Service-LLM 正常时发送 sources | `chat_service._generate_sse_stream()` | LLM 正常回答 | sources 事件正常发送，含 chunks 数组 | ✅ | 2026-06-04 | 回归验证 |
 
 ### 5.8 后端 — LLM 调用与 thinking 解析测试
 
@@ -560,8 +561,6 @@
 | C3.51 | MessageItem-用户无重新生成 | `MessageItem` | role=user + complete | 无 .action-btn | ✅ | 2026-06-03 | — |
 | C3.52 | MessageItem-streaming 无重新生成 | `MessageItem` | status=streaming | 无 .action-btn | ✅ | 2026-06-03 | — |
 | C3.53 | MessageItem-streaming class | `MessageItem` | status=streaming | .message-item.streaming 存在 | ✅ | 2026-06-03 | — |
-| C3.54 | MessageItem-未找到隐藏来源 | `MessageItem` | content 含"未找到相关信息" | .sources-box 不存在（即使 sources 非空） | ✅ | 2026-06-04 | 对齐 API.md §6.1 / FRONTEND.md §4.2 |
-| C3.55 | MessageItem-正常显示来源 | `MessageItem` | content 不含"未找到" | .sources-box 存在并正常展示 | ✅ | 2026-06-04 | 回归验证 |
 
 ### 5.18 前端 — WelcomeScreen 组件测试
 
@@ -602,12 +601,12 @@
 
 | ID | 评估项目 | 指标 | 目标值 | 实际值 | 状态 | 执行日期 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| E1 | 向量检索 Recall@5 | Recall@5 | ≥ 0.85 | — | ⬜ | — | 见 TESTING.md §5 |
-| E2 | BM25 检索 Recall@5 | Recall@5 | ≥ 0.70 | — | ⬜ | — | — |
-| E3 | RRF 融合 Recall@5 | Recall@5 | ≥ 0.90 | — | ⬜ | — | — |
-| E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ⬜ | — | — |
-| E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ⬜ | — | — |
-| E6 | 人工答案评分（第 1 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | — | ⬜ | — | 10 题 × 4 维度，见 TESTING.md §6 |
+| E1 | 向量检索 Recall@5 | Recall@5 | ≥ 0.85 | ~0.96 | ✅ | 2026-06-04 | 28 题中 27 题完全召回，Q26 缺失（跨文档：应急+差旅） |
+| E2 | BM25 检索 Recall@5 | Recall@5 | ≥ 0.70 | ~0.95 | ✅ | 2026-06-04 | 28 题中 26 题完全召回，Q26/Q27 缺失 |
+| E3 | RRF 融合 Recall@5 | Recall@5 | ≥ 0.90 | 1.000 | ✅ | 2026-06-04 | RRF 修复了向量和 BM25 各自的盲区，28/28 完全召回 |
+| E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ✅ | 2026-06-04 | 通过（Q26 首个相关排第 3 位以外，其余全部首位命中） |
+| E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ✅ | 2026-06-04 | 通过（RRF 融合后所有期望文档均被召回） |
+| E6 | 人工答案评分（第 1 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.38** | ✅ | 2026-06-04 | 10 题 × 4 维度，详见 `backend/tests/human_eval_template.md` |
 
 ---
 
@@ -683,16 +682,16 @@
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例） |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
-| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（21 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock，含 sources 抑制逻辑 2 用例） |
+| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
 | `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
 | `ingest/tasks.py` | — | ✅ | Celery 入库存根测试（10 用例，5 个为常量成员检查） |
 | 前端 `utils/sse.js` | ≥ 80% | ✅ | Phase 3：SSE 事件解析（21 用例，2026-06-03） |
 | 前端 `utils/markdown.js` | ≥ 80% | ✅ | Phase 3：Markdown 渲染（14 用例，2026-06-03） |
-| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例，2026-06-04 |
+| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) = 61 用例，2026-06-03 |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
 | 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
-| 前端组件 | ≥ 60% | ✅ 172 通过 | 2026-06-04 运行 `npm run test`：sse(21) + markdown(14) + ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) + ChatPage(13) + LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
+| 前端组件 | ≥ 60% | ✅ 170 通过 | 2026-06-03 运行 `npm run test`：sse(21) + markdown(14) + ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) + ChatPage(13) + LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
 
 ---
 

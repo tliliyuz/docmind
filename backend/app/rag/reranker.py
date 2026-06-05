@@ -1,13 +1,14 @@
 """Rerank 重排序模块 — 检索结果精排
 
 对齐 ARCHITECTURE.md §7.3 / ROADMAP.md Decision #18：
-- Phase 3: NoopReranker 占位实现，按 chunk 长度升序排列后截取 top_k=5
+- Phase 3: NoopReranker 占位实现，保持 RRF 融合排序（相关性降序），截取 top_k=5
 - Phase 3+: DashScope Rerank API 精排
 
 设计要点：
-- 短 chunk 优先：相同 token 预算下覆盖更多独立文档
+- 保持 RRF 排序：RRF 融合已按相关性分数降序排列，不再按长度重排
+  （短 chunk 优先策略在语义匹配/跨文档场景下会破坏相关性排名）
 - 输入不足 top_k 时返回全部
-- 不改变 chunk 内容，仅调整顺序
+- 不改变 chunk 内容，仅截取数量
 """
 
 import logging
@@ -45,12 +46,13 @@ class BaseReranker(ABC):
 
 
 class NoopReranker(BaseReranker):
-    """占位实现：按 chunk 长度升序排列后截取 top_k
+    """占位实现：保持 RRF 融合排序，截取 top_k
 
     对齐 ARCHITECTURE.md §7.3：
-    - 短 chunk 优先：相同 token 预算下覆盖更多独立文档
+    - 保持 RRF 排序：RRF 融合已按相关性降序排列，直接截取 top_k
+    - 不再按长度重排：短 chunk 优先策略在语义/跨文档场景下破坏相关性排名
     - 输入不足 top_k 时返回全部
-    - 不改变 chunk 内容，仅调整顺序
+    - 不改变 chunk 内容，仅调整数量
     """
 
     async def rerank(
@@ -59,7 +61,7 @@ class NoopReranker(BaseReranker):
         retrieval_output: RetrievalOutput,
         top_k: int = DEFAULT_RERANK_TOP_K,
     ) -> RetrievalOutput:
-        """按 chunk 长度升序排列后截取 top_k。
+        """保持 RRF 融合原始排序，截取 top_k。
 
         Args:
             query: 用户问题（NoopReranker 不使用）
@@ -73,17 +75,13 @@ class NoopReranker(BaseReranker):
             logger.info("NoopReranker: 输入结果为空，直接返回")
             return RetrievalOutput()
 
-        # 按 content 长度升序排列（短 chunk 优先）
-        sorted_results = sorted(
-            retrieval_output.results,
-            key=lambda r: len(r.content),
-        )
-
-        # 截取 top_k
-        truncated_results = sorted_results[:top_k]
+        # 保持 RRF 融合的原始排序（已按相关性分数降序），仅截取 top_k
+        # 不再按长度重排：短 chunk 优先策略在语义匹配/跨文档场景下会破坏 RRF 排名，
+        # 导致 LLM 拿到不相关的短 chunk → 误判"未找到"→ sources 被抑制
+        truncated_results = retrieval_output.results[:top_k]
 
         logger.info(
-            "NoopReranker: %d 条输入 → 按长度排序 → 截取 top_%d → %d 条输出",
+            "NoopReranker: %d 条输入 → 保持 RRF 排序 → 截取 top_%d → %d 条输出",
             len(retrieval_output.results),
             top_k,
             len(truncated_results),
