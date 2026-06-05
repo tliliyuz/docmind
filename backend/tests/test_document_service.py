@@ -21,13 +21,13 @@ from app.core.exceptions import (
     UnsupportedFileFormatException,
     FileSizeExceededException,
 )
+from app.config import settings
 from app.models.document import Document
 from app.models.chunk import Chunk
 from app.models.enums import DocumentStatus
 from app.models.knowledge_base import KnowledgeBase
 from app.services.document_service import (
     ALLOWED_EXTENSIONS,
-    MAX_FILE_SIZE,
     _build_document_response,
     _check_kb_ownership,
     _validate_file,
@@ -132,7 +132,7 @@ class TestValidateFile:
             _validate_file(f)
 
     def test_超大文件抛异常(self):
-        f = _make_upload_file("big.pdf", size=MAX_FILE_SIZE + 1)
+        f = _make_upload_file("big.pdf", size=settings.UPLOAD_MAX_SIZE + 1)
         with pytest.raises(FileSizeExceededException) as exc:
             _validate_file(f)
         assert exc.value.error_code == "E2003"

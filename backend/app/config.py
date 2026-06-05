@@ -57,6 +57,11 @@ class Settings(BaseSettings):
 
     # 文件存储
     UPLOAD_DIR: str = "./uploads"
+    UPLOAD_MAX_SIZE: int = 52428800  # 50MB，单位字节
+    ALLOWED_EXTENSIONS: str = "pdf,docx,md,txt"  # 逗号分隔，可通过 .env 覆盖
+
+    # CORS
+    CORS_ORIGINS: str = "http://localhost:5173"  # 逗号分隔多个来源
 
     @property
     def mysql_url(self) -> str:
