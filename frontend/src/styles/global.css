@@ -35,6 +35,7 @@
     --dm-bg-sidebar: #F5F5F5;
     --dm-bg-card: #FFFFFF;
     --dm-bg-chat: #FFFFFF;
+    --dm-bg-elevated: #EBEBEB;
     --dm-bg-input: #F5F5F5;
     --dm-text-primary: #1A1A1A;
     --dm-text-secondary: #737373;
@@ -102,6 +103,7 @@
     /* ===== 布局 ===== */
     --dm-sidebar-width-admin: 240px;
     --dm-sidebar-width-chat: 260px;
+    --dm-sidebar-width-collapsed: 64px;
     --dm-header-height: 56px;
     --dm-chat-max-width: 768px;
     --dm-content-max-width: 1200px;
@@ -166,11 +168,11 @@ body {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: #D4D4D4;
+    background: var(--dm-border);
     border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #A3A3A3;
+    background: var(--dm-text-tertiary);
 }
 
 /* ===== 组件基础样式 ===== */
@@ -181,7 +183,7 @@ body {
     height: 44px;
     padding: 0 14px;
     border: 1px solid var(--dm-border);
-    border-radius: var(--dm-radius-sm);
+    border-radius: var(--dm-radius-md);
     font-size: var(--dm-text-body);
     color: var(--dm-text-primary);
     background: var(--dm-bg-input);

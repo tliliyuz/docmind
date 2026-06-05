@@ -772,7 +772,7 @@ onUnmounted(() => {
 }
 
 .ghost-btn.danger:hover {
-  background: #FEE2E2;
+  background: var(--dm-danger-light);
 }
 
 /* ===== 统计卡片行 ===== */

@@ -1,6 +1,6 @@
 # DocMind 变更日志
 
-## 2026-06-05 — Phase 4 设计文档补充 + Schema 准备
+## 2026-06-05 — Phase 4 设计文档补充 + Schema 准备 + 代码修复
 
 ### 新增
 
@@ -8,6 +8,8 @@
 |:---|:---|
 | `backend/alembic/versions/9a1b2c3d4e5f_*.py` | alembic migration：`messages` 表新增 `metadata JSON NULL DEFAULT NULL` 列 + `conversations` 表新增 `(user_id, updated_at)` 复合索引 |
 | `backend/app/models/message.py` | 新增 `metadata_: Mapped[dict\|None]` 字段（`"metadata"` 列映射），Phase 4 不使用，为 Phase 5+ 预留 |
+| `backend/app/config.py` | 新增 `CORS_ORIGINS` / `UPLOAD_MAX_SIZE` / `ALLOWED_EXTENSIONS` 三个配置项，消除 main.py 和 document_service.py 中的硬编码 |
+| `frontend/src/styles/global.css` | 新增 `--dm-sidebar-width-collapsed: 64px` / `--dm-bg-elevated: #EBEBEB` 两个缺失的 Design Token |
 
 ### 修改
 
@@ -19,6 +21,17 @@
 | `docs/TESTING.md` | v0.10→v0.11。新增 §7.4 多轮 RAG 回归测试设计（报销制度三连问）；§9 Phase 4 测试计划更新 |
 | `docs/TEST_CASES.md` | v0.42→v0.43。Phase 4 用例从 8 条占位扩充为 22 条（会话 CRUD ×4 + 滑动窗口 ×7 + 多轮 RAG ×5 + 前端组件 ×6） |
 | `backend/docs/DATABASE.md` | v0.8→v0.9。§2.6 `messages` 表新增 `metadata` 列；§3 索引策略新增 `idx_conversations_user_updated` |
+| `backend/app/main.py` | CORS `allow_origins` 改用 `settings.CORS_ORIGINS` 解析（逗号分隔）；lifespan 增加 JWT 密钥默认值校验（开发环境 warning，生产环境拒绝启动） |
+| `backend/app/services/document_service.py` | `ALLOWED_EXTENSIONS` 从硬编码 set 改为 `settings.ALLOWED_EXTENSIONS` 解析；`MAX_FILE_SIZE` 硬编码移除，改用 `settings.UPLOAD_MAX_SIZE` |
+| `backend/tests/test_document_service.py` | 适配 `MAX_FILE_SIZE` → `settings.UPLOAD_MAX_SIZE` 导入变更 |
+| `frontend/src/views/LoginPage.vue` | 2 处硬编码颜色替换为 Design Token：tab 背景 `#E8E8E8` → `var(--dm-border-light)`，按钮 hover `#000` → `var(--dm-primary-hover)` |
+| `frontend/src/views/KnowledgeDetail.vue` | 1 处硬编码颜色替换：danger hover `#FEE2E2` → `var(--dm-danger-light)` |
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/styles/global.css` | 2 处硬编码颜色替换为 Token（滚动条 `#D4D4D4` → `var(--dm-border)` / `#A3A3A3` → `var(--dm-text-tertiary)`）；`.form-input` border-radius 从 `--dm-radius-sm`（8px）修正为 `--dm-radius-md`（12px），对齐 UIDESIGN 规范 |
 
 ## 2026-06-05 — Phase 3 审查报告修复（代码审查 → 修复清单）
 

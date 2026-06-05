@@ -185,7 +185,7 @@ async function handleSubmit() {
 /* 切换 Tab */
 .tab-switch {
   display: flex;
-  background: #E8E8E8;
+  background: var(--dm-border-light);
   border-radius: var(--dm-radius-sm);
   padding: 4px;
   margin-bottom: var(--dm-space-5);
@@ -237,7 +237,7 @@ async function handleSubmit() {
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: #000;
+  background: var(--dm-primary-hover);
   box-shadow: var(--dm-shadow-md);
 }
 
