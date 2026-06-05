@@ -61,7 +61,7 @@ class NoopReranker(BaseReranker):
         retrieval_output: RetrievalOutput,
         top_k: int = DEFAULT_RERANK_TOP_K,
     ) -> RetrievalOutput:
-        """按 chunk 长度升序排列后截取 top_k。
+        """保持 RRF 融合原始排序，截取 top_k。
 
         Args:
             query: 用户问题（NoopReranker 不使用）

@@ -220,5 +220,3 @@ class TestBuildPrompt:
         """返回类型应为 PromptBuildResult"""
         result = build_prompt("测试问题", retrieval_output)
         assert isinstance(result, PromptBuildResult)
-
-

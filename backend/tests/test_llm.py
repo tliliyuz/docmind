@@ -19,6 +19,15 @@ from app.core.llm import (
 from app.core.exceptions import LLMCallFailedException, LLMRateLimitExceededException
 
 
+@pytest.fixture(autouse=True)
+def reset_llm_singleton():
+    """每次测试前后重置 LLM 客户端单例，确保测试隔离（对齐 M5 模块级单例改动）"""
+    import app.core.llm as llm_module
+    llm_module._llm_client = None
+    yield
+    llm_module._llm_client = None
+
+
 @pytest.fixture
 def mock_llm_client():
     """模拟 LLM 客户端"""

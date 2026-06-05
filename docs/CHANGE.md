@@ -1,5 +1,41 @@
 # DocMind 变更日志
 
+## 2026-06-05 — Phase 3 审查报告修复（代码审查 → 修复清单）
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | R1: 局部导入 `uuid4`/`and_`/`exists` 移至文件顶部；R3: `_build_sources()` 改用 `ChatSourceChunk` Pydantic 模型替代裸 dict，`sources` SSE 序列化走 `.model_dump()` |
+| `backend/app/schemas/chat.py` | R3: `ChatSourceChunk` 新增 `chunk_index: int` 字段（对齐 API.md §6.1） |
+| `backend/app/core/llm.py` | M5: `_get_llm_client()` 改为模块级惰性单例，避免每次请求新建 `AsyncOpenAI` 实例 |
+| `backend/app/rag/reranker.py` | M2: `NoopReranker.rerank()` docstring 修正为「保持 RRF 融合原始排序，截取 top_k」 |
+| `backend/docs/DATABASE.md` | R2: 文档版本 v0.7→v0.8，最后更新 2026-05-22→2026-06-05 |
+| `frontend/src/components/chat/MessageItem.vue` | M1: 5 处硬编码颜色/字号替换为 Design Token；M4: 代码复制按钮改为事件委托（`onMounted` 绑定 click），替代内联 `onclick` |
+| `frontend/src/utils/markdown.js` | M4: `wrapCodeBlocks` 移除内联 `onclick` 属性，仅保留纯 HTML 按钮结构 |
+| `frontend/src/styles/global.css` | M1: 新增 4 个 CSS 变量 `--dm-code-inline-bg` / `--dm-code-inline-font-size` / `--dm-code-copy-btn-bg` / `--dm-code-copy-btn-hover-bg` |
+| `frontend/docs/UIDESIGN.md` | M1: v0.8→v0.9，§1 新增代码块相关 Design Token 定义 |
+| `backend/tests/test_llm.py` | M5: 新增 `reset_llm_singleton` autouse fixture，确保模块级单例在测试间隔离 |
+| `backend/tests/test_sse_helpers.py` | R3: `TestBuildSources` 3 个测试 dict 访问 → 属性访问，新增 `chunk_index` 断言 |
+| `backend/tests/test_chat_service.py` | M3: `TestGenerateTitle`、`TestExtractCitationIndices` 添加技术债务注释 |
+| `frontend/tests/markdown.test.js` | M4: 复制按钮测试不再验证 `navigator.clipboard.writeText` 存在，改为验证不存在 |
+| `backend/tests/test_fusion.py` | M7: 删除文件末尾多余空行 |
+| `backend/tests/test_prompt_builder.py` | M7: 删除文件末尾多余空行 |
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| — | 本次为审查报告修复批次，无 Bug 修复 |
+
+### 审查来源
+
+- `code-review-report-20260605-1556.md`（报告 A，12 个发现）
+- `review_phase3.md`（报告 B，5 个发现）
+- 核实后确认修复 10 项（R1-R3 + M1-M7），假阳性 1 项（selectable 端点已注册），延后 3 项（Phase 5 评估）
+
+---
+
 ## 2026-06-04 — Phase 3 第 1 轮人工答案评分完成
 
 ### 新增

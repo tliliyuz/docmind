@@ -214,7 +214,12 @@ async def _consume_sse(response):
 
 
 class TestGenerateTitle:
-    """测试 _generate_title 标题生成"""
+    """测试 _generate_title 标题生成
+
+    **技术债务**：直接测试私有函数 `_generate_title()`，违反 CLAUDE.md「禁止直接测试
+    `_` 前缀的私有方法」规范。保留现有测试（纯逻辑函数单元测试有工程价值），
+    后续应通过 `chat()` 公共 API 的 SSE 输出间接覆盖标题生成逻辑。
+    """
 
     def test_正常截取前12字(self):
         """截取问题前 12 字作为标题"""
@@ -866,7 +871,12 @@ class TestChatSourcesSuppression:
 
 
 class TestExtractCitationIndices:
-    """U7.63d — _extract_citation_indices 单元测试"""
+    """U7.63d — _extract_citation_indices 单元测试
+
+    **技术债务**：直接测试私有函数 `_extract_citation_indices()`，违反 CLAUDE.md「禁止直接测试
+    `_` 前缀的私有方法」规范。保留现有测试（纯逻辑函数单元测试有工程价值），
+    后续应通过 `chat()` 公共 API 的 SSE 输出间接覆盖引用编号提取逻辑。
+    """
 
     def test_单个引用编号提取(self):
         from app.services.chat_service import _extract_citation_indices

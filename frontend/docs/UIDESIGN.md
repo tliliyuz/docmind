@@ -3,8 +3,8 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.8
-> 日期: 2026-06-04
+> 版本: v0.9
+> 日期: 2026-06-05
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考
 > 说明: 所有样式基于 Vue 3 + Element Plus 项目
 
@@ -128,9 +128,15 @@
     --dm-transition-normal: 0.2s ease;
     --dm-transition-slow: 0.3s ease;
 
-    /* ===== 其他 ===== */
+    /* ===== 代码块 ===== */
     --dm-bg-code: #1A1A1A;
     --dm-text-code: #E5E5E5;
+    --dm-code-inline-bg: rgba(0, 0, 0, 0.06);
+    --dm-code-inline-font-size: 0.9em;
+    --dm-code-copy-btn-bg: rgba(255, 255, 255, 0.1);
+    --dm-code-copy-btn-hover-bg: rgba(255, 255, 255, 0.2);
+
+    /* ===== 其他 ===== */
     --dm-welcome-logo-size: 56px;
     --dm-sidebar-logo-size: 32px;
 }

@@ -19,6 +19,9 @@ from app.core.exceptions import LLMCallFailedException, LLMRateLimitExceededExce
 
 logger = logging.getLogger(__name__)
 
+# 模块级单例：AsyncOpenAI 客户端（避免每次请求新建实例）
+_llm_client: AsyncOpenAI | None = None
+
 
 @dataclass
 class LLMChunk:
@@ -39,14 +42,17 @@ class LLMResult:
 
 
 def _get_llm_client() -> AsyncOpenAI:
-    """获取 AsyncOpenAI 客户端实例。
+    """获取 AsyncOpenAI 客户端实例（模块级惰性单例）。
 
     对齐 config.py 中的 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。
     """
-    return AsyncOpenAI(
-        base_url=settings.LLM_BASE_URL,
-        api_key=settings.LLM_API_KEY,
-    )
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = AsyncOpenAI(
+            base_url=settings.LLM_BASE_URL,
+            api_key=settings.LLM_API_KEY,
+        )
+    return _llm_client
 
 
 async def stream_chat_completion(

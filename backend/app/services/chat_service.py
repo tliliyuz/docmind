@@ -12,9 +12,10 @@
 import logging
 import re
 from typing import AsyncIterator
+from uuid import uuid4
 
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
@@ -41,6 +42,7 @@ from app.rag.fusion import rrf_fusion
 from app.rag.prompt_builder import build_prompt, PromptBuildResult
 from app.rag.reranker import NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
+from app.schemas.chat import ChatSourceChunk
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,7 @@ def _extract_citation_indices(text: str) -> set[str]:
     return set(_CITATION_PATTERN.findall(text))
 
 
-def _build_sources(chunks: list, doc_map: dict[int, str]) -> list[dict]:
+def _build_sources(chunks: list, doc_map: dict[int, str]) -> list[ChatSourceChunk]:
     """构建 sources 事件的 chunks 列表。
 
     对齐 API.md §6.1 event: sources：
@@ -133,14 +135,14 @@ def _build_sources(chunks: list, doc_map: dict[int, str]) -> list[dict]:
     """
     sources = []
     for i, chunk in enumerate(chunks):
-        sources.append({
-            "chunk_index": i + 1,  # 与 LLM Prompt 中 [来源N] 编号一致
-            "doc_id": chunk.doc_id,
-            "doc_name": doc_map.get(chunk.doc_id, ""),
-            "content": chunk.content[:200] if chunk.content else "",
-            "score": round(chunk.score, 4),
-            "page": chunk.page,
-        })
+        sources.append(ChatSourceChunk(
+            chunk_index=i + 1,  # 与 LLM Prompt 中 [来源N] 编号一致
+            doc_id=chunk.doc_id,
+            doc_name=doc_map.get(chunk.doc_id, ""),
+            content=chunk.content[:200] if chunk.content else "",
+            score=round(chunk.score, 4),
+            page=chunk.page,
+        ))
     return sources
 
 
@@ -210,7 +212,7 @@ async def _generate_sse_stream(
         _error_chunks = prompt_result.used_chunks or reranked_output.results
         if _error_chunks:
             sources = _build_sources(_error_chunks, doc_map)
-            yield format_sse_event("sources", {"chunks": sources})
+            yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
         error_code = "E4002"
         error_msg = "LLM 调用失败"
@@ -253,8 +255,8 @@ async def _generate_sse_stream(
                 )
                 # 保持原始 Prompt 编号（与 LLM 回答中 [来源N] 一致），不重新编号
                 for j, (orig_idx, _) in enumerate(_cited_with_orig_index):
-                    sources[j]["chunk_index"] = orig_idx
-                yield format_sse_event("sources", {"chunks": sources})
+                    sources[j].chunk_index = orig_idx
+                yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
     # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）
     try:
@@ -406,8 +408,6 @@ async def chat(
     - LLM 流式输出通过 SSE 事件推送
     - LLM 失败时先发 sources 再发 error
     """
-    from uuid import uuid4
-
     conv, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
         db=db, user_id=user_id, role=role,
         conversation_id=conversation_id, kb_id=kb_id, question=question,
@@ -449,8 +449,6 @@ async def get_selectable_kbs(
     Returns:
         {"mine": [...], "public": [...]}
     """
-    from sqlalchemy import and_, exists
-
     # 子查询：KB 下是否有可检索文档
     has_retrievable = exists().where(
         and_(

@@ -263,4 +263,3 @@ class TestEdgeCases:
         # 验证分数递减
         for i in range(len(result.results) - 1):
             assert result.results[i].score >= result.results[i + 1].score
-

@@ -186,7 +186,7 @@ class TestBuildSources:
     """测试 sources 事件数据结构（使用生产函数 _build_sources 避免逻辑重复）"""
 
     def test_sources数据结构完整(self):
-        """U7.85 — sources 事件 chunks 应包含 doc_id/doc_name/content/score/page"""
+        """U7.85 — sources 事件 chunks 应包含 chunk_index/doc_id/doc_name/content/score/page"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
         from app.services.chat_service import _build_sources
 
@@ -210,16 +210,18 @@ class TestBuildSources:
         assert len(sources) == 2
 
         # 第一条：content 截断至 200 字符
-        assert sources[0]["doc_id"] == 1
-        assert sources[0]["doc_name"] == "文档A.pdf"
-        assert len(sources[0]["content"]) <= 200
-        assert sources[0]["score"] == 0.95
-        assert sources[0]["page"] == 1
+        assert sources[0].chunk_index == 1
+        assert sources[0].doc_id == 1
+        assert sources[0].doc_name == "文档A.pdf"
+        assert len(sources[0].content) <= 200
+        assert sources[0].score == 0.95
+        assert sources[0].page == 1
 
         # 第二条：page 为 None
-        assert sources[1]["doc_id"] == 2
-        assert sources[1]["doc_name"] == "文档B.md"
-        assert sources[1]["page"] is None
+        assert sources[1].chunk_index == 2
+        assert sources[1].doc_id == 2
+        assert sources[1].doc_name == "文档B.md"
+        assert sources[1].page is None
 
     def test_content截断至200字符(self):
         """content 超过 200 字符时应截断"""
@@ -232,7 +234,7 @@ class TestBuildSources:
 
         sources = _build_sources(reranked_output.results, {1: "x.txt"})
 
-        assert len(sources[0]["content"]) == 200
+        assert len(sources[0].content) == 200
 
     def test_doc_map缺失时doc_name为空(self):
         """doc_map 中找不到 doc_id 时 doc_name 应为空字符串"""
@@ -244,7 +246,7 @@ class TestBuildSources:
 
         sources = _build_sources(reranked_output.results, {})  # 空 doc_map
 
-        assert sources[0]["doc_name"] == ""
+        assert sources[0].doc_name == ""
 
 
 class TestFinishEventData:

@@ -36,6 +36,7 @@
         <!-- 有内容：Markdown 渲染 -->
         <div
           v-else-if="msg.content"
+          ref="markdownBody"
           class="markdown-body"
           v-html="renderedContent"
         ></div>
@@ -86,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { renderMarkdown, wrapCodeBlocks } from '@/utils/markdown'
 
 const props = defineProps({
@@ -97,11 +98,41 @@ defineEmits(['regenerate'])
 
 const thinkingExpanded = ref(true)
 const sourcesExpanded = ref(true)
+const markdownBody = ref(null)
 
 const renderedContent = computed(() => {
   if (!props.msg.content) return ''
   const html = renderMarkdown(props.msg.content)
   return wrapCodeBlocks(html)
+})
+
+/** 代码复制按钮点击事件委托（替代内联 onclick，兼容 CSP） */
+function handleCodeCopyClick(event) {
+  const btn = event.target.closest('.code-copy-btn')
+  if (!btn) return
+
+  const wrapper = btn.closest('.code-block-wrapper')
+  if (!wrapper) return
+
+  const code = wrapper.querySelector('code')
+  if (!code) return
+
+  navigator.clipboard.writeText(code.textContent).then(() => {
+    btn.classList.add('copied')
+    setTimeout(() => btn.classList.remove('copied'), 1500)
+  })
+}
+
+onMounted(() => {
+  if (markdownBody.value) {
+    markdownBody.value.addEventListener('click', handleCodeCopyClick)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (markdownBody.value) {
+    markdownBody.value.removeEventListener('click', handleCodeCopyClick)
+  }
 })
 
 /** 来源中去重的文档数量 */
@@ -257,11 +288,11 @@ const uniqueDocCount = computed(() => {
 }
 
 .markdown-body :deep(code:not(pre code)) {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--dm-code-inline-bg);
   padding: 2px 6px;
   border-radius: var(--dm-radius-xs);
   font-family: var(--dm-font-mono);
-  font-size: 0.9em;
+  font-size: var(--dm-code-inline-font-size);
 }
 
 .markdown-body :deep(pre) {
@@ -320,10 +351,10 @@ const uniqueDocCount = computed(() => {
   right: 8px;
   width: 32px;
   height: 32px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--dm-code-copy-btn-bg);
   border: none;
   border-radius: var(--dm-radius-xs);
-  color: #A3A3A3;
+  color: var(--dm-text-tertiary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -337,7 +368,7 @@ const uniqueDocCount = computed(() => {
 }
 
 .markdown-body :deep(.code-copy-btn:hover) {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--dm-code-copy-btn-hover-bg);
   color: white;
 }
 
