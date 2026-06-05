@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.8 |
+| 文档版本 | v0.9 |
 | 最后更新 | 2026-06-05 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -235,6 +235,7 @@ CREATE TABLE messages (
     thinking_content TEXT COMMENT '深度思考内容',
     token_count INT DEFAULT 0,
     feedback ENUM('like', 'dislike') NULL,
+    metadata JSON NULL DEFAULT NULL COMMENT '扩展元数据：未来 Tool Call / Web Search / Agent 等场景的非结构化数据',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_conversation_id (conversation_id),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -250,6 +251,7 @@ CREATE TABLE messages (
 | thinking_content | TEXT | DeepSeek 深度思考内容（可空） |
 | token_count | INT | 消息消耗的 token 估算 |
 | feedback | ENUM | 用户反馈：like / dislike（可空） |
+| metadata | JSON | 扩展元数据（可空）。Phase 4 不使用，为 future Tool Call / Web Search / Agent 预留 |
 | created_at | DATETIME | 创建时间 |
 
 ---
@@ -265,6 +267,7 @@ CREATE TABLE messages (
 | chunks | idx_doc_id | 普通索引 | 按文档列出分块 |
 | chunks | idx_kb_id | 普通索引 | 按知识库统计分块 |
 | conversations | idx_user_id | 普通索引 | 按用户列出会话 |
+| conversations | idx_conversations_user_updated (user_id, updated_at) | 复合索引 | Phase 4：按用户列出会话并按更新时间倒序排列 |
 | messages | idx_conversation_id | 普通索引 | 按会话列出消息 |
 
 > **注意**：MySQL 会自动为外键列创建索引（若该列尚未建立索引）。上表中 `chunks.doc_id`、`chunks.kb_id` 等因已有显式索引，不再重复；`conversations.kb_id` 无外键索引，如需频繁按知识库查询会话，可后续补充。

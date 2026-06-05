@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.10 |
-| 最后更新 | 2026-06-04 |
+| 文档版本 | v0.11 |
+| 最后更新 | 2026-06-05 |
 | 作者 | yuz |
-| 状态 | 进行中（第 1 轮人工评分已完成 ✅ 4.38/5.0） |
+| 状态 | 进行中（Phase 4 设计就绪） |
 
 ---
 
@@ -344,7 +344,7 @@ def evaluate_retrieval(test_set, retriever):
 ]
 ```
 
-> 以上为前 10 题示例，完整测试集需扩充至 25-30 题，确保覆盖 `knowledge_samples/` 中全部 20 份文档。
+> 以上为单轮查询 10 题示例，完整测试集需扩充至 25-30 题。Phase 4 新增多轮会话测试集（见 §7.4）。
 
 ### 7.3 回归检查项
 
@@ -357,6 +357,72 @@ def evaluate_retrieval(test_set, retriever):
 | 错误率 | 脚本统计 | 无 E9xxx / E4xxx 系统级错误 |
 
 > Phase 3 实现：回归测试脚本 `backend/tests/regression_test.py`，遍历测试集、调用 `/api/chat`、自动检查上述项并输出报告。Phase 3 问答 API 完成后执行。
+
+### 7.4 多轮 RAG 回归测试（Phase 4 新增）
+
+多轮对话场景下，历史消息注入可能引入以下退化：
+- 历史消息挤占检索结果 → RAG 退化为纯聊天
+- 旧轮次 `[来源N]` 编号与当前轮次检索结果冲突
+- assistant 消息注入导致 LLM 混淆角色边界
+
+#### 测试集设计
+
+```json
+[
+  {
+    "session_id": "multi-turn-001",
+    "name": "报销制度三连问",
+    "kb_id": 1,
+    "turns": [
+      {
+        "turn": 1,
+        "question": "介绍一下公司的报销制度",
+        "expected": {
+          "has_answer": true,
+          "has_sources": true,
+          "min_chunks": 1,
+          "expected_docs": ["报销制度.md"]
+        }
+      },
+      {
+        "turn": 2,
+        "question": "审批流程需要多长时间？",
+        "expected": {
+          "has_answer": true,
+          "has_sources": true,
+          "min_chunks": 1,
+          "expected_docs": ["报销制度.md"],
+          "context_dependent": true
+        }
+      },
+      {
+        "turn": 3,
+        "question": "金额限制具体是多少？",
+        "expected": {
+          "has_answer": true,
+          "has_sources": true,
+          "min_chunks": 1,
+          "expected_docs": ["报销制度.md"],
+          "context_dependent": true
+        }
+      }
+    ]
+  }
+]
+```
+
+#### 回归检查项（多轮）
+
+| 检查项 | 方法 | 通过标准 |
+|:---|:---|:---|
+| 每轮检索召回 | 脚本自动计算 | 全部 turn Recall@5 ≥ 0.85 |
+| 每轮答案非空 | 接口返回检查 | 全部 turn 返回非空答案 |
+| 每轮引用来源有效 | 脚本校验 | 全部 turn `sources` 中的 doc_id 均在 MySQL 中存在 |
+| 上下文连贯 | 人工/LLM 评估 | Turn 2/3 的答案与 Turn 1 主题一致，未出现主题漂移 |
+| RAG 不退化 | 脚本校验 | Turn 2/3 仍返回 `sources` 事件（未被历史挤掉检索结果） |
+| 历史截断不报错 | 脚本校验 | 20+ 轮后仍正常返回答案和来源 |
+
+> **重要**：单轮测试全部通过 ≠ 多轮没问题。这是 Phase 4 最容易出 Bug 的地方——历史注入逻辑错误会导致 RAG 静默退化为普通聊天，而单轮测试无法发现。
 
 ---
 
@@ -432,9 +498,11 @@ class ChatUser(HttpUser):
 | Phase 3 完成 | 离线检索评估 | 检索评估 | BM25 vs 向量 vs RRF 的 Recall@5/MRR 对比报告 | Phase 4 准入 |
 | Phase 3 完成 | 回归测试集初版建立 | 回归测试 | 25-30 个固定问题 + 期望文档标注 | Phase 4 准入 |
 | Phase 3 完成 | 人工答案评分（第 1 轮） | 人工评估 | 10 题 × 4 维度评分表 | Phase 4 准入 | ✅ 已完成（2026-06-04，4.38/5.0） |
-| Phase 4 | 会话 CRUD + 记忆测试 | 接口+单元测试 | 会话 API + 滑动窗口 + 问题重写 | Phase 5 准入 |
+| Phase 4 | 会话 CRUD API 接口测试 | 接口测试 | 会话 CRUD 正常流程 + 错误码 + 权限拒绝 | Phase 5 准入 |
+| Phase 4 | 滑动窗口记忆测试 | 单元测试 | 各池子独立截断不互侵（History 超限/Retrieval 超限/同时超限） | Phase 5 准入 |
+| Phase 4 | 多轮 RAG 回归测试 | 接口测试 | 多轮对话场景：每轮检索召回 + 答案非空 + 引用有效 + RAG 不退化（详见 §7.4） | Phase 5 准入 |
 | Phase 4 | 前端会话列表组件测试 | 组件测试 | Sidebar 会话 CRUD 交互 | Phase 5 准入 |
-| Phase 4 完成 | 人工答案评分（第 2 轮） | 人工评估 | 对比第 1 轮，验证记忆和重写提升效果 | Phase 5 准入 |
+| Phase 4 完成 | 人工答案评分（第 2 轮） | 人工评估 | 对比第 1 轮（4.38/5.0），验证多轮体验提升 | Phase 5 准入 |
 | Phase 5 | 全量回归测试 | 回归测试 | 遍历完整测试集，检查召回/非空/来源/SSE/错误率 | 上线准入 |
 | Phase 5 | 压测 | 性能测试 | Locust 4 场景，P50≤3s / P99≤10s | 上线准入 |
 | Phase 5 | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 | 上线准入 |
