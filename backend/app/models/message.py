@@ -1,7 +1,7 @@
 """消息表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, Text, func, text
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, JSON, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -24,6 +24,10 @@ class Message(Base):
         Integer, default=0, server_default=text("0")
     )
     feedback: Mapped[str | None] = mapped_column(Enum("like", "dislike", name="message_feedback"))
+    metadata_: Mapped[dict | None] = mapped_column(
+        "metadata", JSON, nullable=True, server_default=text("NULL"),
+        comment="扩展元数据：未来 Tool Call / Web Search / Agent 等场景的非结构化数据"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )

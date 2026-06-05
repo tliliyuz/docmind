@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.22 |
-| 最后更新 | 2026-06-04 |
+| 文档版本 | v0.23 |
+| 最后更新 | 2026-06-05 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 3 实现完成） |
+| 状态 | 草稿（Phase 3 完成，Phase 4 设计就绪） |
 
 ---
 
@@ -19,7 +19,7 @@
 | `[Planned: Phase X]` | 计划在 Phase X 实现 |
 | `[Target Architecture]` | 最终目标态，非当前状态 |
 
-**当前开发进度**：Phase 3（核心问答）后端已完成，详见 [ROADMAP.md](ROADMAP.md)。
+**当前开发进度**：Phase 3（核心问答）已完成，Phase 4（会话与记忆）设计就绪，详见 [ROADMAP.md](ROADMAP.md)。
 
 ---
 
@@ -127,9 +127,9 @@
 | 大文件（100页PDF）上传后同步处理，用户等很久 | **异步入库** | Redis + Celery 异步任务 | 上传即返回，后台处理 | [Implemented] |
 | 关键词搜索"墨盒怎么换"找不到"打印机耗材更换" | **多路检索** | 向量检索（语义）+ BM25（关键词）+ RRF 融合 | 召回率大幅提升 | [Implemented] |
 | 搜出来的结果排序不准 | **Rerank 重排序** | 当前 NoopReranker 占位，后续 DashScope Rerank 精排 | 相关文档排在前面 | [Implemented] |
-| 用户连续提问"怎么申请"，系统不知道在问什么 | **问题重写** | LLM 结合对话历史补全指代和上下文 | 多轮对话不丢失意图 | [Planned: Phase 4] |
+| 用户连续提问"怎么申请"，系统不知道在问什么 | **问题重写** | LLM 结合对话历史补全指代和上下文 | 多轮对话不丢失意图 | [Planned: Phase 5] |
 | 用户问"今天天气"走知识库检索是浪费 | **意图识别** | LLM 分类：知识查询 / 闲聊 | 路由到正确处理分支 | [Planned: Phase 5] |
-| 长对话 30 轮后 Token 超限 | **会话记忆** | 滑动窗口 + 旧消息 LLM 摘要压缩 | 记忆不丢，Token 受控 | [Planned: Phase 4] |
+| 长对话 30 轮后 Token 超限 | **会话记忆** | 滑动窗口 + Token 预算四池子分拆独立截断 | 记忆不丢，Token 受控，RAG 不退化 | [Planned: Phase 4] |
 
 ### 3.2 模块树
 
@@ -811,11 +811,95 @@ class OSSStorage(StorageBackend): ...      # 后续扩展
 
 ---
 
-## 8. 会话记忆策略 [Planned: Phase 4]
+## 8. 会话记忆策略 [Phase 4 实现中]
 
-- **滑动窗口**：保留最近 N 轮对话（默认 10 轮）
-- **摘要压缩**：超过窗口的旧消息用 LLM 生成摘要
-- **Token 控制**：总上下文 Token 数不超过模型上限的 80%
+### 8.1 Token 预算四池子分拆
+
+> **设计原则**：各池子独立控制预算，互不侵蚀。避免「历史很长 → 检索结果被挤没 → RAG 退化」。
+
+```
+MAX_CONTEXT = 20000（DeepSeek 上限 32K，留 12K 给 completion）
+├── SYSTEM_BUDGET   = 2000
+├── HISTORY_BUDGET  = 6000
+├── RETRIEVAL_BUDGET = 10000
+└── QUESTION_BUDGET  = 2000
+```
+
+| 池子 | 预算 | 超限策略 |
+|:---|:---|:---|
+| System Prompt | ≤ 2000 tokens | 固定模板，不会超 |
+| History | ≤ 6000 tokens | 从旧到新逐条移除直到预算内 |
+| Retrieval Chunks | ≤ 10000 tokens | 从低分 chunk 开始丢弃直到预算内 |
+| Current Question | ≤ 2000 tokens | 前端 2000 字符限制兜底 |
+
+### 8.2 历史消息注入
+
+**格式**：`chat_service.py` 已是 OpenAI `[{role, content}]` 格式，Phase 4 在 system prompt 之后、当前 question 之前插入历史：
+
+```python
+# Phase 4 改造后
+history_messages = await _load_history(db, conv.id,
+    max_tokens=HISTORY_BUDGET,  # 6000
+    max_messages=20,            # 硬上限兜底
+)
+messages = [
+    {"role": "system", "content": prompt_result.system_prompt},
+    *history_messages,          # ← Phase 4 新增
+    {"role": "user", "content": prompt_result.user_prompt},
+]
+```
+
+**`_load_history()` 约 40 行**：
+1. 从 DB 查询最近 N 条消息（`ORDER BY created_at DESC LIMIT 40`）
+2. 反转为时间正序
+3. 从旧到新逐条用 `estimate_tokens()` 累加，超过 `HISTORY_BUDGET` 停止
+4. assistant 消息去除 `[来源N]` 标记（`re.sub(r'\[来源\d+\]', '', content)`，见 §8.4）
+5. 返回 `[{role, content}, ...]`
+
+### 8.3 窗口截断策略
+
+- **Token 优先**：纯按消息条数截断不可靠（消息长短不一），从旧到新逐条移除直到 token 预算内
+- **条数硬上限**：最多 20 条消息作为兜底（防止极端长消息撑爆上下文）
+- **摘要压缩**：推迟到 Phase 5+。额外 LLM 调用开销大，截断先够用
+
+### 8.4 历史消息中 `[来源N]` 标记处理
+
+**决策**：注入历史时**去除** assistant 消息中的 `[来源N]` 标记。
+
+**理由**：旧轮次的 `[来源1]` 指向旧检索结果的 chunk A，本轮新检索结果的 `[来源1]` 指向不同的 chunk B——跨轮次编号冲突导致 LLM 混淆。用户说「来源3展开说说」的场景应由前端传递当前 sources 列表，而非依赖历史注入中的旧标记。
+
+### 8.5 历史中 `thinking_content` 处理
+
+**决策**：不注入。DeepSeek 思考链 token 开销大（通常 2-5K tokens），且与当前轮次无关。
+
+### 8.6 `conversation.updated_at` 更新规则
+
+**决策**：**每次新增 Message 后同步更新 `conversation.updated_at = now()`**。
+
+否则 Sidebar 会话列表按更新时间倒序排列会出现错乱——创建于 3 天前但刚刚聊了 20 轮的会话会沉到底部。
+
+### 8.7 会话删除策略
+
+**决策**：**硬删除**。
+
+```sql
+DELETE FROM messages WHERE conversation_id = :id;
+DELETE FROM conversations WHERE id = :id;
+```
+
+**理由**：项目规模无需软删除。软删除会污染所有查询条件、唯一索引和统计逻辑。
+
+### 8.8 Message 元数据预留
+
+**决策**：`messages` 表新增 `metadata JSON NULL DEFAULT NULL` 列，Phase 4 不使用。
+
+**理由**：未来 Tool Call / Web Search / Agent 等场景需要存放 `tool_name` / `tool_result` / `latency` 等非结构化数据。现在加是一行 alembic migration，以后加是数据迁移 + 兼容处理。
+
+### 8.9 问题重写
+
+**决策**：推迟到 Phase 5。Phase 4 历史消息注入后，DeepSeek 本身具备上下文理解能力，大部分指代可自然消解。如实际使用中效果不好，Phase 5 再补。
+
+实现约 30 行（一次无状态 LLM 调用 + prompt + 降级），不需要独立 API、不需要 SSE 事件、不需要前端展示。
 
 ---
 

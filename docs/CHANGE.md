@@ -1,5 +1,25 @@
 # DocMind 变更日志
 
+## 2026-06-05 — Phase 4 设计文档补充 + Schema 准备
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/alembic/versions/9a1b2c3d4e5f_*.py` | alembic migration：`messages` 表新增 `metadata JSON NULL DEFAULT NULL` 列 + `conversations` 表新增 `(user_id, updated_at)` 复合索引 |
+| `backend/app/models/message.py` | 新增 `metadata_: Mapped[dict\|None]` 字段（`"metadata"` 列映射），Phase 4 不使用，为 Phase 5+ 预留 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.22→v0.23。§8 重写：Token 预算四池子分拆 + 截断策略 + `[来源N]` 去除决策 + `updated_at` 更新规则 + 硬删除策略 + metadata 预留 + 问题重写推迟；§3.1 状态标记同步 |
+| `docs/ROADMAP.md` | v0.29→v0.30。Phase 4 从 6 项展开为 P0/P1/P2 三级共 11 项；问题重写推迟到 Phase 5；Phase 5 拆分为上线必需（8 项）+ Phase 5+ 迭代（12 项）；总体时间线更新 |
+| `docs/phase4_prereview.md` | Phase 4 入场审查报告大幅修订：代码修复全员降级、设计文档精简、排期替换为优先级列表、Phase 5 拆分方案、检查清单重写 |
+| `docs/TESTING.md` | v0.10→v0.11。新增 §7.4 多轮 RAG 回归测试设计（报销制度三连问）；§9 Phase 4 测试计划更新 |
+| `docs/TEST_CASES.md` | v0.42→v0.43。Phase 4 用例从 8 条占位扩充为 22 条（会话 CRUD ×4 + 滑动窗口 ×7 + 多轮 RAG ×5 + 前端组件 ×6） |
+| `backend/docs/DATABASE.md` | v0.8→v0.9。§2.6 `messages` 表新增 `metadata` 列；§3 索引策略新增 `idx_conversations_user_updated` |
+
 ## 2026-06-05 — Phase 3 审查报告修复（代码审查 → 修复清单）
 
 ### 修改
