@@ -46,7 +46,10 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 1440  #当前access_token过期时间
+    JWT_EXPIRE_MINUTES: int = 15  # access_token 短有效期（对齐 API.md §2）
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # access_token 短有效期（别名，与 JWT_EXPIRE_MINUTES 同步）
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # refresh_token 长有效期
+    REFRESH_TOKEN_SECRET_KEY: str = ""  # 空则回退到 JWT_SECRET_KEY
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

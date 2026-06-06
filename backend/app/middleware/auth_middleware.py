@@ -12,6 +12,7 @@ from app.core.security import decode_access_token
 _PUBLIC_PATHS = {
     "/api/auth/register",
     "/api/auth/login",
+    "/api/auth/refresh",
     "/api/health",
 }
 

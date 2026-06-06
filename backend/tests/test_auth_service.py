@@ -81,8 +81,9 @@ class TestLogin:
 
         assert isinstance(result, TokenResponse)
         assert result.access_token
+        assert result.refresh_token
         assert result.token_type == "bearer"
-        assert result.expires_in > 0
+        assert result.expires_in == 15 * 60  # 15 分钟
 
     @pytest.mark.asyncio
     async def test_login_wrong_password(self, mock_db):
@@ -113,3 +114,6 @@ class TestLogin:
         assert result.access_token
         assert len(result.access_token) > 20
         assert "." in result.access_token  # JWT 格式
+        assert result.refresh_token
+        assert len(result.refresh_token) > 20
+        assert "." in result.refresh_token  # JWT 格式

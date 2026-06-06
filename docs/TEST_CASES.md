@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.46 |
-| 最后更新 | 2026-06-05 |
+| 文档版本 | v0.47 |
+| 最后更新 | 2026-06-06 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 全部完成 + Phase 4.1 会话管理/多轮上下文已完成 + Phase 4.2 基础设施加固待启动） |
+| 状态 | 进行中（Phase 3 全部完成 + Phase 4.1 会话管理/多轮上下文已完成 + Phase 4.2 基础设施加固已完成） |
 
 ---
 
@@ -683,28 +683,28 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U9.1 | 已知业务异常映射 | `main.py` exception handlers | 各 `AppException` 子类抛出 | HTTP 状态码与 API.md 错误码表一致 | ⬜ | — | 遍历全部 31 个异常类 |
-| U9.2 | 未知异常兜底 | `main.py` exception handlers | 代码抛出 `ValueError` | 生产环境返回 500 E9001 + 屏蔽堆栈；开发环境返回堆栈 | ⬜ | — | — |
-| U9.3 | 异常日志记录 | `main.py` exception handlers | 任意异常 | 日志包含 request_id + user_id + 异常类型 + traceback | ⬜ | — | 结构化日志格式校验 |
+| U9.1 | 已知业务异常映射 | `main.py` exception handlers | 各 `AppException` 子类抛出 | HTTP 状态码与 API.md 错误码表一致 | ✅ | 2026-06-06 | test_error_handlers.py 7 用例 |
+| U9.2 | 未知异常兜底 | `main.py` exception handlers | 代码抛出 `ValueError` | 生产环境返回 500 E9001 + 屏蔽堆栈；开发环境返回堆栈 | ✅ | 2026-06-06 | test_error_handlers.py |
+| U9.3 | 异常日志记录 | `main.py` exception handlers | 任意异常 | 日志包含 request_id + user_id + 异常类型 + traceback | ✅ | 2026-06-06 | test_logging.py JSONFormatter 测试 |
 
 ### 6.6 Refresh Token 测试（Phase 4 新增 — 从 Phase 5 提前）
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A6.1 | Token 正常刷新 | POST `/api/auth/refresh` | 有效 refresh_token | 返回新 access_token + 新 refresh_token（Rotation） | ⬜ | — | — |
-| A6.2 | 旧 Token 失效 | POST `/api/auth/refresh` | 使用已刷新的旧 refresh_token | 401, Token 已失效 | ⬜ | — | Rotation 安全机制 |
-| A6.3 | 过期 Token 拒绝 | POST `/api/auth/refresh` | 过期 refresh_token | 401, Token 已过期 | ⬜ | — | — |
-| A6.4 | 主动吊销（改密） | PUT `/api/auth/password` | 改密后 | 所有旧 refresh_token 失效 | ⬜ | — | 强制下线场景 |
-| A6.5 | 主动吊销（登出） | POST `/api/auth/logout` | 登出后 | 当前 refresh_token 失效 | ⬜ | — | — |
-| U9.4 | Token 存储 | `auth_service` | 签发/刷新/吊销 | MySQL/Redis 中 token 记录正确 | ⬜ | — | — |
+| A6.1 | Token 正常刷新 | POST `/api/auth/refresh` | 有效 refresh_token | 返回新 access_token + 新 refresh_token（Rotation） | ✅ | 2026-06-06 | test_refresh_token.py 20 用例 |
+| A6.2 | 旧 Token 失效 | POST `/api/auth/refresh` | 使用已刷新的旧 refresh_token | 401, Token 已失效 | ✅ | 2026-06-06 | 泄露检测 E5009 |
+| A6.3 | 过期 Token 拒绝 | POST `/api/auth/refresh` | 过期 refresh_token | 401, Token 已过期 | ✅ | 2026-06-06 | E5006 |
+| A6.4 | 主动吊销（改密） | PUT `/api/auth/password` | 改密后 | 所有旧 refresh_token 失效 | ✅ | 2026-06-06 | test_refresh_token.py |
+| A6.5 | 主动吊销（登出） | POST `/api/auth/logout` | 登出后 | 当前 refresh_token 失效 | ✅ | 2026-06-06 | test_refresh_token.py |
+| U9.4 | Token 存储 | `auth_service` | 签发/刷新/吊销 | MySQL/Redis 中 token 记录正确 | ✅ | 2026-06-06 | SHA-256 哈希验证 |
 
 ### 6.7 结构化日志测试（Phase 4 新增 — 从 Phase 5 提前）
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U9.5 | 请求入口日志 | 中间件/日志工具 | HTTP 请求到达 | 日志包含 request_id + method + path + user_id | ⬜ | — | — |
-| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⬜ | — | 上线后定位慢查询关键 |
-| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⬜ | — | — |
+| U9.5 | 请求入口日志 | 中间件/日志工具 | HTTP 请求到达 | 日志包含 request_id + method + path + user_id | ✅ | 2026-06-06 | test_logging.py 12 用例 |
+| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⬜ | — | Phase 5 埋点补充 |
+| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⬜ | — | Phase 5 埋点补充 |
 
 ### 6.8 Phase 5 Admin 测试用例
 
@@ -803,8 +803,9 @@
 | `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py，2026-06-05） |
 | `services/chat_service.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py，2026-06-05） |
 | `core/error_handlers.py` | ≥ 80% | ⬜ | Phase 4.2：全局异常处理（3 用例，U9.1-U9.3） |
-| `core/logging.py` | ≥ 70% | ⬜ | Phase 4.2：结构化日志（3 用例，U9.5-U9.7） |
-| `services/auth_service.py` (refresh) | ≥ 80% | ⬜ | Phase 4.2：Refresh Token 机制（6 用例，A6.1-A6.5 + U9.4） |
+| `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（12 用例） |
+| `services/auth_service.py` (refresh) | ≥ 80% | ✅ | Phase 4.2：Refresh Token 机制（20 用例） |
+| `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
 | `api/admin.py` (接口测试) | ≥ 90% | ⬜ | Phase 5：Admin 端点（4 用例，A7.1-A7.4） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（3 用例，A8.1-A8.3） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |

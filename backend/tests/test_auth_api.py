@@ -16,7 +16,7 @@ def _make_user_response(username="testuser"):
 
 
 def _make_token_response():
-    return TokenResponse(access_token="fake-token", expires_in=86400)
+    return TokenResponse(access_token="fake-token", refresh_token="fake-refresh-token", expires_in=900)
 
 
 class TestRegisterAPI:
@@ -103,8 +103,9 @@ class TestLoginAPI:
         assert body["code"] == "0"
         assert body["message"] == "登录成功"
         assert body["data"]["access_token"] == "fake-token"
+        assert body["data"]["refresh_token"] == "fake-refresh-token"
         assert body["data"]["token_type"] == "bearer"
-        assert body["data"]["expires_in"] == 86400
+        assert body["data"]["expires_in"] == 900
 
     @pytest.mark.asyncio
     async def test_login_wrong_password(self, async_client):

@@ -1,5 +1,36 @@
 # DocMind 变更日志
 
+## 2026-06-06 — Phase 4.2 后端：基础设施加固（错误处理 / Refresh Token / 结构化日志）
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/core/logging_config.py` | 新建。结构化日志模块：JSONFormatter（JSON 格式输出）+ RequestIDFilter（contextvars 注入 request_id/user_id）+ setup_logging（DEBUG→console / 非 DEBUG→JSON） |
+| `backend/app/models/refresh_token.py` | 新建。RefreshToken ORM 模型，对齐 DATABASE.md §2.7（token_hash SHA-256 / expires_at / revoked_at） |
+| `backend/tests/test_logging.py` | 新建。结构化日志测试：JSONFormatter 输出 / RequestIDFilter 注入 / setup_logging 配置（12 用例） |
+| `backend/tests/test_error_handlers.py` | 新建。错误处理测试：异常→状态码映射 / AppException 验证 / 生产模式堆栈屏蔽（7 用例） |
+| `backend/tests/test_refresh_token.py` | 新建。Refresh Token 测试：security 层 / login 返回 / Rotation / 泄露检测 / logout / change_password / API 层（20 用例） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/config.py` | JWT_EXPIRE_MINUTES 1440→15；新增 ACCESS_TOKEN_EXPIRE_MINUTES / REFRESH_TOKEN_EXPIRE_DAYS / REFRESH_TOKEN_SECRET_KEY |
+| `backend/app/main.py` | 新增 RequestIDMiddleware（uuid4 request_id + contextvars + X-Request-ID header）；lifespan 调用 setup_logging；全局异常 handler 集成结构化日志 + 生产环境堆栈屏蔽 |
+| `backend/app/core/security.py` | 新增 create_refresh_token / decode_refresh_token / hash_token 三个函数 |
+| `backend/app/core/exceptions.py` | 新增 E5006 RefreshTokenExpiredException / E5007 RefreshTokenRevokedException / E5008 InvalidRefreshTokenException / E5009 TokenLeakDetectedException |
+| `backend/app/schemas/auth.py` | TokenResponse 新增 refresh_token 字段；新增 RefreshRequest / LogoutRequest / ChangePasswordRequest |
+| `backend/app/services/auth_service.py` | login() 返回含 refresh_token + 存入哈希；新增 refresh()（Rotation）/ logout() / change_password() / _revoke_all_user_tokens() |
+| `backend/app/api/auth.py` | 新增 POST /refresh / POST /logout / PUT /password 三个端点 |
+| `backend/app/middleware/auth_middleware.py` | _PUBLIC_PATHS 新增 /api/auth/refresh |
+| `backend/app/models/__init__.py` | 导入 RefreshToken |
+| `backend/app/models/conversation.py` | 补充 idx_conversations_user_updated 复合索引定义（与 9a1b2c3d4e5f 迁移对齐） |
+| `backend/tests/test_auth_api.py` | _make_token_response 补充 refresh_token 字段 + expires_in 86400→900 |
+| `backend/tests/test_auth_service.py` | test_login_success 补充 refresh_token 断言 + expires_in 验证 |
+| `backend/tests/test_schemas.py` | TestTokenResponse 补充 refresh_token 参数 |
+| `alembic/versions/d2ed146c7d8e_phase_4_2_refresh_tokens_表.py` | 新建。创建 refresh_tokens 表 + 3 个索引 |
+
 ## 2026-06-06 — 配置集中化：消除模块硬编码常量
 
 ### 修改

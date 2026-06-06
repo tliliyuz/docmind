@@ -1,7 +1,7 @@
 """会话表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,3 +37,7 @@ class Conversation(Base):
     user = relationship("User", back_populates="conversations")
     knowledge_base = relationship("KnowledgeBase", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")
+
+    __table_args__ = (
+        Index("idx_conversations_user_updated", "user_id", "updated_at"),
+    )

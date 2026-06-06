@@ -55,18 +55,19 @@ class TestLoginRequest:
 
 class TestTokenResponse:
     def test_default_token_type(self):
-        resp = TokenResponse(access_token="abc", expires_in=86400)
+        resp = TokenResponse(access_token="abc", refresh_token="def", expires_in=86400)
         assert resp.token_type == "bearer"
 
     def test_model_dump(self):
-        resp = TokenResponse(access_token="abc", expires_in=3600)
+        resp = TokenResponse(access_token="abc", refresh_token="def", expires_in=3600)
         data = resp.model_dump()
         assert "access_token" in data
+        assert "refresh_token" in data
         assert "token_type" in data
         assert data["expires_in"] == 3600
 
     def test_custom_token_type(self):
-        resp = TokenResponse(access_token="abc", token_type="jwt", expires_in=60)
+        resp = TokenResponse(access_token="abc", refresh_token="def", token_type="jwt", expires_in=60)
         assert resp.token_type == "jwt"
 
 

@@ -165,6 +165,31 @@ class PermissionDeniedException(AppException):
         super().__init__("E5005", "无权限执行此操作", 403)
 
 
+class RefreshTokenExpiredException(AppException):
+    def __init__(self):
+        super().__init__("E5006", "Refresh Token 已过期", 401)
+
+
+class RefreshTokenRevokedException(AppException):
+    def __init__(self):
+        super().__init__("E5007", "Refresh Token 已吊销", 401)
+
+
+class InvalidRefreshTokenException(AppException):
+    def __init__(self, detail: str = ""):
+        super().__init__("E5008", "Refresh Token 无效或格式错误", 401, detail)
+
+
+class TokenLeakDetectedException(AppException):
+    def __init__(self):
+        super().__init__(
+            "E5009",
+            "Token 可能泄露，已吊销全部会话",
+            401,
+            "检测到已吊销的旧 Token 被重用，已吊销该用户全部 Refresh Token",
+        )
+
+
 # ==================== 系统错误 E9xxx ====================
 
 class InternalServerException(AppException):
