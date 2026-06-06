@@ -23,8 +23,8 @@ const {
 
 // ===== Pinia/路由 Mock =====
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: mockPush }),
-  useRoute: () => ({ name: 'chat' }),
+  useRouter: () => ({ push: mockPush, replace: vi.fn() }),
+  useRoute: () => ({ name: 'chat', query: {}, path: '/chat' }),
 }))
 
 vi.mock('element-plus', async () => {
@@ -51,9 +51,22 @@ vi.mock('@/stores/chat', () => ({
     loadSelectableKBs: mockLoadSelectableKBs,
     setSelectedKB: mockSetSelectedKB,
     sendUserMessage: mockSendUserMessage,
+    loadConversation: vi.fn().mockRejectedValue(new Error('not found')),
     abort: mockAbort,
     clearMessages: mockClearMessages,
     regenerate: mockRegenerate,
+  }),
+}))
+
+vi.mock('@/stores/conversation', () => ({
+  useConversationStore: () => ({
+    conversations: [],
+    loading: false,
+    groupedConversations: { today: [], yesterday: [], recent: [], older: [] },
+    loadConversations: vi.fn(),
+    addConversation: vi.fn(),
+    updateConversationTitle: vi.fn(),
+    reset: vi.fn(),
   }),
 }))
 

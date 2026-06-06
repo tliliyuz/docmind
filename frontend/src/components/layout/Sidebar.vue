@@ -30,7 +30,7 @@
       <!-- 展开态：含文字按钮 -->
       <button
         class="new-chat-btn"
-        :class="{ active: route.path === '/chat' }"
+        :class="{ active: route.path === '/chat' && !route.query.conversation_id }"
         @click="handleNewChat"
         v-show="!collapsed"
       >
@@ -40,7 +40,7 @@
       <!-- 收起态：仅图标按钮 -->
       <button
         class="new-chat-btn new-chat-btn-icon"
-        :class="{ active: route.path === '/chat' }"
+        :class="{ active: route.path === '/chat' && !route.query.conversation_id }"
         @click="handleNewChat"
         v-show="collapsed"
         title="新建对话"
@@ -49,14 +49,202 @@
       </button>
     </div>
 
-    <!-- 中间：会话列表区域（Phase 4 实现完整交互） -->
+    <!-- 中间：会话列表（可滚动） + 知识库导航（固定） + 管理后台（固定） -->
     <div class="sidebar-middle">
+      <!-- 会话列表区域（可滚动） -->
       <div class="conv-section">
         <div class="section-label" v-show="!collapsed">历史会话</div>
-        <div class="conv-list-empty">
+
+        <!-- 加载中 -->
+        <div v-if="convStore.loading" class="conv-loading">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span v-show="!collapsed">加载中...</span>
+        </div>
+
+        <!-- 空态 -->
+        <div v-else-if="convStore.conversations.length === 0" class="conv-list-empty">
           <i class="fas fa-comments empty-icon"></i>
           <span class="empty-text" v-show="!collapsed">暂无会话</span>
         </div>
+
+        <!-- 会话列表（展开态：分组显示） -->
+        <template v-else-if="!collapsed">
+          <!-- 今天 -->
+          <div v-if="convStore.groupedConversations.today.length" class="conv-group">
+            <div class="conv-group-label">今天</div>
+            <div
+              v-for="conv in convStore.groupedConversations.today"
+              :key="conv.id"
+              class="conv-item"
+              :class="{ active: isActive(conv.id) }"
+              @click="handleSelectConversation(conv)"
+            >
+              <div class="conv-icon">
+                <i class="fas fa-message"></i>
+              </div>
+              <div class="conv-info">
+                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                  <input
+                    ref="editInputRef"
+                    v-model="editingTitle"
+                    class="conv-edit-input"
+                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.escape="cancelRename"
+                    @blur="handleSaveRename(conv.id)"
+                  />
+                </div>
+                <template v-else>
+                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
+                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                </template>
+              </div>
+              <div class="conv-actions" v-if="editingId !== conv.id">
+                <button title="重命名" @click.stop="startRename(conv)">
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button title="删除" @click.stop="handleDelete(conv)">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 昨天 -->
+          <div v-if="convStore.groupedConversations.yesterday.length" class="conv-group">
+            <div class="conv-group-label">昨天</div>
+            <div
+              v-for="conv in convStore.groupedConversations.yesterday"
+              :key="conv.id"
+              class="conv-item"
+              :class="{ active: isActive(conv.id) }"
+              @click="handleSelectConversation(conv)"
+            >
+              <div class="conv-icon">
+                <i class="fas fa-message"></i>
+              </div>
+              <div class="conv-info">
+                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                  <input
+                    ref="editInputRef"
+                    v-model="editingTitle"
+                    class="conv-edit-input"
+                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.escape="cancelRename"
+                    @blur="handleSaveRename(conv.id)"
+                  />
+                </div>
+                <template v-else>
+                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
+                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                </template>
+              </div>
+              <div class="conv-actions" v-if="editingId !== conv.id">
+                <button title="重命名" @click.stop="startRename(conv)">
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button title="删除" @click.stop="handleDelete(conv)">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 近 7 天 -->
+          <div v-if="convStore.groupedConversations.recent.length" class="conv-group">
+            <div class="conv-group-label">近 7 天</div>
+            <div
+              v-for="conv in convStore.groupedConversations.recent"
+              :key="conv.id"
+              class="conv-item"
+              :class="{ active: isActive(conv.id) }"
+              @click="handleSelectConversation(conv)"
+            >
+              <div class="conv-icon">
+                <i class="fas fa-message"></i>
+              </div>
+              <div class="conv-info">
+                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                  <input
+                    ref="editInputRef"
+                    v-model="editingTitle"
+                    class="conv-edit-input"
+                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.escape="cancelRename"
+                    @blur="handleSaveRename(conv.id)"
+                  />
+                </div>
+                <template v-else>
+                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
+                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                </template>
+              </div>
+              <div class="conv-actions" v-if="editingId !== conv.id">
+                <button title="重命名" @click.stop="startRename(conv)">
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button title="删除" @click.stop="handleDelete(conv)">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 更早 -->
+          <div v-if="convStore.groupedConversations.older.length" class="conv-group">
+            <div class="conv-group-label">更早</div>
+            <div
+              v-for="conv in convStore.groupedConversations.older"
+              :key="conv.id"
+              class="conv-item"
+              :class="{ active: isActive(conv.id) }"
+              @click="handleSelectConversation(conv)"
+            >
+              <div class="conv-icon">
+                <i class="fas fa-message"></i>
+              </div>
+              <div class="conv-info">
+                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                  <input
+                    ref="editInputRef"
+                    v-model="editingTitle"
+                    class="conv-edit-input"
+                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.escape="cancelRename"
+                    @blur="handleSaveRename(conv.id)"
+                  />
+                </div>
+                <template v-else>
+                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
+                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                </template>
+              </div>
+              <div class="conv-actions" v-if="editingId !== conv.id">
+                <button title="重命名" @click.stop="startRename(conv)">
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button title="删除" @click.stop="handleDelete(conv)">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 会话列表（收起态：仅图标 + tooltip） -->
+        <template v-else>
+          <div
+            v-for="conv in convStore.conversations.slice(0, 10)"
+            :key="conv.id"
+            class="conv-item conv-item-collapsed"
+            :class="{ active: isActive(conv.id) }"
+            :title="conv.title || '新对话'"
+            @click="handleSelectConversation(conv)"
+          >
+            <div class="conv-icon">
+              <i class="fas fa-message"></i>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- 知识库导航（所有用户可见） -->
@@ -139,38 +327,131 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
+import { useConversationStore } from '@/stores/conversation'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const convStore = useConversationStore()
 
 /** 侧边栏折叠状态 */
 const collapsed = ref(false)
+
+// ===== 重命名相关 =====
+const editingId = ref(null)
+const editingTitle = ref('')
+const editInputRef = ref(null)
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
 }
 
+/** 判断会话是否为当前活跃会话 */
+function isActive(convId) {
+  return chatStore.conversationId === convId
+}
+
+/** 格式化时间（仅显示时:分） */
+function formatTime(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** 新建对话 */
 function handleNewChat() {
-  if (route.path === '/chat') {
-    chatStore.clearMessages()
-  } else {
-    router.push('/chat')
+  chatStore.clearMessages()
+  router.push('/chat')
+}
+
+/** 选择历史会话 */
+function handleSelectConversation(conv) {
+  if (isActive(conv.id)) return
+  router.push(`/chat?conversation_id=${conv.id}`)
+}
+
+/** 开始重命名 */
+async function startRename(conv) {
+  editingId.value = conv.id
+  editingTitle.value = conv.title || ''
+  await nextTick()
+  // 聚焦输入框
+  if (editInputRef.value && editInputRef.value.length > 0) {
+    editInputRef.value[0].focus()
+    editInputRef.value[0].select()
   }
 }
 
-function handleLogout() {
+/** 取消重命名 */
+function cancelRename() {
+  editingId.value = null
+  editingTitle.value = ''
+}
+
+/** 保存重命名 */
+async function handleSaveRename(id) {
+  const newTitle = editingTitle.value.trim()
+  if (!newTitle) {
+    cancelRename()
+    return
+  }
+  try {
+    await convStore.renameConversation(id, newTitle)
+    ElMessage.success('重命名成功')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '重命名失败')
+  } finally {
+    cancelRename()
+  }
+}
+
+/** 删除会话 */
+async function handleDelete(conv) {
+  try {
+    await ElMessageBox.confirm(
+      `删除会话「${conv.title || '新对话'}」后不可恢复，是否继续？`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+    await convStore.deleteConversation(conv.id)
+    // 如果删除的是当前会话，清空并跳转到 /chat
+    if (isActive(conv.id)) {
+      chatStore.clearMessages()
+      router.push('/chat')
+    }
+    ElMessage.success('会话已删除')
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+/** 退出登录 */
+async function handleLogout() {
   chatStore.reset()
-  authStore.logout()
+  await authStore.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
 }
+
+// 加载会话列表
+onMounted(() => {
+  if (authStore.isLoggedIn) {
+    convStore.loadConversations()
+  }
+})
 </script>
 
 <style scoped>
@@ -310,13 +591,23 @@ function handleLogout() {
 /* ===== 中间区域 ===== */
 .sidebar-middle {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--dm-space-3) var(--dm-space-3);
+  min-height: 0;
 }
 
 /* 收起态 */
 .collapsed .sidebar-middle {
   padding: var(--dm-space-2);
+}
+
+/* 会话列表：可滚动区域 */
+.conv-section {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .section-label {
@@ -327,6 +618,17 @@ function handleLogout() {
   letter-spacing: 0.5px;
   padding: var(--dm-space-2) var(--dm-space-3);
   margin-top: var(--dm-space-2);
+}
+
+/* ===== 会话列表 ===== */
+.conv-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dm-space-2);
+  padding: var(--dm-space-6) 0;
+  color: var(--dm-text-tertiary);
+  font-size: var(--dm-text-xs);
 }
 
 .conv-list-empty {
@@ -347,8 +649,130 @@ function handleLogout() {
   font-size: var(--dm-text-xs);
 }
 
+.conv-group {
+  margin-bottom: var(--dm-space-2);
+}
+
+.conv-group-label {
+  font-size: var(--dm-text-3xs);
+  color: var(--dm-text-tertiary);
+  padding: var(--dm-space-1) var(--dm-space-3);
+  font-weight: var(--dm-weight-medium);
+}
+
+.conv-item {
+  padding: 10px 12px;
+  border-radius: var(--dm-radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  transition: background var(--dm-transition-fast);
+  position: relative;
+}
+
+.conv-item:hover {
+  background: var(--dm-bg-chat);
+}
+
+.conv-item.active {
+  background: var(--dm-primary-light);
+}
+
+.conv-item.active .conv-title {
+  color: var(--dm-primary);
+  font-weight: var(--dm-weight-semibold);
+}
+
+/* 收起态：居中仅图标 */
+.conv-item-collapsed {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.conv-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--dm-bg-chat);
+  border-radius: var(--dm-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dm-text-tertiary);
+  font-size: var(--dm-text-2xs);
+  flex-shrink: 0;
+}
+
+.conv-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.conv-title {
+  font-size: var(--dm-text-xs);
+  color: var(--dm-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-meta {
+  font-size: var(--dm-text-3xs);
+  color: var(--dm-text-tertiary);
+  margin-top: var(--dm-space-1);
+}
+
+/* 重命名输入框 */
+.conv-edit-wrap {
+  display: flex;
+}
+
+.conv-edit-input {
+  width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--dm-primary);
+  border-radius: var(--dm-radius-xs);
+  font-size: var(--dm-text-xs);
+  color: var(--dm-text-primary);
+  background: var(--dm-bg-card);
+  outline: none;
+}
+
+.conv-actions {
+  opacity: 0;
+  transition: opacity var(--dm-transition-fast);
+  display: flex;
+  gap: var(--dm-space-1);
+}
+
+.conv-item:hover .conv-actions {
+  opacity: 1;
+}
+
+.conv-actions button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--dm-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--dm-radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--dm-text-3xs);
+}
+
+.conv-actions button:hover {
+  background: var(--dm-border);
+  color: var(--dm-text-primary);
+}
+
 /* ===== 知识库导航 ===== */
 .kb-nav {
+  flex-shrink: 0;
   border-top: 1px solid var(--dm-border-light);
   margin-top: var(--dm-space-3);
   padding-top: var(--dm-space-1);
@@ -356,6 +780,7 @@ function handleLogout() {
 
 /* ===== 管理导航 ===== */
 .admin-nav {
+  flex-shrink: 0;
   border-top: 1px solid var(--dm-border-light);
   margin-top: var(--dm-space-3);
   padding-top: var(--dm-space-1);

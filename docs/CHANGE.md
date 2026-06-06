@@ -1,5 +1,43 @@
 # DocMind 变更日志
 
+## 2026-06-06 — Phase 4.4 前端：会话列表 + 路由 + Token 刷新
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/stores/conversation.js` | 新建。会话列表 Store：loadConversations（分页循环加载）/ renameConversation / deleteConversation / addConversation / updateConversationTitle + groupedConversations 时间分组计算属性 |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/api/conversation.js` | 填充 4 个会话 API：fetchConversations / fetchConversationDetail / renameConversation / deleteConversation |
+| `frontend/src/api/auth.js` | 新增 refreshToken / logout 两个 API 函数 |
+| `frontend/src/api/index.js` | Axios 响应拦截器改造：401+E5003 自动刷新 Token → 重放原请求；防并发刷新（isRefreshing + requestQueue）；刷新失败清除跳转 |
+| `frontend/src/utils/sse.js` | SSE 流增加 401+E5003 Token 自动刷新重试；token 从 localStorage 读取（不再通过 options.token 参数传入） |
+| `frontend/src/stores/auth.js` | 新增 refreshToken 状态 / setTokens / refresh / scheduleRefresh 定时器；logout 增强为调后端吊销 refresh_token + 清除本地状态 |
+| `frontend/src/stores/chat.js` | 新增 loadConversation 方法（加载历史会话消息）；handleSSEEvent 中 meta/finish 事件同步通知 conversationStore |
+| `frontend/src/views/ChatPage.vue` | onMounted 读取 route.query.conversation_id 加载历史会话；watch 路由变化切换会话；kb_id 作为降级参数 |
+| `frontend/src/components/layout/Sidebar.vue` | 替换占位空态为完整会话列表：时间分组（今天/昨天/近7天/更早）/ 高亮当前会话 / 点击切换 / 悬停重命名删除 / 收起态仅图标+tooltip |
+| `frontend/tests/sse.test.js` | 适配 SSE Token 改造：token 从 localStorage 读取（2 个用例更新） |
+| `frontend/tests/ChatPage.test.js` | 适配路由 query 参数：mock route 补充 query/path；补充 conversation store mock 和 loadConversation mock |
+
+### 说明
+
+- 所有 211 个前端测试通过（14 个测试文件）
+- `src/stores/conversation.js` 为新建文件，独立管理会话列表状态，与 chat.js 解耦
+- Token 自动刷新机制同时覆盖 Axios 请求和 SSE 流式请求
+
+## 2026-06-06 — Phase 4.4 前端测试补充
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/tests/Sidebar.test.js` | 新建。Sidebar 会话列表组件测试（21 用例）：渲染 / 时间分组 / 高亮 / 点击切换 / 重命名（Enter 保存/Esc 取消/空标题拒绝）/ 删除（确认/取消）/ 新建对话 / 退出登录 / 折叠展开 |
+| `frontend/tests/tokenRefresh.test.js` | 新建。Token 刷新 + authStore + conversationStore 测试（20 用例）：Axios 请求拦截器 / 401 处理 / setTokens / logout / refresh / localStorage 恢复 / conversationStore CRUD / 时间分组 |
+
 ## 2026-06-06 — Phase 4.2 后端：基础设施加固（错误处理 / Refresh Token / 结构化日志）
 
 ### 新增

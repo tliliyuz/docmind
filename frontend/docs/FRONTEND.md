@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.16 |
-| 最后更新 | 2026-06-05 |
+| 文档版本 | v0.17 |
+| 最后更新 | 2026-06-06 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 4 设计就绪） |
+| 状态 | 草稿（Phase 4 前端已实现） |
 
 ---
 
@@ -831,8 +831,8 @@ function parseSSEEvent(raw) {
 
 | 模块 | 当前状态 | Phase 3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
-| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：会话路由（`?conversation_id=`）、多轮对话 |
-| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮（清空消息列表 + conversation_id=null，已在 /chat 页时清空；route 高亮） | Phase 4：历史会话列表（按时间分组）、重命名（双击编辑）、删除（确认弹窗） |
+| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示、会话路由（`?conversation_id=`） | — |
+| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮 + 历史会话列表（按时间分组）、重命名（双击编辑）、删除（确认弹窗）、高亮当前会话 | — |
 | ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 | — |
 | MessageList | ✅ 已实现 | 自动滚动底部 + 手动上滚「新消息」浮动按钮 + MessageItem 渲染 | — |
 | MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片 + typing 动画 + 重新生成按钮 | — |
@@ -845,10 +845,10 @@ function parseSSEEvent(raw) {
 | Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
 | 状态轮询 | ✅ 已实现 | — | Phase 6：可选升级 WebSocket |
 | SSE 流式输出 | ✅ 已实现 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
-| 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 ID | Phase 4：多轮历史注入 |
-| 标题自动生成 | ✅ 已实现 | 首轮 `finish` 事件返回 title（截取 question[:12]） | Phase 5：LLM 标题生成替换 |
-| Axios Refresh Token 拦截器 | ⬜ Phase 4 设计就绪 | 401+E5003 自动调 refresh → 重放原请求 + 并发防抖 + scheduleRefresh 定时器 | — |
-| authStore refresh/logout | ⬜ Phase 4 设计就绪 | `refresh()` 换取新 token 对 + `logout()` 调 `POST /api/auth/logout` 吊销 + 定时器启停 | — |
+| 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 ID，自动同步到会话列表 Store | — |
+| 标题自动生成 | ✅ 已实现 | 首轮 `finish` 事件返回 title（截取 question[:12]），自动更新会话列表标题 | Phase 5：LLM 标题生成替换 |
+| Axios Refresh Token 拦截器 | ✅ 已实现 | 401+E5003 自动调 refresh → 重放原请求 + 并发防抖 + scheduleRefresh 定时器 + SSE 流式请求适配 | — |
+| authStore refresh/logout | ✅ 已实现 | `refresh()` 换取新 token 对 + `logout()` 调 `POST /api/auth/logout` 吊销 + 定时器启停 | — |
 
 ---
 

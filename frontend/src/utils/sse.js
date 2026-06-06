@@ -41,6 +41,26 @@ export function parseSSEEvent(raw) {
   return { event, data }
 }
 
+/** 执行 Token 刷新（SSE 专用，与 Axios 拦截器共享刷新逻辑） */
+async function refreshSSEToken() {
+  const refreshToken = localStorage.getItem('refresh_token')
+  if (!refreshToken) throw new Error('无 refresh_token')
+
+  const res = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+
+  if (!res.ok) throw new Error('Token 刷新失败')
+
+  const json = await res.json()
+  const { access_token, refresh_token: newRefreshToken } = json.data
+  localStorage.setItem('access_token', access_token)
+  localStorage.setItem('refresh_token', newRefreshToken)
+  return access_token
+}
+
 /**
  * 创建 SSE 流式请求并逐事件回调
  *
@@ -54,20 +74,66 @@ export function parseSSEEvent(raw) {
  * @returns {{ abort: () => void }} 返回 abort 函数用于手动中断
  */
 export function createSSEStream(url, options) {
-  const { body, token, onEvent, onError, onDone } = options
+  const { body, onEvent, onError, onDone } = options
   const controller = new AbortController()
 
-  const doFetch = async () => {
+  const doFetch = async (tokenParam) => {
     try {
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(tokenParam ? { Authorization: `Bearer ${tokenParam}` } : {}),
         },
         body: JSON.stringify(body),
         signal: controller.signal,
       })
+
+      // 401 + E5003 → 尝试刷新 Token 并重试一次
+      if (response.status === 401) {
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch {
+          errorData = {}
+        }
+
+        if (errorData.code === 'E5003') {
+          try {
+            const newToken = await refreshSSEToken()
+            // 重试请求
+            response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${newToken}`,
+              },
+              body: JSON.stringify(body),
+              signal: controller.signal,
+            })
+          } catch (refreshErr) {
+            // 刷新失败 → 清除 token → 跳转登录
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('refresh_token')
+            localStorage.removeItem('user')
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login'
+            }
+            onError?.(new Error('认证已过期，请重新登录'))
+            return
+          }
+        } else {
+          // 其他 401 错误
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          localStorage.removeItem('user')
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
+          onError?.(new Error(errorData.message || '认证失败'))
+          return
+        }
+      }
 
       // 非 200 响应：尝试解析 JSON 错误
       if (!response.ok) {
@@ -124,7 +190,9 @@ export function createSSEStream(url, options) {
     }
   }
 
-  doFetch()
+  // 从 localStorage 获取最新 token
+  const token = localStorage.getItem('access_token')
+  doFetch(token)
 
   return {
     abort() {

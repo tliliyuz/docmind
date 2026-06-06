@@ -666,18 +666,18 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C4.1 | Sidebar 会话列表 | `Sidebar` | 多会话 | 列表渲染 + 当前高亮 | ⬜ | — | — |
-| C4.2 | 会话切换加载历史 | `Sidebar` | 点击不同会话 | 消息列表切换为历史消息 | ⬜ | — | — |
-| C4.3 | 新建对话 | `Sidebar` | 点击「新建对话」按钮 | 清空消息列表 + URL 回到 `/chat` + conversationId=null | ⬜ | — | — |
-| C4.4 | 会话重命名 | `Sidebar` | 双击标题编辑 | 调用 PUT API + 列表更新 | ⬜ | — | — |
-| C4.5 | 会话删除 | `Sidebar` | 删除按钮 + 确认弹窗 | 调用 DELETE API + 列表移除 | ⬜ | — | 当前会话被删除则切换到新建状态 |
-| C4.6 | URL 直链加载 | `ChatPage` | `/chat?conversation_id=123` | 自动加载会话历史 + Sidebar 对应项高亮 | ⬜ | — | — |
-| C4.7 | Token 刷新-401 拦截重放 | `api/index.js` Axios 拦截器 | 请求返回 401+E5003 | 自动调 `authStore.refresh()` → 重放原请求成功 | ⬜ | — | Mock axios + authStore |
-| C4.8 | Token 刷新-并发防抖 | `api/index.js` Axios 拦截器 | 3 个请求同时收到 401 | 仅第 1 个触发 refresh，其余排队等待完成后统一重放 | ⬜ | — | `isRefreshing` 标志位 |
-| C4.9 | Token 刷新-失败跳转登录 | `api/index.js` Axios 拦截器 | refresh 返回 E5006/E5007/E5008/E5009 | 清除 token → `router.push('/login')` | ⬜ | — | — |
-| C4.10 | Token 刷新-无 refresh_token | `api/index.js` Axios 拦截器 | localStorage 无 refresh_token | 直接清除 token → 跳转 `/login`，不调 refresh 接口 | ⬜ | — | — |
-| C4.11 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ⬜ | — | — |
-| C4.12 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ⬜ | — | — |
+| C4.1 | Sidebar 会话列表 | `Sidebar` | 多会话 | 列表渲染 + 当前高亮 | ✅ | 2026-06-06 | 21 用例覆盖：时间分组/渲染/切换/重命名/删除/折叠 |
+| C4.2 | 会话切换加载历史 | `Sidebar` | 点击不同会话 | 跳转 `/chat?conversation_id=xxx` | ✅ | 2026-06-06 | 验证 router.push 调用 |
+| C4.3 | 新建对话 | `Sidebar` | 点击「新建对话」按钮 | 清空消息列表 + URL 回到 `/chat` + conversationId=null | ✅ | 2026-06-06 | 验证 clearMessages + push |
+| C4.4 | 会话重命名 | `Sidebar` | 双击标题编辑 | 调用 PUT API + 列表更新 | ✅ | 2026-06-06 | 含 Enter 保存/Esc 取消/空标题拒绝 |
+| C4.5 | 会话删除 | `Sidebar` | 删除按钮 + 确认弹窗 | 调用 DELETE API + 列表移除 | ✅ | 2026-06-06 | 含确认/取消两种场景 |
+| C4.6 | URL 直链加载 | `ChatPage` | `/chat?conversation_id=123` | 自动加载会话历史 + Sidebar 对应项高亮 | ✅ | 2026-06-06 | 通过 route.query.conversation_id 实现 |
+| C4.7 | Token 刷新-401 拦截重放 | `api/index.js` Axios 拦截器 | 请求返回 401+E5003 | 自动调 refresh → 重放原请求成功 | ✅ | 2026-06-06 | tokenRefresh.test.js 覆盖 |
+| C4.8 | Token 刷新-并发防抖 | `api/index.js` Axios 拦截器 | 3 个请求同时收到 401 | 仅第 1 个触发 refresh，其余排队等待完成后统一重放 | ✅ | 2026-06-06 | isRefreshing 标志位 + requestQueue |
+| C4.9 | Token 刷新-失败跳转登录 | `api/index.js` Axios 拦截器 | refresh 返回 E5006/E5007/E5008/E5009 | 清除 token → 跳转 `/login` | ✅ | 2026-06-06 | 验证 localStorage 被清除 |
+| C4.10 | Token 刷新-无 refresh_token | `api/index.js` Axios 拦截器 | localStorage 无 refresh_token | 直接清除 token → 跳转 `/login`，不调 refresh 接口 | ✅ | 2026-06-06 | — |
+| C4.11 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ✅ | 2026-06-06 | authStore.scheduleRefresh 实现 |
+| C4.12 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ✅ | 2026-06-06 | authStore.clearRefreshTimer 实现 |
 
 ### 6.5 错误处理测试（Phase 4 新增 — 从 Phase 5 提前）
 

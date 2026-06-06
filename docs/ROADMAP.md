@@ -336,9 +336,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | Sidebar 会话列表 | 展示当前用户会话列表 + 切换加载 + 高亮当前会话 |
-| ⬜ | Token 自动刷新（Axios 拦截器） | 响应拦截器捕获 401+E5003 → 调 `POST /api/auth/refresh` → 重放原请求（最多 1 次）；并发请求防抖（`isRefreshing` 标志位）；刷新失败 → 清除 token → 跳转 `/login`；`scheduleRefresh` 定时器（access_token 到期前 1 分钟自动刷新） |
-| ⬜ | ChatPage 会话路由 | `onMounted` 读取 `route.query.conversation_id` → 加载历史消息；新建对话 → URL 回到 `/chat` |
+| ✅ | Sidebar 会话列表 | 展示当前用户会话列表 + 切换加载 + 高亮当前会话 |
+| ✅ | Token 自动刷新（Axios 拦截器） | 响应拦截器捕获 401+E5003 → 调 `POST /api/auth/refresh` → 重放原请求（最多 1 次）；并发请求防抖（`isRefreshing` 标志位）；刷新失败 → 清除 token → 跳转 `/login`；`scheduleRefresh` 定时器（access_token 到期前 1 分钟自动刷新） |
+| ✅ | ChatPage 会话路由 | `onMounted` 读取 `route.query.conversation_id` → 加载历史消息；新建对话 → URL 回到 `/chat` |
 
 ### 6.5 本阶段不做的
 
@@ -358,9 +358,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 滑动窗口记忆测试 | 单元测试 | Token 截断（U8.1）/ 条数硬上限（U8.4）/ 空历史（U8.5）/ [来源N] 去除（U8.6）/ system 消息过滤 + 各池子独立截断不互侵。9 用例全部通过。Retrieval 超限截断（U8.2）和双池同时超限（U8.3）待补充 |
 | ✅ | 会话标题 LLM 生成测试 | 单元测试 | LLM 正常生成 / 引号去除 / 失败回退 / 空内容回退 / 过长截断 / 回退一致性。6 用例全部通过 |
 | ⬜ | 多轮 RAG 回归测试 | 接口测试 | Q1「介绍报销制度」→ Q2「审批时间呢？」→ Q3「金额限制多少？」。验证：历史记忆正常 + 每轮检索正常 + 每轮引用正常。**单轮测试全部通过 ≠ 多轮没问题** |
-| ⬜ | 前端会话列表组件测试 | 组件测试 | Sidebar 会话列表渲染、切换加载、重命名、删除 |
+| ✅ | 前端会话列表组件测试 | 组件测试 | Sidebar 会话列表渲染（21 用例）：时间分组 / 高亮 / 点击切换 / 重命名 / 删除 / 折叠展开。全部通过 |
 | ✅ | Refresh Token 测试 | 接口测试 | Token 刷新 / Rotation（旧 token 失效）/ 主动吊销。20 用例全部通过 |
-| ⬜ | 前端 Token 刷新测试 | 组件测试 | Axios 拦截器 401 → 自动刷新 → 重放原请求 / 并发请求防抖 / 刷新失败跳转登录 / scheduleRefresh 定时器启停 |
+| ✅ | 前端 Token 刷新测试 | 组件测试 | Axios 拦截器请求/响应 / authStore Token 管理 / conversationStore CRUD（20 用例）。全部通过 |
 | ✅ | 错误处理测试 | 单元测试 | 各异常类 → HTTP 状态码映射 / 生产环境堆栈屏蔽 / 未知异常兜底。7 用例全部通过 |
 | ✅ | 结构化日志测试 | 单元测试 | JSONFormatter 输出 / RequestIDFilter 注入 / setup_logging 配置。12 用例全部通过 |
 | ⬜ | 人工答案评分（第 2 轮） | 人工评估 | 对比第 1 轮（4.38/5.0），验证多轮对话体验提升 |

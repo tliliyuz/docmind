@@ -304,6 +304,9 @@ describe('createSSEStream', () => {
   })
 
   it('请求头包含正确的 Content-Type 和 Authorization', async () => {
+    // 从 localStorage 读取 token
+    localStorage.setItem('access_token', 'my-jwt-token')
+
     mockSSEResponse([
       { event: 'finish', data: { message_id: 1 } },
     ])
@@ -312,7 +315,6 @@ describe('createSSEStream', () => {
 
     createSSEStream('/api/chat', {
       body: { kb_id: 1, question: '测试' },
-      token: 'my-jwt-token',
       onEvent: vi.fn(),
       onDone,
     })
@@ -331,6 +333,9 @@ describe('createSSEStream', () => {
   })
 
   it('无 token 时不发送 Authorization 头', async () => {
+    // 清除 localStorage 中的 token
+    localStorage.removeItem('access_token')
+
     mockSSEResponse([
       { event: 'finish', data: { message_id: 1 } },
     ])
@@ -339,7 +344,6 @@ describe('createSSEStream', () => {
 
     createSSEStream('/api/chat', {
       body: { kb_id: 1, question: '测试' },
-      token: null,
       onEvent: vi.fn(),
       onDone,
     })

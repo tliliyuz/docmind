@@ -7,6 +7,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { sendMessage as apiSendMessage, fetchSelectableKBs } from '@/api/chat'
+import { fetchConversationDetail } from '@/api/conversation'
+import { useConversationStore } from '@/stores/conversation'
 
 let clientIdCounter = 0
 function genClientId() {
@@ -158,6 +160,18 @@ export const useChatStore = defineStore('chat', () => {
         // 记录会话 ID（新对话时后端自动创建）
         if (data.conversation_id) {
           conversationId.value = data.conversation_id
+          // 通知会话列表 Store 新增会话
+          try {
+            const convStore = useConversationStore()
+            convStore.addConversation({
+              id: data.conversation_id,
+              kb_id: selectedKBId.value,
+              title: '新对话',
+              message_count: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+          } catch { /* store 可能未初始化 */ }
         }
         break
 
@@ -188,6 +202,13 @@ export const useChatStore = defineStore('chat', () => {
         }
         if (data.title) {
           msg.title = data.title
+          // 更新会话列表中的标题
+          if (conversationId.value) {
+            try {
+              const convStore = useConversationStore()
+              convStore.updateConversationTitle(conversationId.value, data.title)
+            } catch { /* store 可能未初始化 */ }
+          }
         }
         if (data.token_usage) {
           msg.tokenUsage = data.token_usage
@@ -267,6 +288,36 @@ export const useChatStore = defineStore('chat', () => {
     conversationId.value = id
   }
 
+  /** 加载历史会话消息（从会话详情接口） */
+  async function loadConversation(id) {
+    try {
+      const res = await fetchConversationDetail(id)
+      const data = res.data.data
+
+      conversationId.value = data.id
+      selectedKBId.value = data.kb_id
+
+      // 转换后端消息格式为前端格式
+      messages.value = (data.messages || []).map(msg => ({
+        id: `server_${msg.id}`,
+        role: msg.role,
+        content: msg.content || '',
+        thinking: null,        // thinking_content 不落库，历史中不存在
+        sources: null,
+        status: 'complete',
+        error: null,
+        title: null,
+        tokenUsage: null,
+        serverMessageId: msg.id,
+      }))
+
+      return data
+    } catch (err) {
+      console.error('加载会话详情失败:', err)
+      throw err
+    }
+  }
+
   /** 重新生成最后一条助手消息 */
   function regenerate() {
     // 找到最后一条用户消息
@@ -295,6 +346,11 @@ export const useChatStore = defineStore('chat', () => {
     selectableKBs.value = { mine: [], public: [] }
     loadingKBs.value = false
     localStorage.removeItem('last_kb_id')
+    // 重置会话列表 Store
+    try {
+      const convStore = useConversationStore()
+      convStore.reset()
+    } catch { /* store 可能未初始化 */ }
   }
 
   return {
@@ -315,6 +371,7 @@ export const useChatStore = defineStore('chat', () => {
     loadSelectableKBs,
     setSelectedKB,
     sendUserMessage,
+    loadConversation,
     abort,
     clearMessages,
     setConversation,
