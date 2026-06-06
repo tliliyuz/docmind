@@ -16,15 +16,14 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from app.rag.parser import ParsedPage
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # 分隔符优先级（对齐 ARCHITECTURE.md §4.2）
 # RecursiveCharacterTextSplitter.separators 是精确字符串匹配，非正则，
 # 因此中文/英文标点展开为独立字符，才能在每个标点处正确断句。
 CHUNK_SEPARATORS = ["\n\n", "\n", "。", "！", "？", ".", "!", "?", " ", ""]
-
-DEFAULT_CHUNK_SIZE = 1000      # 每块最大字符数（800-1200 范围）
-DEFAULT_CHUNK_OVERLAP = 150    # 块间重叠字符数（≈50 tokens）
 
 
 @dataclass
@@ -46,8 +45,8 @@ class ChunkingResult:
 def chunk_document(
     text: str,
     pages: list[ParsedPage] | None = None,
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
-    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    chunk_size: int = settings.CHUNK_SIZE,
+    chunk_overlap: int = settings.CHUNK_OVERLAP,
 ) -> ChunkingResult:
     """对文档全文执行智能分块，可选附带页码元数据。
 

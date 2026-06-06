@@ -12,8 +12,8 @@
 
 from app.core.redis_client import get_redis
 
-# 锁默认 TTL（秒），与 Celery soft_time_limit 对齐
-IDEMPOTENCY_LOCK_TTL = 600
+from app.config import settings
+
 # 幂等键前缀
 IDEMPOTENCY_KEY_PREFIX = "doc_lock"
 
@@ -24,7 +24,7 @@ def _build_lock_key(doc_id: int, task_type: str) -> str:
 
 
 def acquire_idempotency_lock(
-    doc_id: int, task_type: str, ttl: int = IDEMPOTENCY_LOCK_TTL
+    doc_id: int, task_type: str, ttl: int = settings.IDEMPOTENCY_LOCK_TTL
 ) -> bool:
     """尝试获取幂等锁（原子操作 SET key value EX ttl NX）。
 

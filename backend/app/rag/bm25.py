@@ -19,17 +19,12 @@ from app.core.exceptions import RetrievalServiceException
 from app.models.chunk import Chunk
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
-logger = logging.getLogger(__name__)
+from app.config import settings
 
-DEFAULT_TOP_K = 10
-# BM25 分数阈值：小语料下 IDF 可能为负，极端负分不进入 RRF 融合
-# -5.0 是保守阈值：过滤明显不相关的 chunk，同时保留小语料下的边缘结果
-MIN_BM25_SCORE = -5.0
+logger = logging.getLogger(__name__)
 
 # Redis key 模式：bm25_tokens:{kb_id}
 BM25_CACHE_KEY_PREFIX = "bm25_tokens"
-# 缓存 TTL（秒）— 对齐 ARCHITECTURE.md §6.2
-BM25_CACHE_TTL = 300
 
 
 def _build_cache_key(kb_id: int) -> str:
@@ -60,8 +55,8 @@ class BM25Retriever:
         self,
         query: str,
         kb_id: int,
-        top_k: int = DEFAULT_TOP_K,
-        min_score: float = MIN_BM25_SCORE,
+        top_k: int = settings.BM25_TOP_K,
+        min_score: float = settings.BM25_MIN_SCORE,
     ) -> RetrievalOutput:
         """执行 BM25 关键词检索。
 
@@ -192,7 +187,7 @@ class BM25Retriever:
                 "tokens": tokenized_corpus,
                 "contents": contents,
             }, ensure_ascii=False)
-            self._redis.setex(cache_key, BM25_CACHE_TTL, cache_data)
+            self._redis.setex(cache_key, settings.BM25_CACHE_TTL, cache_data)
             logger.info("BM25 缓存已写入: kb_id=%d, %d chunks", kb_id, len(doc_ids))
         except Exception as e:
             logger.warning("Redis 写入 BM25 缓存失败（不影响检索）: %s", e)

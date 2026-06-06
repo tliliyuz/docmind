@@ -15,9 +15,9 @@ from app.core.chroma_client import get_collection
 from app.core.exceptions import RetrievalServiceException
 from app.rag.embedder import embed_chunks
 
-logger = logging.getLogger(__name__)
+from app.config import settings
 
-DEFAULT_TOP_K = 10
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,7 +51,7 @@ class VectorRetriever:
         self,
         query: str,
         kb_id: int,
-        top_k: int = DEFAULT_TOP_K,
+        top_k: int = settings.VECTOR_TOP_K,
     ) -> RetrievalOutput:
         """执行向量检索。
 

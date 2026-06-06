@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 1440
+    JWT_EXPIRE_MINUTES: int = 1440  #当前access_token过期时间
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -62,6 +62,51 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:5173"  # 逗号分隔多个来源
+
+    # ── Token Budget（四池子分拆，对齐 ARCHITECTURE.md §8.1）──
+    MAX_CONTEXT_TOKENS: int = 20000
+    SYSTEM_BUDGET: int = 2000
+    HISTORY_BUDGET: int = 6000
+    RETRIEVAL_BUDGET: int = 10000
+    QUESTION_BUDGET: int = 2000
+    HISTORY_MAX_MESSAGES: int = 20
+
+    # ── Chunking ──
+    CHUNK_SIZE: int = 1000
+    CHUNK_OVERLAP: int = 150
+
+    # ── Retrieval ──
+    VECTOR_TOP_K: int = 10
+    BM25_TOP_K: int = 10
+    BM25_MIN_SCORE: float = -5.0
+    BM25_CACHE_TTL: int = 300
+
+    # ── RRF ──
+    RRF_K: int = 60
+
+    # ── Reranker ──
+    RERANK_TOP_K: int = 5
+
+    # ── Prompt ──
+    PROMPT_MAX_CHUNKS: int = 5
+    PROMPT_MAX_CONTEXT_TOKENS: int = 3000
+
+    # ── Embedding ──
+    EMBED_MAX_RETRIES: int = 5
+    EMBED_BASE_DELAY: int = 1
+
+    # ── Idempotency ──
+    IDEMPOTENCY_LOCK_TTL: int = 600
+
+    # ── Parsing ──
+    PARSE_FAILURE_PARTIAL: float = 0.2
+    PARSE_FAILURE_FAILED: float = 0.5
+
+    # ── SSE ──
+    SSE_HEARTBEAT_INTERVAL: int = 15
+
+    # ── Document ──
+    CHUNK_PREVIEW_LENGTH: int = 200
 
     @property
     def mysql_url(self) -> str:

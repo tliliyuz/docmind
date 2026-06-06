@@ -11,15 +11,14 @@ from collections import defaultdict
 
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
-logger = logging.getLogger(__name__)
+from app.config import settings
 
-# RRF 平滑常数，对齐 ARCHITECTURE.md §6.3
-DEFAULT_RRF_K = 60
+logger = logging.getLogger(__name__)
 
 
 def rrf_fusion(
     *retrieval_outputs: RetrievalOutput,
-    k: int = DEFAULT_RRF_K,
+    k: int = settings.RRF_K,
 ) -> RetrievalOutput:
     """多路检索结果的 RRF 融合排序。
 

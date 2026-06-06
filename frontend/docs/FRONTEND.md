@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.14 |
-| 最后更新 | 2026-06-04 |
+| 文档版本 | v0.16 |
+| 最后更新 | 2026-06-05 |
 | 作者 | yuz |
-| 状态 | 草稿 |
+| 状态 | 草稿（Phase 4 设计就绪） |
 
 ---
 
@@ -36,8 +36,11 @@
 │ • isAdmin   │  │ • streaming │  │ • docList   │
 │ • login()   │  │ • send()    │  │ • upload()  │
 │ • logout()  │  │ • abort()   │  │ • create()  │
+│ • refresh() │  │             │  │             │
 └─────────────┘  └─────────────┘  └─────────────┘
 ```
+
+> **Phase 4 新增**：`authStore` 新增 `refresh()` action（调 `POST /api/auth/refresh` 换取新 token 对）+ `scheduleRefresh()` 定时器（access_token 到期前 1 分钟自动刷新）。`refresh_token` 通过 `localStorage` 持久化，页面刷新后仍可用。
 
 **规则**：组件内不直接调用 axios，所有请求走 `api/` 目录封装；状态提升到 Pinia，不用 props 透传超过两层。
 
@@ -45,11 +48,36 @@
 
 | 场景 | 前端行为 |
 |:---|:---|
-| HTTP 401 | 响应拦截器自动清除 token，跳转 `/login`（已在登录页则不动）|
+| HTTP 401 + `code=E5003`（Token 过期） | Axios 响应拦截器自动调 `authStore.refresh()` → 重放原请求。刷新成功用户无感，刷新失败（refresh_token 也过期/吊销）→ 清除 token → 跳转 `/login` |
+| HTTP 401 + 其他 code（E5004/E5005/E5009 等） | 清除 token，跳转 `/login`（已在登录页则不动） |
 | HTTP 403 | Element Plus `ElMessage.error('无权限执行此操作')` |
 | HTTP 422 | 提取后端返回的字段级错误，聚焦到对应表单项 |
 | HTTP 500/503 | `ElMessage.error('服务暂不可用，请稍后重试')` |
 | 网络中断 | 请求超时 30s，提示 `网络异常，请检查连接` |
+
+#### 1.3.1 Axios 拦截器自动刷新流程（Phase 4 新增）
+
+```
+请求发起
+   ↓
+请求拦截器：附加 Authorization: Bearer <access_token>
+   ↓
+发送请求
+   ↓
+收到 401 + code=E5003（Token 过期）
+   ↓
+响应拦截器：
+  ├─ 检查 refresh_token 是否存在且未过期
+  │   ├─ 有 → 调 POST /api/auth/refresh { refresh_token }
+  │   │       ├─ 成功 → 存储新 token 对 → 重放原请求
+  │   │       └─ 失败（E5006/E5007/E5008/E5009）→ 清除全部 token → 跳转 /login
+  │   └─ 无 → 清除 token → 跳转 /login
+  └─ 其他 401 → 清除 token → 跳转 /login
+```
+
+> **防并发刷新**：拦截器需维护 `isRefreshing` 标志位。当多个请求同时收到 401 时，仅第一个触发刷新，其余排队等待刷新完成后统一重放。避免短时间多次调 refresh 接口导致 Rotation 冲突。
+
+> **scheduleRefresh 定时器**：登录/刷新成功后启动定时器（`setTimeout`），在 access_token 到期前 1 分钟（`expires_in - 60s`）自动调 `authStore.refresh()`。页面卸载时 `clearTimeout`。
 
 ---
 
@@ -122,7 +150,7 @@
     ↓
 调用 authStore.login() → POST /api/auth/login
     ↓
-成功：ElMessage.success('登录成功') → 存储 token + 解析 JWT 用户信息 → 跳转 /chat
+成功：ElMessage.success('登录成功') → 存储 access_token + refresh_token → 解析 JWT 用户信息 → 启动 scheduleRefresh 定时器 → 跳转 /chat
 失败：显示后端错误消息（如「用户名或密码错误」）
 ```
 
@@ -159,7 +187,7 @@
 │  ─────────────────────────────┤    [我的知识库 ▼] [公共知识库 ▼]│
 │  会话区域（Phase 3 空态）       │    ├─ 我的知识库             │
 │  • 新建对话按钮                │    └─ 公共知识库             │
-│  • 历史会话列表（Phase 4 实现） │  ─────────────────────────  │
+│  • 历史会话列表（Phase 4 实现中）   │  ─────────────────────────  │
 │  ─────────────────────────────┤                             │
 │  [所有用户] 我的知识库           │  ─────────────────────────  │
 │  • 点击进入 /knowledge-bases   │  MessageList               │
@@ -185,6 +213,25 @@
 - 分组标题样式：`el-select-group__title` 使用 `--dm-text-3xs` + 大写 + 加粗，与可选项明显区分
 - 默认选中：优先 localStorage 缓存 `last_kb_id`，否则选中「我的知识库」第一个；若用户无私有 KB，则选中「公共知识库」第一个
 - 切换 KB：新建会话（`conversation_id=null`），不同 KB 的对话使用不同会话
+
+**ChatPage 会话路由**（Phase 4 实现）：
+
+ChatPage 支持两种进入方式：
+
+| 进入方式 | URL | 行为 |
+|:---|:---|:---|
+| 新建对话 | `/chat` 或 `/chat?kb_id=1` | `onMounted` 时不加载历史，`conversation_id=null`，首轮问答后自动创建会话 |
+| 继续对话 | `/chat?conversation_id=123` | `onMounted` 时调 `GET /api/conversations/123` 加载历史消息 + Sidebar 对应项高亮 |
+
+> 两种 query param 模式保持一致：`?kb_id=` 已在 Phase 3 实现，`?conversation_id=` 为 Phase 4 新增。两者可共存（`/chat?kb_id=1&conversation_id=123`），前端优先使用 `conversation_id` 恢复会话，`kb_id` 作为降级（会话不存在时回退到指定 KB 的新对话）。
+
+**新建对话触发方式**：
+
+| 触发方式 | 行为 |
+|:---|:---|
+| Sidebar「新建对话」按钮 | `router.push('/chat')` → 清空消息列表 + `conversation_id=null` |
+| ChatPage 切换 KB | 同上，不同 KB 使用不同会话 |
+| 删除当前会话 | 自动路由到 `/chat` → 新建状态 |
 
 ### 4.2 核心问答交互流程
 
@@ -286,7 +333,7 @@
 | 操作 | 行为 |
 |:---|:---|
 | 点击头像/用户名 | 跳转个人资料页（Phase 1 预留，当前无操作） |
-| 点击退出图标 | `ElMessage.success('已退出登录')` → 清除 token → 跳转 `/login` |
+| 点击退出图标 | 调 `POST /api/auth/logout` 吊销 refresh_token → `ElMessage.success('已退出登录')` → 清除 access_token + refresh_token → 停止 scheduleRefresh 定时器 → 跳转 `/login` |
 
 #### 4.5.5 侧边栏展开/收起
 
@@ -653,7 +700,7 @@ Sidebar「管理后台」分组，仅 `role === 'admin'` 可见：
 | 提交成功 | `ElMessage.success('操作成功')` |
 | 提交失败 | `ElMessage.error(msg)` 或表单内错误提示 |
 | 异步操作 | 按钮 loading，操作完成后 toast 提示 |
-| 退出登录 | `ElMessage.success('已退出登录')` → 清除 token → 跳转登录页 |
+| 退出登录 | 调 `POST /api/auth/logout` 吊销 refresh_token → `ElMessage.success('已退出登录')` → 清除 token → 停止定时器 → 跳转登录页 |
 | 登录成功 | `ElMessage.success('登录成功')` → 跳转 /chat |
 
 ### 8.3 加载状态
@@ -784,22 +831,24 @@ function parseSSEEvent(raw) {
 
 | 模块 | 当前状态 | Phase 3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
-| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：历史会话列表集成、多轮对话 |
-| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮（清空消息列表 + conversation_id=null，已在 /chat 页时清空；route 高亮） | Phase 4：历史会话列表、重命名、删除、按时间分组 |
+| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示 | Phase 4：会话路由（`?conversation_id=`）、多轮对话 |
+| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮（清空消息列表 + conversation_id=null，已在 /chat 页时清空；route 高亮） | Phase 4：历史会话列表（按时间分组）、重命名（双击编辑）、删除（确认弹窗） |
 | ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 | — |
 | MessageList | ✅ 已实现 | 自动滚动底部 + 手动上滚「新消息」浮动按钮 + MessageItem 渲染 | — |
 | MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片 + typing 动画 + 重新生成按钮 | — |
-| WelcomeScreen | ✅ 已实现 | Logo + 欢迎语 + 4 个快捷问题卡片 → emit 触发发送 | — |
+| WelcomeScreen | ✅ 已实现 | 欢迎语 + 4 个快捷问题卡片 → emit 触发发送 | — |
 | KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | — | — |
 | PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | — | — |
-| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | — |
+| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | Phase 5：Admin 权限扩展 |
 | AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/knowledge-bases` |
 | AdminDocumentList (`/admin/documents`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/documents` |
 | Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
-| 状态轮询 | ✅ 已实现 | — | Phase 5：可选升级 WebSocket |
+| 状态轮询 | ✅ 已实现 | — | Phase 6：可选升级 WebSocket |
 | SSE 流式输出 | ✅ 已实现 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
 | 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 ID | Phase 4：多轮历史注入 |
-| 标题自动生成 | ✅ 已实现 | 首轮 `finish` 事件返回 title（截取 question[:12]） | — |
+| 标题自动生成 | ✅ 已实现 | 首轮 `finish` 事件返回 title（截取 question[:12]） | Phase 5：LLM 标题生成替换 |
+| Axios Refresh Token 拦截器 | ⬜ Phase 4 设计就绪 | 401+E5003 自动调 refresh → 重放原请求 + 并发防抖 + scheduleRefresh 定时器 | — |
+| authStore refresh/logout | ⬜ Phase 4 设计就绪 | `refresh()` 换取新 token 对 + `logout()` 调 `POST /api/auth/logout` 吊销 + 定时器启停 | — |
 
 ---
 

@@ -16,10 +16,9 @@ from abc import ABC, abstractmethod
 
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
-logger = logging.getLogger(__name__)
+from app.config import settings
 
-# 默认 top_k 值，对齐 ARCHITECTURE.md §7.3
-DEFAULT_RERANK_TOP_K = 5
+logger = logging.getLogger(__name__)
 
 
 class BaseReranker(ABC):
@@ -30,7 +29,7 @@ class BaseReranker(ABC):
         self,
         query: str,
         retrieval_output: RetrievalOutput,
-        top_k: int = DEFAULT_RERANK_TOP_K,
+        top_k: int = settings.RERANK_TOP_K,
     ) -> RetrievalOutput:
         """对检索结果进行重排序。
 
@@ -59,7 +58,7 @@ class NoopReranker(BaseReranker):
         self,
         query: str,
         retrieval_output: RetrievalOutput,
-        top_k: int = DEFAULT_RERANK_TOP_K,
+        top_k: int = settings.RERANK_TOP_K,
     ) -> RetrievalOutput:
         """保持 RRF 融合原始排序，截取 top_k。
 

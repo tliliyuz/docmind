@@ -46,10 +46,6 @@ def _get_worker_loop() -> asyncio.AbstractEventLoop:
         _worker_loop = asyncio.new_event_loop()
     return _worker_loop
 
-# 容错阈值（对齐 ARCHITECTURE.md §4.7）
-FAILURE_THRESHOLD_PARTIAL = 0.2   # 20% 失败 → partial_failed
-FAILURE_THRESHOLD_FAILED = 0.5    # 50% 失败 → failed
-
 # 可断点恢复的阶段（chunks 已写入 MySQL，可跳过解析+分块）
 RESUMABLE_STAGES: frozenset[str] = frozenset({
     "chunking_done",   # chunks 已写入，embedding 未开始
@@ -216,17 +212,17 @@ async def _ingest_document_async(doc_id: int) -> dict:
                     logger.warning("文档 %d 解析后无有效内容，标记为 failed", doc_id)
                     return {"status": "failed", "doc_id": doc_id}
 
-                if parse_result.failure_rate > FAILURE_THRESHOLD_FAILED:
+                if parse_result.failure_rate > settings.PARSE_FAILURE_FAILED:
                     doc.status = DocumentStatus.FAILED
-                    doc.error_msg = _build_error_msg(parse_result, FAILURE_THRESHOLD_FAILED)
+                    doc.error_msg = _build_error_msg(parse_result, settings.PARSE_FAILURE_FAILED)
                     doc.current_stage = None
                     await db.commit()
                     logger.warning("文档 %d 解析失败率 >50%%，标记为 failed", doc_id)
                     return {"status": "failed", "doc_id": doc_id}
 
-                elif parse_result.failure_rate >= FAILURE_THRESHOLD_PARTIAL:
+                elif parse_result.failure_rate >= settings.PARSE_FAILURE_PARTIAL:
                     doc.status = DocumentStatus.PARTIAL_FAILED
-                    doc.error_msg = _build_error_msg(parse_result, FAILURE_THRESHOLD_PARTIAL)
+                    doc.error_msg = _build_error_msg(parse_result, settings.PARSE_FAILURE_PARTIAL)
                     doc.current_stage = None
                     await db.commit()
                     logger.warning("文档 %d 解析失败率 20%%-50%%，标记为 partial_failed", doc_id)

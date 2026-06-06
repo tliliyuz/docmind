@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.config import settings
 from app.rag.chunker import (
     ChunkResult,
     ChunkingResult,
@@ -9,8 +10,6 @@ from app.rag.chunker import (
     estimate_tokens,
     _build_page_offset_map,
     _resolve_page_number,
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_CHUNK_OVERLAP,
 )
 from app.rag.parser import ParsedPage
 
@@ -187,7 +186,7 @@ class TestChunkDocument:
         # 段落边界优先：不应在段落中间切断
         assert result.total_chunks >= 1
         for chunk in result.chunks:
-            assert len(chunk.content) <= DEFAULT_CHUNK_SIZE
+            assert len(chunk.content) <= settings.CHUNK_SIZE
             # 每块内不应有孤立的段落开头（说明在段落中间被切了）
             assert chunk.content.count("\n\n") >= 0
 
@@ -292,10 +291,10 @@ class TestChunkDocument:
     # === 边界情况 ===
 
     def test_恰好等于chunk_size的文本(self):
-        text = "测" * DEFAULT_CHUNK_SIZE
+        text = "测" * settings.CHUNK_SIZE
         result = chunk_document(text)
         assert result.total_chunks == 1
-        assert len(result.chunks[0].content) == DEFAULT_CHUNK_SIZE
+        assert len(result.chunks[0].content) == settings.CHUNK_SIZE
 
     def test_含英文标点的文本(self):
         text = ("This is a test sentence. Another sentence here. " * 50)

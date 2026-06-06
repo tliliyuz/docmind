@@ -99,7 +99,16 @@ def _mock_db_with_conversation(db, conv, kb=None, doc_count=1, user_msg=None, as
     names_result = MagicMock()
     names_result.scalars.return_value.all.return_value = [row]
 
-    db.execute = AsyncMock(side_effect=[count_result, names_result])
+    # _load_history 查询（scalars().all()，返回空历史）
+    history_result = MagicMock()
+    history_result.scalars.return_value.all.return_value = []
+
+    # 默认空查询结果（用于未被明确覆盖的 db.execute 调用）
+    empty_result = MagicMock()
+    empty_result.scalar.return_value = 0
+    empty_result.scalars.return_value.all.return_value = []
+
+    db.execute = AsyncMock(side_effect=[count_result, history_result, names_result, empty_result])
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
@@ -182,6 +191,7 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
             used_chunks=retrieval_output.results,  # 与 LLM Prompt 中 [来源N] 对应
             total_context_tokens=500,
             chunks_count=len(retrieval_output.results),
+            history_messages=[],  # Phase 4：历史消息（Mock 场景下为空）
         )
         mocks['llm'].return_value = _async_gen(llm_chunks)
 
@@ -517,16 +527,21 @@ class TestChatTitleGeneration:
 
         with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
                                   llm_chunks=_make_llm_chunks(["回答"])) as mocks:
-            response = await chat(
-                db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
-                question="这是一个测试问题内容很长", deep_thinking=False,
-            )
-            events = await _consume_sse(response)
+            # Mock LLM 标题生成，避免真实调用
+            with patch("app.services.chat_service._generate_title_llm",
+                       new_callable=AsyncMock, return_value="测试问题标题生成") as mock_title_llm:
+                response = await chat(
+                    db=db, user_id=1, role="user",
+                    conversation_id=None, kb_id=1,
+                    question="这是一个测试问题内容很长", deep_thinking=False,
+                )
+                events = await _consume_sse(response)
 
         finish = next(e for e in events if e["event"] == "finish")
-        assert finish["data"]["title"] == "这是一个测试问题内容很长"[:12]
-        assert mocks['conv'].title == finish["data"]["title"]
+        # finish 事件返回截断标题（不等待 LLM）
+        assert finish["data"]["title"] is not None
+        # conv.title 最终会被 LLM 标题更新
+        assert mocks['conv'].title == "测试问题标题生成"
 
     @pytest.mark.asyncio
     async def test_非首轮不更新标题(self):

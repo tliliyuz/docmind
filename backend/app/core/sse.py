@@ -12,10 +12,9 @@ import json
 import logging
 from typing import AsyncIterator
 
-logger = logging.getLogger(__name__)
+from app.config import settings
 
-# 心跳间隔（秒），对齐 ARCHITECTURE.md §5.1.3
-HEARTBEAT_INTERVAL = 15
+logger = logging.getLogger(__name__)
 
 
 def format_sse_event(event_type: str, data: dict | str) -> str:
@@ -51,7 +50,7 @@ def format_sse_heartbeat() -> str:
 
 async def stream_with_heartbeat(
     event_generator: AsyncIterator[str],
-    interval: int = HEARTBEAT_INTERVAL,
+    interval: int = settings.SSE_HEARTBEAT_INTERVAL,
 ) -> AsyncIterator[str]:
     """将事件流与心跳流合并输出。
 

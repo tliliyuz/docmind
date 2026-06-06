@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 import httpx
 
+from app.config import settings
 from app.rag.embedder import (
     EmbedResult,
     embed_chunks,
@@ -13,7 +14,6 @@ from app.rag.embedder import (
     _build_payload,
     _parse_embed_response,
     _safe_truncate,
-    EMBED_MAX_RETRIES,
 )
 from tests.helpers import (
     MOCK_DIM,
@@ -293,7 +293,7 @@ class TestEmbedRetry:
                 with pytest.raises(RuntimeError, match="已重试 5 次"):
                     await embed_chunks(["测试"])
 
-        assert mock_client.__aenter__.return_value.post.call_count == EMBED_MAX_RETRIES
+        assert mock_client.__aenter__.return_value.post.call_count == settings.EMBED_MAX_RETRIES
 
     @pytest.mark.asyncio
     async def test_指数退避延迟递增(self):

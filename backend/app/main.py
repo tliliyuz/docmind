@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.conversation import router as conversation_router
 from app.api.knowledge_base import router as kb_router
 from app.api.document import router as doc_router
 from app.config import settings
@@ -63,6 +64,7 @@ app.add_middleware(AuthMiddleware)
 # 路由注册
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(conversation_router)
 app.include_router(kb_router)
 app.include_router(doc_router)
 

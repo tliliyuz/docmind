@@ -15,9 +15,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-EMBED_MAX_RETRIES = 5
-EMBED_BASE_DELAY = 1  # 秒
-
 
 @dataclass
 class EmbedResult:
@@ -58,7 +55,7 @@ async def _call_embed_api(texts: list[str], text_type: str = "document") -> Embe
     payload = _build_payload(texts, text_type)
 
     last_error = None
-    for attempt in range(EMBED_MAX_RETRIES):
+    for attempt in range(settings.EMBED_MAX_RETRIES):
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
                 response = await client.post(url, json=payload, headers=headers)
@@ -70,22 +67,22 @@ async def _call_embed_api(texts: list[str], text_type: str = "document") -> Embe
                 last_error = f"HTTP {response.status_code}: {_safe_truncate(response.text)}"
                 logger.warning(
                     "Embedding API 调用失败 (尝试 %d/%d): %s",
-                    attempt + 1, EMBED_MAX_RETRIES, last_error,
+                    attempt + 1, settings.EMBED_MAX_RETRIES, last_error,
                 )
 
         except (httpx.RequestError, httpx.TimeoutException, json.JSONDecodeError) as e:
             last_error = str(e)
             logger.warning(
                 "Embedding API 网络异常 (尝试 %d/%d): %s",
-                attempt + 1, EMBED_MAX_RETRIES, e,
+                attempt + 1, settings.EMBED_MAX_RETRIES, e,
             )
 
-        if attempt < EMBED_MAX_RETRIES - 1:
-            delay = EMBED_BASE_DELAY * (2 ** attempt)  # 1, 2, 4, 8, 16
+        if attempt < settings.EMBED_MAX_RETRIES - 1:
+            delay = settings.EMBED_BASE_DELAY * (2 ** attempt)  # 1, 2, 4, 8, 16
             await asyncio.sleep(delay)
 
     raise RuntimeError(
-        f"Embedding API 调用失败，已重试 {EMBED_MAX_RETRIES} 次: {last_error}"
+        f"Embedding API 调用失败，已重试 {settings.EMBED_MAX_RETRIES} 次: {last_error}"
     )
 
 

@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.config import settings
 from app.ingest.lock import (
-    IDEMPOTENCY_LOCK_TTL,
     _build_lock_key,
     acquire_idempotency_lock,
     check_idempotency_lock,

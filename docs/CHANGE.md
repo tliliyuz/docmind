@@ -1,5 +1,102 @@
 # DocMind 变更日志
 
+## 2026-06-06 — 配置集中化：消除模块硬编码常量
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/config.py` | 新增 21 个配置字段：Token 预算四池子(6) / Chunking(2) / Retrieval(4) / RRF(1) / Reranker(1) / Prompt(2) / Embedding(2) / Idempotency(1) / Parsing(2) / SSE(1) / Document(1) |
+| `backend/app/services/chat_service.py` | 移除 6 个硬编码常量（MAX_CONTEXT_TOKENS/SYSTEM_BUDGET/HISTORY_BUDGET/RETRIEVAL_BUDGET/QUESTION_BUDGET/HISTORY_MAX_MESSAGES），导入 settings |
+| `backend/app/rag/prompt_builder.py` | 移除 3 个硬编码常量（DEFAULT_MAX_CONTEXT_TOKENS/RETRIEVAL_BUDGET/DEFAULT_MAX_CHUNKS），导入 settings |
+| `backend/app/rag/chunker.py` | 移除 2 个硬编码常量（DEFAULT_CHUNK_SIZE/DEFAULT_CHUNK_OVERLAP），导入 settings |
+| `backend/app/rag/bm25.py` | 移除 3 个硬编码常量（DEFAULT_TOP_K/MIN_BM25_SCORE/BM25_CACHE_TTL），导入 settings |
+| `backend/app/rag/reranker.py` | 移除 DEFAULT_RERANK_TOP_K 硬编码，导入 settings |
+| `backend/app/rag/fusion.py` | 移除 DEFAULT_RRF_K 硬编码，导入 settings |
+| `backend/app/rag/retriever.py` | 移除 DEFAULT_TOP_K 硬编码，导入 settings |
+| `backend/app/rag/embedder.py` | 移除 EMBED_MAX_RETRIES/EMBED_BASE_DELAY 硬编码，改用 settings（已有导入） |
+| `backend/app/core/sse.py` | 移除 HEARTBEAT_INTERVAL 硬编码，导入 settings |
+| `backend/app/ingest/lock.py` | 移除 IDEMPOTENCY_LOCK_TTL 硬编码，导入 settings |
+| `backend/app/ingest/tasks.py` | 移除 FAILURE_THRESHOLD_PARTIAL/FAILURE_THRESHOLD_FAILED 硬编码，改用 settings（已有导入） |
+| `backend/app/services/document_service.py` | 移除 CHUNK_PREVIEW_LENGTH 硬编码，改用 settings（已有导入） |
+| `backend/tests/test_constants.py` | 重构：改为验证 settings 字段默认值，扩充覆盖 10 个配置项 |
+| `backend/tests/test_bm25.py` | 移除 MIN_BM25_SCORE/BM25_CACHE_TTL 导入，改用 settings |
+| `backend/tests/test_chunker.py` | 移除 DEFAULT_CHUNK_SIZE/DEFAULT_CHUNK_OVERLAP 导入，改用 settings |
+| `backend/tests/test_embedder.py` | 移除 EMBED_MAX_RETRIES 导入，改用 settings |
+| `backend/tests/test_history_memory.py` | 移除 HISTORY_BUDGET/HISTORY_MAX_MESSAGES 导入，改用 settings |
+| `backend/tests/test_idempotent_lock.py` | 移除 IDEMPOTENCY_LOCK_TTL 导入，改用 settings |
+| `backend/tests/test_sse_helpers.py` | 移除 HEARTBEAT_INTERVAL 导入，改用 settings |
+
+## 2026-06-05 — ROADMAP.md / TEST_CASES.md Phase 4.1 进度同步
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.33→v0.34。§6.1 3 项任务标记 ✅（会话 CRUD/多轮上下文/LLM 标题）；§6.6 新增 3 行 ✅（CRUD 接口 20 用例/记忆 9 用例/标题 6 用例）+ 新增「会话标题 LLM 生成测试」行；文件头状态更新 |
+| `docs/TEST_CASES.md` | v0.45→v0.46。§6.1 4 个用例 ⬜→✅（A5.1-A5.4）；§6.2 5 个用例 ⬜→✅（U8.1/U8.4-U8.7）+ 新增 3 个用例（U8.8 system 过滤 / U8.9 thinking 过滤）；新增 §6.2.1 标题生成测试（6 用例 U8.10-U8.15）；§8 覆盖率表新增 4 行（conversation_service/api/chat_service._load_history/_generate_title_llm）；文件头状态更新 |
+
+## 2026-06-05 — Phase 4.1 代码审查修复
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | `_load_history`：Token 截断 `break`→`continue`，避免大旧消息阻塞后续小消息；新增 `role=="system"` 过滤（system 消息不注入历史）；`_generate_title_llm`：清理 strip 冗余引号字符；`_generate_sse_stream`：首轮判定改用显式 `is_first_turn` flag 替代 `conv.message_count==2`；`_validate_and_prepare`：返回 `is_first_turn`（在插入用户消息前判定 `message_count==0`）；`chat`：解包并透传 `is_first_turn` |
+| `backend/tests/test_history_memory.py` | `test_token_budget_truncation`：增强断言（验证具体消息保留/丢弃 + 时间正序）；`test_system_messages_filtered_out`：重写——构造真实 system 消息并验证被过滤，修复「测试名与行为不一致」问题 |
+
+## 2026-06-05 — ROADMAP.md / TEST_CASES.md Phase 4 前端任务补充
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.32→v0.33。§6.4 新增「Token 自动刷新（Axios 拦截器）」任务（3 项子任务：401 拦截重放/并发防抖/定时器）；§6.6 新增「前端 Token 刷新测试」条目 |
+| `docs/TEST_CASES.md` | v0.44→v0.45。§6.4 新增 6 个前端 Token 刷新测试用例（C4.7–C4.12）：401 拦截重放 / 并发防抖 / 刷新失败跳转 / 无 token 直接跳转 / scheduleRefresh 定时器启停 |
+
+## 2026-06-05 — Phase 4.1 后端：会话管理 + 多轮上下文
+
+### 新增
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/schemas/conversation.py` | 新建。6 个 Pydantic 模型：ConversationCreate / ConversationUpdate / MessageResponse / ConversationResponse / ConversationDetailResponse / ConversationListResponse |
+| `backend/app/services/conversation_service.py` | 新建。5 个 CRUD 函数 + `_get_owned_conversation()` 权限校验辅助函数 |
+| `backend/app/api/conversation.py` | 新建。5 个会话 API 端点：POST/GET 列表/GET 详情/PUT/DELETE `/api/conversations` |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/main.py` | 注册 `conversation_router` |
+| `backend/app/rag/prompt_builder.py` | 新增 `RETRIEVAL_BUDGET` 常量（10000）；`PromptBuildResult` 新增 `history_messages` 字段；`build_prompt()` 新增 `history_messages` 参数（透传） |
+| `backend/app/services/chat_service.py` | 新增 Token 预算常量（四池子分拆）；新增 `_load_history()` 历史加载函数（Token 截断 + [来源N]去除）；新增 `_generate_title_llm()` LLM 标题生成（失败回退截断）；`_validate_and_prepare()` 新增历史加载 + `updated_at` 手动同步；`_generate_sse_stream()` 注入历史消息 + 标题异步生成 |
+
+## 2026-06-05 — API.md / DATABASE.md Phase 4 补充设计
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/docs/API.md` | v0.21→v0.22。§1.3 认证错误新增 E5006-E5009（Refresh Token 过期/吊销/无效/泄露）；§2 登录响应新增 `refresh_token` 字段（access_token 有效期从 24h 缩短为 15min）；新增 `POST /api/auth/refresh`（Rotation 换发）、`POST /api/auth/logout`（吊销）、`PUT /api/auth/password`（改密 + 全部吊销）三个端点；§9 权限速查表新增 4 行；移除旧 Refresh Token Phase 5 TODO |
+| `backend/docs/DATABASE.md` | v0.9→v0.10。§1 ER 图新增 `refresh_tokens` 节点；§2.7 新增 `refresh_tokens` 表（token_hash / expires_at / revoked_at，SHA-256 不存明文）；§3 索引策略新增 3 条索引（idx_user_id / idx_token_hash / idx_user_active）；§4 外键策略新增 `refresh_tokens.user_id → users(id) ON DELETE CASCADE`；§3 TODO 补充过期 token 定期清理提示 |
+| `frontend/docs/FRONTEND.md` | v0.15→v0.16。§1.2 authStore 新增 `refresh()` / `scheduleRefresh()`；§1.3 全局错误处理重写：401 按 code 细分处理（E5003 自动刷新/其他跳登录），新增 Axios 拦截器自动刷新流程图 + 防并发刷新说明；§3.2 登录流程新增 refresh_token 存储 + 定时器启动；§4.5.4 / §8.2 退出登录新增 `POST /api/auth/logout` 吊销步骤；§11 模块表新增 Axios 拦截器 + authStore refresh/logout 两行 |
+| `docs/ARCHITECTURE.md` | v0.25→v0.26。§8 新增 §8.9「闲谈路径下的历史消息注入」设计决策：`_is_casual_chat()` 命中时同样注入历史消息，`_load_history()` 在闲谈检测之前执行；原 §8.9 问题重写 → §8.10 |
+
+## 2026-06-05 — ROADMAP Phase 4/5/6 任务重分配
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.31→v0.32。Phase 4 从 10 项扩充为 18 项（从 Phase 5 移入错误处理 / Refresh Token / 结构化日志三项基础设施）；Phase 5 从 25 项（含 Phase 5+）精简为 14 项（体验完善 3 + 简易 Admin 3 + 基础设施 2 + 测试 5）；原 Phase 5+ 提升为正式 Phase 6（9 项按 P0-P3 排序）。限流留在 Phase 5（依赖压测数据定阈值）。Admin 提前至 Phase 5（简易版）。决策索引新增 #30 / #31 |
+| `docs/TEST_CASES.md` | v0.43→v0.44。Phase 4 新增错误处理（3 用例）/ Refresh Token（6 用例）/ 结构化日志（3 用例）三个测试组；Phase 5 新增 Admin（4 用例）/ 限流（3 用例）测试组；新增 §7.4 Phase 6 高级功能测试方向（9 项按优先级）；覆盖率表新增 5 行（error_handlers / logging / auth_service refresh / admin / rate_limit） |
+| `docs/TESTING.md` | v0.11→v0.12。§9 测试执行计划：Phase 4 新增 3 项测试（错误处理 / Refresh Token / 结构化日志）；Phase 5 新增 2 项测试（Admin 接口 / 限流）；新增 Phase 6 行（高级功能测试，不设时限） |
+| `docs/ARCHITECTURE.md` | v0.23→v0.25。新增 §9「基础设施加固设计」（错误处理加固 / Refresh Token 机制 / 结构化日志）三子节，含 Rotation 安全机制、日志格式、埋点表等完整设计；原 §9→§10，原 §10→§11；TODO 清单更新：Refresh Token 设计完成移除、限流/部署/监控 TODO 标注 Phase 5；§8.3 摘要压缩 `Phase 5+`→`Phase 6（P1）` |
+| `frontend/docs/FRONTEND.md` | v0.14→v0.15。§4.1 新增 ChatPage 会话路由（`?conversation_id=`）设计 + 新建对话触发方式表；§4.5.1 会话区域行为已有完整设计（无需新增）；§11 模块表更新：Phase 4/5/6 引用同步、状态轮询→Phase 6、标题生成→Phase 5 LLM 替换 |
+
+---
+
 ## 2026-06-05 — Phase 4 设计文档补充 + Schema 准备 + 代码修复
 
 ### 新增

@@ -17,11 +17,11 @@ import json
 
 import pytest
 
+from app.config import settings
 from app.core.sse import (
     format_sse_event,
     format_sse_heartbeat,
     stream_with_heartbeat,
-    HEARTBEAT_INTERVAL,
 )
 
 
@@ -279,4 +279,4 @@ class TestSSEHeartbeatInterval:
 
     def test_心跳间隔为15秒(self):
         """心跳间隔应为 15 秒，对齐 ARCHITECTURE.md §5.1.3"""
-        assert HEARTBEAT_INTERVAL == 15
+        assert settings.SSE_HEARTBEAT_INTERVAL == 15

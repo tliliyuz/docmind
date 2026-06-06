@@ -47,8 +47,6 @@ from app.services.knowledge_base_service import check_kb_active
 
 # 允许的排序字段
 SORT_ALLOWED_FIELDS = {"created_at", "updated_at", "filename", "file_size", "status"}
-# 分块预览截断长度
-CHUNK_PREVIEW_LENGTH = 200
 
 # 从 settings 解析允许的文件类型（逗号分隔 → set）
 ALLOWED_EXTENSIONS = set(
@@ -367,7 +365,7 @@ async def get_document_chunks(
         if settings.DEBUG_CHUNK_FULL:
             preview = full_content
         else:
-            preview = full_content[:CHUNK_PREVIEW_LENGTH]
+            preview = full_content[:settings.CHUNK_PREVIEW_LENGTH]
         items.append(
             DocumentChunkResponse(
                 id=r.id,

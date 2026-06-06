@@ -6,9 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jieba
 import pytest
 
+from app.config import settings
 from app.rag.bm25 import (
-    BM25_CACHE_TTL,
-    MIN_BM25_SCORE,
     BM25Retriever,
     _build_cache_key,
     _tokenize,
@@ -196,7 +195,7 @@ class TestBM25RetrieverSearch:
         redis_client.setex.assert_called_once()
         call_args = redis_client.setex.call_args
         assert call_args[0][0] == "bm25_tokens:1"  # key
-        assert call_args[0][1] == BM25_CACHE_TTL    # TTL
+        assert call_args[0][1] == settings.BM25_CACHE_TTL    # TTL
         # 写入值是 JSON，包含 doc_ids 和 tokens
         cached = json.loads(call_args[0][2])
         assert "doc_ids" in cached
@@ -477,7 +476,7 @@ class TestBM25RetrieverWithRealJieba:
         assert output.total == 2
         # 即使有负分成分，总分也不应低于 -5.0
         for r in output.results:
-            assert r.score > MIN_BM25_SCORE
+            assert r.score > settings.BM25_MIN_SCORE
 
     @pytest.mark.asyncio
     async def test_min_score阈值_可通过参数调整(self):
