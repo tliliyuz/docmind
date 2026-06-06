@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.30 |
+| 文档版本 | v0.34 |
 | 最后更新 | 2026-06-05 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 完成，Phase 4 设计就绪） |
+| 状态 | 进行中（Phase 3 完成，Phase 4.1 会话管理+多轮上下文已完成，Phase 4.2 基础设施加固待启动） |
 
 ---
 
@@ -14,11 +14,12 @@
 **预计总工期**：4-6 周（120-180 小时）
 
 ```
-Phase 1          Phase 2          Phase 3          Phase 4        Phase 5         Phase 5+
-骨架搭建         文档入库          核心问答          会话 & 记忆     打磨上线        迭代优化
-3-4天            3-4天            3-4天            —              4-5天           —
-  ├────────────────┼────────────────┼────────────────┼──────────────┼──────────────┤
-Week 1            Week 2           Week 2-3         Week 3-4       Week 4-5       Week 5+
+Phase 1          Phase 2          Phase 3          Phase 4              Phase 5         Phase 6
+骨架搭建         文档入库          核心问答          会话 & 记忆           打磨上线        迭代优化
+3-4天            3-4天            3-4天            + 基础设施加固         3-4天           不设时限
+                                                 4-5天
+  ├────────────────┼────────────────┼────────────────┼──────────────────┼──────────────┤
+Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6       Week 6+
 ```
 
 ---
@@ -300,65 +301,83 @@ Week 1            Week 2           Week 2-3         Week 3-4       Week 4-5     
 
 ---
 
-## 6. Phase 4：会话 & 记忆
+## 6. Phase 4：会话 & 记忆 + 基础设施加固
 
-**目标**：多轮对话能力，会话管理，滑动窗口记忆。
+**目标**：多轮对话能力 + 会话管理 + 三项独立基础设施（错误处理 / Refresh Token / 结构化日志），为 Phase 5 减负。
+
+> Phase 4 从原来的 10 项扩充为 18 项：原 Phase 5 中不依赖真实流量和 Phase 4 功能的三项基础设施任务（错误处理 / Refresh Token / 结构化日志）提前至此阶段。限流依赖压测数据定策略，留在 Phase 5。
 
 ### 6.1 后端：会话管理 + 多轮上下文
 
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
-| ⬜ | 会话 CRUD | 列表（按 `updated_at DESC`，仅当前用户）/ 详情（含 messages）/ 重命名 / 硬删除 | 决策 #28 |
-| ⬜ | 多轮对话上下文 | service 层 `_load_history()` 获取历史消息注入 context，Token 预算四池子分拆独立截断（详见 ARCHITECTURE.md §8） | 决策 #28 |
-| ⬜ | 会话标题 LLM 生成 | 替换当前「前 12 字截断」方案，更准确的自然语言标题 | — |
+| ✅ | 会话 CRUD | 列表（按 `updated_at DESC`，仅当前用户）/ 详情（含 messages）/ 重命名 / 硬删除 | 决策 #28 |
+| ✅ | 多轮对话上下文 | service 层 `_load_history()` 获取历史消息注入 context，Token 预算四池子分拆独立截断（详见 ARCHITECTURE.md §8） | 决策 #28 |
+| ✅ | 会话标题 LLM 生成 | 替换当前「前 12 字截断」方案，更准确的自然语言标题；SSE finish 先返回截断标题，流结束后异步 LLM 更新 | — |
 
-### 6.2 后端：数据库准备
+### 6.2 后端：基础设施加固（从 Phase 5 提前）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `messages` 表新增 `metadata` 列 | `metadata JSON NULL DEFAULT NULL`，alembic revision。Phase 4 不使用，为 Phase 5+ 预留 |
-| ⬜ | `conversations` 新增索引 | `(user_id, updated_at)` 复合索引，alembic revision |
+| ⬜ | 错误处理 | 全局异常处理 + 统一错误码。已有 `AppException` 体系和 31 个异常类，本阶段补充遗漏的异常映射 + 未知异常兜底策略（生产环境屏蔽堆栈） |
+| ⬜ | Refresh Token 机制 | access_token（15min）+ refresh_token（7天，存 MySQL/Redis），支持 Rotation（刷新后旧 token 失效）、主动吊销（改密/强制下线） |
+| ⬜ | 结构化日志 | 关键节点埋点（请求入口/检索耗时/LLM 调用/异常），统一日志格式（request_id + user_id + 阶段 + 耗时），便于上线后定位问题 |
 
-### 6.3 前端：会话列表 + 路由
+> **限流留在 Phase 5**：限流阈值依赖真实流量特征和压测数据，开发阶段随意设值（如 10/min）要么太严误伤用户，要么太松形同虚设。压测完成后再定策略更合理。
+
+### 6.3 后端：数据库准备
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | `messages` 表新增 `metadata` 列 | `metadata JSON NULL DEFAULT NULL`，alembic revision `9a1b2c3d4e5f`。Phase 4 不使用，为 Phase 5+ 预留 |
+| ✅ | `conversations` 新增索引 | `(user_id, updated_at)` 复合索引，alembic revision `9a1b2c3d4e5f` |
+
+### 6.4 前端：会话列表 + 路由
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
 | ⬜ | Sidebar 会话列表 | 展示当前用户会话列表 + 切换加载 + 高亮当前会话 |
+| ⬜ | Token 自动刷新（Axios 拦截器） | 响应拦截器捕获 401+E5003 → 调 `POST /api/auth/refresh` → 重放原请求（最多 1 次）；并发请求防抖（`isRefreshing` 标志位）；刷新失败 → 清除 token → 跳转 `/login`；`scheduleRefresh` 定时器（access_token 到期前 1 分钟自动刷新） |
 | ⬜ | ChatPage 会话路由 | `onMounted` 读取 `route.query.conversation_id` → 加载历史消息；新建对话 → URL 回到 `/chat` |
 
-### 6.4 本阶段不做的
+### 6.5 本阶段不做的
 
 | 推迟项 | 排期 | 原因 |
 |:---|:---|:---|
 | 问题重写（LLM 指代补全） | Phase 5 | Phase 4 历史注入后 DeepSeek 已能理解大部分上下文，效果不足再补（实现仅 ~30 行，Phase 5 顺手做） |
-| 滑动窗口摘要压缩 | Phase 5+ | 额外 LLM 调用开销大，Token 截断先够用 |
-| 消息状态机（partial/complete + PATCH） | Phase 5+ | 投入产出比低——SSE 中断重问一遍即可，partial 持久化增加 SSE 流中异步写库复杂度 |
-| 前端 Conversation 独立管理页 | Phase 5+ | Sidebar 内联管理已满足需求 |
+| 滑动窗口摘要压缩 | Phase 6 | 额外 LLM 调用开销大，Token 截断先够用 |
+| 消息状态机（partial/complete + PATCH） | Phase 6 | 投入产出比低——SSE 中断重问一遍即可，partial 持久化增加 SSE 流中异步写库复杂度 |
+| 前端 Conversation 独立管理页 | Phase 6 | Sidebar 内联管理已满足需求 |
+| 限流 | Phase 5 | 依赖压测数据定策略，开发阶段无法设定合理阈值 |
 
-### 6.5 Phase 4 测试
+### 6.6 Phase 4 测试
 
 | 状态 | 任务 | 测试类型 | 说明 |
 |:---|:---|:---|:---|
-| ⬜ | 会话 CRUD API 接口测试 | 接口测试 | POST/GET/PUT/DELETE 会话正常流程 + 错误码（E3001/E3002）+ 权限拒绝 |
-| ⬜ | 滑动窗口记忆测试 | 单元测试 | 各池子独立截断不互侵：History 超限截旧消息 / Retrieval 超限丢低分 chunk / 两者同时超限互不影响 |
+| ✅ | 会话 CRUD API 接口测试 | 接口测试 | POST/GET/PUT/DELETE 会话正常流程 + 错误码（E3001/E3002）+ 权限拒绝。20 用例，全部通过 |
+| ✅ | 滑动窗口记忆测试 | 单元测试 | Token 截断（U8.1）/ 条数硬上限（U8.4）/ 空历史（U8.5）/ [来源N] 去除（U8.6）/ system 消息过滤 + 各池子独立截断不互侵。9 用例全部通过。Retrieval 超限截断（U8.2）和双池同时超限（U8.3）待补充 |
+| ✅ | 会话标题 LLM 生成测试 | 单元测试 | LLM 正常生成 / 引号去除 / 失败回退 / 空内容回退 / 过长截断 / 回退一致性。6 用例全部通过 |
 | ⬜ | 多轮 RAG 回归测试 | 接口测试 | Q1「介绍报销制度」→ Q2「审批时间呢？」→ Q3「金额限制多少？」。验证：历史记忆正常 + 每轮检索正常 + 每轮引用正常。**单轮测试全部通过 ≠ 多轮没问题** |
 | ⬜ | 前端会话列表组件测试 | 组件测试 | Sidebar 会话列表渲染、切换加载、重命名、删除 |
+| ⬜ | Refresh Token 测试 | 接口测试 | Token 刷新 / Rotation（旧 token 失效）/ 主动吊销 |
+| ⬜ | 前端 Token 刷新测试 | 组件测试 | Axios 拦截器 401 → 自动刷新 → 重放原请求 / 并发请求防抖 / 刷新失败跳转登录 / scheduleRefresh 定时器启停 |
+| ⬜ | 错误处理测试 | 单元测试 | 各异常类 → HTTP 状态码映射 / 生产环境堆栈屏蔽 / 未知异常兜底 |
 | ⬜ | 人工答案评分（第 2 轮） | 人工评估 | 对比第 1 轮（4.38/5.0），验证多轮对话体验提升 |
 
-### 6.6 关键决策索引
+### 6.7 关键决策索引
 
 | # | 决策 | 文档位置 |
 |:---|:---|:---|
 | 28 | 会话记忆：Token 预算四池子分拆 + `[来源N]` 去除 + `updated_at` 自动更新 + 硬删除 + metadata 预留 | ARCHITECTURE.md §8 |
 | 29 | 前端路由：Query param `/chat?conversation_id=123`，与现有 `?kb_id=` 一致 | FRONTEND.md |
+| 30 | 基础设施提前：错误处理 / Refresh Token / 结构化日志从 Phase 5 移至 Phase 4，减轻上线前压力 | 本文件 §6.2 |
+| 31 | 限流留 Phase 5：阈值依赖压测数据，开发阶段不设固定值 | 本文件 §6.2 |
 
 ---
 
 ## 7. Phase 5：打磨上线
 
-**目标**：体验完善，错误处理，部署就绪，可以上线。
-
-> Phase 5 已从原来的 11 项任务拆分为「上线必需」和「上线后迭代」。原清单堆积了从 Phase 2/2.5/3 推迟过来的大量事项，一次性全部完成不现实。
+**目标**：体验完善 + 简易管理后台 + 限流 + 部署就绪，可以上线。
 
 ### 7.1 体验完善
 
@@ -368,62 +387,66 @@ Week 1            Week 2           Week 2-3         Week 3-4       Week 4-5     
 | ⬜ | 问题重写 | Phase 4 推迟项。LLM 结合对话历史补全指代和上下文（~30 行 + prompt） |
 | ⬜ | sources 智能预览 | 利用 LLM 回答中 `[来源N]` 附近的文字在 chunk 内定位被引段落，截取围绕该位置的上下文窗口 |
 
-### 7.2 基础设施
+### 7.2 管理后台（简易版）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 错误处理 | 全局异常处理 + 统一错误码 |
-| ⬜ | Refresh Token 机制 | access_token（15min）+ refresh_token（7天，存 MySQL/Redis），支持 Rotation（刷新后旧 token 失效）、主动吊销（改密/强制下线） |
-| ⬜ | 限流 | 简单 IP/用户级频率限制 |
-| ⬜ | 结构化日志 | 关键节点埋点 |
+| ⬜ | Admin 后端接口 | `GET /api/admin/knowledge-bases` + `GET /api/admin/documents` + `GET /api/admin/stats` |
+| ⬜ | Admin 前端联调 | `/admin/knowledge`、`/admin/documents`、`/admin/stats` 三个占位页面对接后端接口 |
+| ⬜ | Admin 访问 KB 详情页权限 | `isOwner \|\| isAdmin` 扩展，admin 可在详情页查看文档列表/删除违规内容 |
+
+### 7.3 基础设施（Phase 5 剩余项）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 限流 | IP/用户级频率限制。**阈值在压测后确定**（聊天/上传/登录接口分别设限，开发阶段不预设固定值） |
 | ⬜ | README + 部署文档 | 项目说明 + Docker Compose 部署方案 |
 
-### 7.3 Phase 5 测试
+### 7.4 Phase 5 测试
 
 | 状态 | 任务 | 测试类型 | 说明 |
-|:---|:---|:---|:---|
+|:---|:---|:---|
 | ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` 遍历完整测试集，检查召回/非空/来源/SSE/错误率 |
-| ⬜ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s |
+| ⬜ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** |
 | ⬜ | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 |
-| ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证 |
-| ⬜ | Refresh Token 测试 | 接口测试 | Token 刷新 / Rotation（旧 token 失效）/ 主动吊销 |
+| ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（阈值来自压测结果） |
+| ⬜ | Admin 接口测试 | 接口测试 | Admin 端点权限校验 + 数据聚合正确性 |
 
 ---
 
-## 7bis. Phase 5+：上线后迭代
+## 8. Phase 6：迭代优化
 
-**目标**：管理后台、高级功能、持续优化。不阻塞上线，按需求优先级逐个实现。
+**目标**：高级功能、持续优化。不阻塞上线，按需求优先级逐个实现。不设时间线。
 
-| 状态 | 任务 | 来源 | 说明 |
+### 8.1 高级功能（按优先级排序）
+
+| 优先级 | 任务 | 来源 | 说明 |
 |:---|:---|:---|:---|
-| ⬜ | Admin 后端接口实现 | Phase 2.5/5 | `GET /api/admin/knowledge-bases` + `GET /api/admin/documents` + `GET /api/admin/stats` |
-| ⬜ | Admin 前端联调 | Phase 5 | `/admin/knowledge`、`/admin/documents`、`/admin/stats` 对接后端 |
-| ⬜ | Admin 访问 KB 详情页权限 | Phase 2.5 | `isOwner \|\| isAdmin` 扩展 |
-| ⬜ | WebSocket 实时状态推送 | Phase 2 | 替换文档入库轮询 |
-| ⬜ | 结构感知分块 | Phase 2/3 | Markdown 标题层级感知分块 |
-| ⬜ | DashScope Rerank API | Phase 3 | 替换 NoopReranker 占位 |
-| ⬜ | thinking_content 持久化 | Phase 3 | `messages.thinking_content` 落库 + 历史回看 |
-| ⬜ | reasoning_effort 前端可控 | Phase 3 | 前端选择思考深度 |
-| ⬜ | LLM 摘要压缩 | Phase 4 | 超窗口消息 LLM 摘要 |
-| ⬜ | 消息状态机 | Phase 4 | partial/complete + PATCH 持久化 |
-| ⬜ | Resumable 分片上传 | Phase 2 | 大文件分片上传 |
-| ⬜ | 内容去重 | Phase 2 | 文档级去重 |
+| P0 | DashScope Rerank API | Phase 3 推迟 | 替换 NoopReranker 占位，用真实 Rerank 模型提升检索精度 |
+| P1 | 结构感知分块 | Phase 2/3 推迟 | Markdown 标题层级感知分块，提升长文档检索质量 |
+| P1 | LLM 摘要压缩 | Phase 4 推迟 | 超窗口消息 LLM 摘要，避免长对话 Token 溢出 |
+| P2 | WebSocket 实时状态推送 | Phase 2 推迟 | 替换文档入库轮询，降低前端请求频率 |
+| P2 | thinking_content 持久化 | Phase 3 推迟 | `messages.thinking_content` 落库 + 历史回看 |
+| P2 | 消息状态机 | Phase 4 推迟 | partial/complete + PATCH 持久化，SSE 中断后可恢复半条消息 |
+| P3 | reasoning_effort 前端可控 | Phase 3 推迟 | 前端选择思考深度（low/medium/high） |
+| P3 | Resumable 分片上传 | Phase 2 推迟 | 大文件（>50MB）分片上传 + 断点续传 |
+| P3 | 内容去重 | Phase 2 推迟 | 文档级去重，避免重复知识占用向量空间 |
 
 ---
 
-## 8. 依赖关系
+## 9. 依赖关系
 
 ```
-Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 ──→ Phase 5+
-  │            │            │              │            │            │
+Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 ──→ Phase 6
+  │            │            │              │            │            │            │
   └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ────→ └─ 测试 ──→  └─ 测试 ──→  └─ 测试
-     (已测)      (已测)  (权限测试)     (含人工评分1) (含人工评分2)  (全量+压测)
+     (已测)      (已测)  (权限测试)     (含人工评分1) (含人工评分2)  (全量+压测)   (不设时限)
 ```
 
-> Phase 5+ 不设时间线，不阻塞上线。按需求优先级逐个实现。
+> Phase 6 不设时间线，不阻塞上线。按优先级逐个实现。
 
 
-### 8.1 测试准入规则
+### 9.1 测试准入规则
 
 **每个 Phase 的测试必须在该 Phase 功能完成后立即执行，作为下一 Phase 的准入条件：**
 
@@ -432,7 +455,7 @@ Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 
 
 ---
 
-## 9. 相关文档
+## 10. 相关文档
 
 - [产品需求文档](PRD.md)
 - [架构设计文档](ARCHITECTURE.md)

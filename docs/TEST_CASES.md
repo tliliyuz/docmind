@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.43 |
+| 文档版本 | v0.46 |
 | 最后更新 | 2026-06-05 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 全部完成 + Phase 4 测试用例已设计） |
+| 状态 | 进行中（Phase 3 全部完成 + Phase 4.1 会话管理/多轮上下文已完成 + Phase 4.2 基础设施加固待启动） |
 
 ---
 
@@ -614,24 +614,43 @@
 
 ### 6.1 会话 CRUD API 接口测试
 
+> 测试文件：`tests/test_conversation_api.py`（20 用例，全部通过 ✅）。覆盖创建(4)/列表(3)/详情(4)/重命名(5)/删除(4)。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A5.1 | 会话 CRUD 全套 | API | 创建/列表/详情/重命名/删除 | 各端点正常响应 | ⬜ | — | 硬删除，DELETE 后会话及消息全部清理 |
-| A5.2 | 越权访问会话 | API | 访问他人会话 | 403, E3002 | ⬜ | — | — |
-| A5.3 | 会话列表排序 | API | 多发会话 | 按 `updated_at DESC` 排列 | ⬜ | — | 每次新消息后 updated_at 更新 |
-| A5.4 | 会话列表仅返回自己 | API | user_A 列表 | 不含 user_B 的会话 | ⬜ | — | — |
+| A5.1 | 会话 CRUD 全套 | API | 创建/列表/详情/重命名/删除 | 各端点正常响应 | ✅ | 2026-06-05 | 硬删除，DELETE 后会话及消息全部清理 |
+| A5.2 | 越权访问会话 | API | 访问他人会话 | 403, E3002 | ✅ | 2026-06-05 | detail/rename/delete 三个入口均覆盖 |
+| A5.3 | 会话列表排序 | API | 多发会话 | 按 `updated_at DESC` 排列 | ✅ | 2026-06-05 | Service 层逻辑，API 层 mock 验证 |
+| A5.4 | 会话列表仅返回自己 | API | user_A 列表 | 不含 user_B 的会话 | ✅ | 2026-06-05 | Service 层 `WHERE user_id=` 保证 |
 
 ### 6.2 滑动窗口记忆测试
 
+> 测试文件：`tests/test_history_memory.py`（9 用例，全部通过 ✅）。覆盖空历史/基本注入/Token截断/条数上限/[来源N]去除/thinking过滤/system过滤。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U8.1 | History 超限截断 | `chat_service._load_history` | 历史 token > HISTORY_BUDGET(6000) | 从旧到新逐条移除，剩余 ≤ 6000 tokens | ⬜ | — | Token 优先，非条数优先 |
+| U8.1 | History 超限截断 | `chat_service._load_history` | 历史 token > HISTORY_BUDGET(6000) | 超大旧消息被 `continue` 跳过，最新消息优先保留 | ✅ | 2026-06-05 | Token 优先，非条数优先；审查修复 break→continue |
 | U8.2 | Retrieval 超限截断 | `prompt_builder` | 检索结果 token > RETRIEVAL_BUDGET(10000) | 从低分 chunk 开始丢弃 | ⬜ | — | — |
 | U8.3 | History + Retrieval 同时超限 | `chat_service` | 两池子均超预算 | 各自独立截断，互不侵蚀 | ⬜ | — | **P0 Bug 防御**：避免历史挤掉检索 |
-| U8.4 | 条数硬上限兜底 | `chat_service._load_history` | 单条消息极长（>6000 tokens） | 最多 20 条消息，即使 token 预算未满 | ⬜ | — | — |
-| U8.5 | 空历史 | `chat_service._load_history` | 新建会话无历史 | 返回 `[]`，不影响正常问答 | ⬜ | — | — |
-| U8.6 | `[来源N]` 标记剥离 | `chat_service._load_history` | assistant 消息含 `[来源1][来源2]` | 注入历史中已去除所有 `[来源N]` | ⬜ | — | — |
-| U8.7 | `updated_at` 自动更新 | `chat_service` | 新增 Message 后 | `conversation.updated_at = now()` | ⬜ | — | — |
+| U8.4 | 条数硬上限兜底 | `chat_service._load_history` | 30 条短消息（未超 token 预算） | 最多 20 条消息，即使 token 预算未满 | ✅ | 2026-06-05 | `max_messages=20` 硬截断 |
+| U8.5 | 空历史 | `chat_service._load_history` | 新建会话无历史 | 返回 `[]`，不影响正常问答 | ✅ | 2026-06-05 | — |
+| U8.6 | `[来源N]` 标记剥离 | `chat_service._load_history` | assistant 消息含 `[来源1][来源2]` | 注入历史中已去除所有 `[来源N]`，user 消息不去除 | ✅ | 2026-06-05 | 2 用例：assistant 去除 + user 保留 |
+| U8.7 | `updated_at` 自动更新 | `chat_service` | 新增 Message 后 | `conversation.updated_at = now()` | ✅ | 2026-06-05 | chat_service 测试覆盖（`_generate_sse_stream` 内手动同步） |
+| U8.8 | system 消息过滤 | `chat_service._load_history` | 消息含 system 角色 | system 消息不注入历史 | ✅ | 2026-06-05 | 审查新增：原逻辑未过滤 |
+| U8.9 | thinking_content 不注入 | `chat_service._load_history` | assistant 消息含 thinking_content | 历史仅含 role+content | ✅ | 2026-06-05 | — |
+
+### 6.2.1 会话标题 LLM 生成测试
+
+> 测试文件：`tests/test_conversation_title.py`（6 用例，全部通过 ✅）。
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U8.10 | LLM 正常生成标题 | `_generate_title_llm` | LLM 返回有效标题 | 返回 LLM 生成的标题文本 | ✅ | 2026-06-05 | — |
+| U8.11 | LLM 返回带引号标题 | `_generate_title_llm` | `"报销流程问答"` | 自动去除首尾引号 | ✅ | 2026-06-05 | `strip('"\'""')` 去中文引号 |
+| U8.12 | LLM 调用失败回退 | `_generate_title_llm` | LLM 抛异常 | 回退到 `_generate_title` 截断方案 | ✅ | 2026-06-05 | 不阻塞主流程 |
+| U8.13 | LLM 返回空内容回退 | `_generate_title_llm` | LLM 返回空白 | 回退到截断方案 | ✅ | 2026-06-05 | `strip()` 后为空 |
+| U8.14 | LLM 返回过长标题 | `_generate_title_llm` | >20 字标题 | 截断至 20 字 | ✅ | 2026-06-05 | `title[:20]` |
+| U8.15 | 回退结果与截断一致 | `_generate_title_llm` | LLM 失败回退 | 回退结果与直接调 `_generate_title` 相同 | ✅ | 2026-06-05 | — |
 
 ### 6.3 多轮 RAG 回归测试
 
@@ -653,6 +672,56 @@
 | C4.4 | 会话重命名 | `Sidebar` | 双击标题编辑 | 调用 PUT API + 列表更新 | ⬜ | — | — |
 | C4.5 | 会话删除 | `Sidebar` | 删除按钮 + 确认弹窗 | 调用 DELETE API + 列表移除 | ⬜ | — | 当前会话被删除则切换到新建状态 |
 | C4.6 | URL 直链加载 | `ChatPage` | `/chat?conversation_id=123` | 自动加载会话历史 + Sidebar 对应项高亮 | ⬜ | — | — |
+| C4.7 | Token 刷新-401 拦截重放 | `api/index.js` Axios 拦截器 | 请求返回 401+E5003 | 自动调 `authStore.refresh()` → 重放原请求成功 | ⬜ | — | Mock axios + authStore |
+| C4.8 | Token 刷新-并发防抖 | `api/index.js` Axios 拦截器 | 3 个请求同时收到 401 | 仅第 1 个触发 refresh，其余排队等待完成后统一重放 | ⬜ | — | `isRefreshing` 标志位 |
+| C4.9 | Token 刷新-失败跳转登录 | `api/index.js` Axios 拦截器 | refresh 返回 E5006/E5007/E5008/E5009 | 清除 token → `router.push('/login')` | ⬜ | — | — |
+| C4.10 | Token 刷新-无 refresh_token | `api/index.js` Axios 拦截器 | localStorage 无 refresh_token | 直接清除 token → 跳转 `/login`，不调 refresh 接口 | ⬜ | — | — |
+| C4.11 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ⬜ | — | — |
+| C4.12 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ⬜ | — | — |
+
+### 6.5 错误处理测试（Phase 4 新增 — 从 Phase 5 提前）
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U9.1 | 已知业务异常映射 | `main.py` exception handlers | 各 `AppException` 子类抛出 | HTTP 状态码与 API.md 错误码表一致 | ⬜ | — | 遍历全部 31 个异常类 |
+| U9.2 | 未知异常兜底 | `main.py` exception handlers | 代码抛出 `ValueError` | 生产环境返回 500 E9001 + 屏蔽堆栈；开发环境返回堆栈 | ⬜ | — | — |
+| U9.3 | 异常日志记录 | `main.py` exception handlers | 任意异常 | 日志包含 request_id + user_id + 异常类型 + traceback | ⬜ | — | 结构化日志格式校验 |
+
+### 6.6 Refresh Token 测试（Phase 4 新增 — 从 Phase 5 提前）
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A6.1 | Token 正常刷新 | POST `/api/auth/refresh` | 有效 refresh_token | 返回新 access_token + 新 refresh_token（Rotation） | ⬜ | — | — |
+| A6.2 | 旧 Token 失效 | POST `/api/auth/refresh` | 使用已刷新的旧 refresh_token | 401, Token 已失效 | ⬜ | — | Rotation 安全机制 |
+| A6.3 | 过期 Token 拒绝 | POST `/api/auth/refresh` | 过期 refresh_token | 401, Token 已过期 | ⬜ | — | — |
+| A6.4 | 主动吊销（改密） | PUT `/api/auth/password` | 改密后 | 所有旧 refresh_token 失效 | ⬜ | — | 强制下线场景 |
+| A6.5 | 主动吊销（登出） | POST `/api/auth/logout` | 登出后 | 当前 refresh_token 失效 | ⬜ | — | — |
+| U9.4 | Token 存储 | `auth_service` | 签发/刷新/吊销 | MySQL/Redis 中 token 记录正确 | ⬜ | — | — |
+
+### 6.7 结构化日志测试（Phase 4 新增 — 从 Phase 5 提前）
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U9.5 | 请求入口日志 | 中间件/日志工具 | HTTP 请求到达 | 日志包含 request_id + method + path + user_id | ⬜ | — | — |
+| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⬜ | — | 上线后定位慢查询关键 |
+| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⬜ | — | — |
+
+### 6.8 Phase 5 Admin 测试用例
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A7.1 | Admin KB 列表 | GET `/api/admin/knowledge-bases` | admin 用户 | 返回全量 KB（含跨用户）+ 分页 + 筛选 | ⬜ | — | Phase 5 |
+| A7.2 | Admin 文档列表 | GET `/api/admin/documents` | admin 用户 | 返回全量文档 + 筛选 | ⬜ | — | Phase 5 |
+| A7.3 | Admin 统计 | GET `/api/admin/stats` | admin 用户 | 返回用户数/KB数/文档数/存储量 | ⬜ | — | Phase 5 |
+| A7.4 | 非 Admin 拒绝 | 全部 Admin 端点 | 普通用户 | 403 | ⬜ | — | Phase 5 |
+
+### 6.9 Phase 5 限流测试用例
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A8.1 | IP 限流生效 | 限流中间件 | 单 IP 超阈值请求 | 429 Too Many Requests | ⬜ | — | 阈值来自压测结果 |
+| A8.2 | 用户级限流生效 | 限流中间件 | 单用户超阈值请求 | 429 + 不同用户不受影响 | ⬜ | — | — |
+| A8.3 | 限流窗口重置 | 限流中间件 | 等待窗口过期后 | 请求恢复正常 | ⬜ | — | — |
 
 ---
 
@@ -682,6 +751,24 @@
 | P3 | 峰值 | 10 | 5 min | ≤ 3s | ≤ 10s | ≤ 1% | ⬜ | — |
 | P4 | 极限 | 20 | 2 min | — | — | ≤ 5% | ⬜ | — |
 
+> 压测完成后，根据 P50/P99 数据设定 Phase 5 限流阈值。
+
+### 7.4 Phase 6 高级功能（不设时限）
+
+> 以下为推迟至 Phase 6 的优化项，按优先级排序。测试用例在对应功能实现时补充。
+
+| 优先级 | 功能 | 来源 | 简要测试方向 |
+|:---|:---|:---|:---|
+| P0 | DashScope Rerank API | Phase 3 | Reranker 结果排序正确性 / top_k 截取 / API 异常处理 |
+| P1 | 结构感知分块 | Phase 2 | Markdown 标题层级保留 / 跨标题边界不截断 |
+| P1 | LLM 摘要压缩 | Phase 4 | 摘要 token 控制 / 关键信息不丢失 |
+| P2 | WebSocket 实时推送 | Phase 2 | 连接建立/断开/重连 / 状态变更事件 |
+| P2 | thinking_content 持久化 | Phase 3 | 落库正确性 / 历史回看渲染 |
+| P2 | 消息状态机 | Phase 4 | partial→complete 转换 / PATCH 接口 |
+| P3 | reasoning_effort 前端可控 | Phase 3 | 前端枚举校验 / low/medium/high 映射 |
+| P3 | Resumable 分片上传 | Phase 2 | 分片并发 / 断点续传 / 最终合并 |
+| P3 | 内容去重 | Phase 2 | 哈希去重 / 近似去重 / 去重提示 |
+
 ---
 
 ## 8. 测试覆盖率目标
@@ -710,6 +797,16 @@
 | `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例） |
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例） |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
+| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
+| `services/conversation_service.py` | ≥ 80% | ✅ 通过 API 测试 | Phase 4.1：会话 CRUD（5 个端点，20 用例，2026-06-05） |
+| `api/conversation.py` | ≥ 90% | ✅ 100% | Phase 4.1：会话 API（20 用例，2026-06-05） |
+| `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py，2026-06-05） |
+| `services/chat_service.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py，2026-06-05） |
+| `core/error_handlers.py` | ≥ 80% | ⬜ | Phase 4.2：全局异常处理（3 用例，U9.1-U9.3） |
+| `core/logging.py` | ≥ 70% | ⬜ | Phase 4.2：结构化日志（3 用例，U9.5-U9.7） |
+| `services/auth_service.py` (refresh) | ≥ 80% | ⬜ | Phase 4.2：Refresh Token 机制（6 用例，A6.1-A6.5 + U9.4） |
+| `api/admin.py` (接口测试) | ≥ 90% | ⬜ | Phase 5：Admin 端点（4 用例，A7.1-A7.4） |
+| `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（3 用例，A8.1-A8.3） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |

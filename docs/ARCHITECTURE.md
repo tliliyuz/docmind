@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.23 |
+| 文档版本 | v0.26 |
 | 最后更新 | 2026-06-05 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 3 完成，Phase 4 设计就绪） |
+| 状态 | 草稿（Phase 3 完成，Phase 4 设计就绪，含基础设施加固） |
 
 ---
 
@@ -860,7 +860,7 @@ messages = [
 
 - **Token 优先**：纯按消息条数截断不可靠（消息长短不一），从旧到新逐条移除直到 token 预算内
 - **条数硬上限**：最多 20 条消息作为兜底（防止极端长消息撑爆上下文）
-- **摘要压缩**：推迟到 Phase 5+。额外 LLM 调用开销大，截断先够用
+- **摘要压缩**：推迟到 Phase 6（P1）。额外 LLM 调用开销大，截断先够用
 
 ### 8.4 历史消息中 `[来源N]` 标记处理
 
@@ -895,7 +895,38 @@ DELETE FROM conversations WHERE id = :id;
 
 **理由**：未来 Tool Call / Web Search / Agent 等场景需要存放 `tool_name` / `tool_result` / `latency` 等非结构化数据。现在加是一行 alembic migration，以后加是数据迁移 + 兼容处理。
 
-### 8.9 问题重写
+### 8.9 闲谈路径下的历史消息注入
+
+**问题场景**：
+
+```
+Q1: "报销制度是什么？"  →  知识查询，检索 + 注入历史
+Q2: "谢谢"             →  闲谈（命中 _is_casual_chat），跳过检索
+Q3: "审批时间呢？"       →  知识查询，需要 Q1 上下文才能理解
+```
+
+如果 Q2 闲谈路径不注入历史，LLM 在 Q2 回复时看不到 Q1 的对话上下文，可能给出「不客气！有什么可以帮助你的吗？」这样与业务无关的泛化回复。更重要的是，这会导致对话连续性断裂——用户在 Q2 后感知到「助手忘了我们在聊什么」。
+
+**决策**：**闲谈路径同样注入历史消息**。
+
+**实现要点**：
+1. `_load_history()` 调用在 `_is_casual_chat()` 判断**之前**执行，历史消息对两条路径均可用
+2. 闲谈路径：`CASUAL_SYSTEM_PROMPT` + 历史消息 + 当前问题 → LLM。检索步骤跳过，但对话上下文保留
+3. 知识查询路径：`SYSTEM_PROMPT` + 历史消息 + 检索结果 + 当前问题 → LLM（不变）
+
+**理由**：
+- **对话连续性**：闲谈也是对话的一部分，LLM 需要上下文才能给出恰当的社交回应（如知道刚才在聊报销，回复「报销流程不客气！还有其他问题随时问我。」而非泛化问候）
+- **下游轮次受益**：Q2 的 assistant 回复本身也会成为 Q3 的历史上下文。如果 Q2 回复脱离业务语境，Q3 的上下文质量也会下降
+- **实现成本极低**：`_load_history()` 已实现（~40 行），闲谈路径复用即可，零额外代码
+- **Token 开销可控**：历史注入已受 `HISTORY_BUDGET`（6000 tokens）独立截断，不会因闲谈路径额外膨胀
+
+**`CASUAL_SYSTEM_PROMPT` 保持不变**：
+```
+你是 DocMind，一个企业知识库助手。请友好、简洁地回答用户的问题。
+```
+> System Prompt 本身不需要修改——对话语境通过历史消息自然传递。LLM 看到 `[user: 报销制度是什么?] [assistant: 根据...] [user: 谢谢]` 自然会在回复中体现上下文关联。
+
+### 8.10 问题重写
 
 **决策**：推迟到 Phase 5。Phase 4 历史消息注入后，DeepSeek 本身具备上下文理解能力，大部分指代可自然消解。如实际使用中效果不好，Phase 5 再补。
 
@@ -903,45 +934,166 @@ DELETE FROM conversations WHERE id = :id;
 
 ---
 
-## 9. 当前决策与已知局限
+## 9. 基础设施加固设计 [Phase 4 实现]
 
-### 9.1 ChromaDB 规模上限
+> Phase 4 从 Phase 5 提前三项独立基础设施：错误处理 / Refresh Token / 结构化日志。均不依赖会话管理功能，可并行开发。
+
+### 9.1 错误处理加固
+
+#### 9.1.1 当前状态
+
+已具备 `AppException` 基类（31 个子类）+ 全局 `RequestValidationError`（422/E9003）和 `Exception`（500/E9001）handler。响应格式统一为 `{code, message, detail}`。
+
+#### 9.1.2 Phase 4 补充
+
+| 任务 | 说明 |
+|:---|:---|
+| 异常→HTTP 状态码映射审计 | 遍历全部 31 个 `AppException` 子类，确认 `status_code` 与 API.md 错误码表一致 |
+| 未知异常兜底 | `Exception` handler 增加 `DEBUG` 模式判断：生产环境返回 500 E9001 + 通用提示，屏蔽堆栈；开发环境返回完整 traceback |
+| 异常日志 | 所有 handler 中调用结构化日志（见 §9.3），记录 `request_id` + `user_id` + `exception_type` + `traceback` |
+
+#### 9.1.3 代码位置
+
+```
+backend/app/core/exceptions.py   ← 已有，不变
+backend/app/main.py              ← handler 增强（堆栈屏蔽 + 日志）
+```
+
+### 9.2 Refresh Token 机制
+
+#### 9.2.1 当前状态
+
+纯无状态 JWT，`access_token` 有效期 24h，签发后无法主动吊销。用户改密/被踢下线后旧 token 仍有效，存在安全风险。
+
+#### 9.2.2 设计方案
+
+```
+           ┌─────────────┐
+登录/注册    │ access_token │  15min（短）
+──→        │ refresh_token│  7天（长，哈希存 MySQL）
+           └──────┬──────┘
+                  │
+    access_token 过期
+    ──→ POST /api/auth/refresh  { refresh_token }
+         │
+         ├─ 验证 refresh_token 有效 + 未吊销
+         ├─ 签发新 access_token + 新 refresh_token（Rotation）
+         └─ 旧 refresh_token 标记失效
+```
+
+| 端点 | 方法 | 说明 |
+|:---|:---|:---|
+| `/api/auth/refresh` | POST | 用 refresh_token 换取新 token 对（Rotation） |
+| `/api/auth/logout` | POST | 吊销当前 refresh_token |
+| `/api/auth/password` | PUT | 改密后吊销该用户全部 refresh_token（强制下线） |
+
+#### 9.2.3 存储方案
+
+| 存储 | 内容 | 说明 |
+|:---|:---|:---|
+| MySQL `refresh_tokens` 表 | `id, user_id, token_hash, expires_at, revoked_at, created_at` | 持久化，查是否存在 + 是否过期 + 是否已吊销 |
+| Redis（可选） | `refresh_token:{user_id}` → 最新 token_hash | 加速校验，命中跳过 MySQL 查询 |
+
+> Phase 4 优先 MySQL 方案。Redis 缓存层作为可选优化，不阻塞进度。
+
+#### 9.2.4 Rotation 安全机制
+
+每次刷新时旧 refresh_token 立即失效，签发新 token 对：
+- **防重放**：即使攻击者截获 refresh_token，用户正常刷新后攻击者的旧 token 已失效
+- **泄露检测**：如果用已吊销的旧 token 请求刷新 → 说明 token 可能泄露 → 吊销该用户全部 refresh_token
+
+#### 9.2.5 前端适配
+
+- `api/index.js` 响应拦截器：收到 401 + `code=E5003`（Token 过期）时自动调 `/api/auth/refresh`
+- 刷新成功后重放原请求，刷新失败（refresh_token 也过期/吊销）→ 跳转登录页
+- Pinia `authStore` 新增 `refreshToken()` action + `scheduleRefresh()` 定时器（access_token 到期前 1 分钟自动刷新）
+
+### 9.3 结构化日志
+
+#### 9.3.1 设计目标
+
+上线后定位问题不依赖「用户复述 + 翻代码猜测」。每条日志自包含上下文，可被日志聚合系统（ELK/Loki）索引。
+
+#### 9.3.2 日志格式
+
+```json
+{
+  "timestamp": "2026-06-05T10:30:00.123Z",
+  "level": "INFO",
+  "request_id": "a1b2c3d4",
+  "user_id": 1,
+  "phase": "retrieval",
+  "message": "检索完成",
+  "extra": {
+    "kb_id": 1,
+    "vector_ms": 120,
+    "bm25_ms": 45,
+    "rrf_ms": 2,
+    "total_chunks": 8
+  }
+}
+```
+
+#### 9.3.3 关键埋点
+
+| 阶段 | 记录内容 | 用途 |
+|:---|:---|:---|
+| 请求入口 | method + path + user_id + request_id | 请求追踪起点 |
+| 检索 | kb_id + 向量耗时 + BM25 耗时 + RRF 耗时 + chunk 数 | 慢检索定位 |
+| LLM 调用 | model + prompt_tokens + completion_tokens + 首 token 延迟 + 总耗时 | Token 消耗监控、慢 LLM 定位 |
+| 异常 | request_id + user_id + exception_type + traceback | 错误追踪 |
+| 入库流水线 | doc_id + 阶段 + 耗时 + 成功/失败 | 入库问题排查 |
+
+#### 9.3.4 实现方案
+
+使用 Python 标准库 `logging` + `python-json-logger`（如有）或自定义 `JSONFormatter`。通过中间件注入 `request_id`（`uuid4`），跨请求传递。
+
+```
+backend/app/core/logging.py   ← 新增：日志配置 + JSONFormatter
+backend/app/main.py           ← 中间件注入 request_id
+```
+
+---
+
+## 10. 当前决策与已知局限
+
+### 10.1 ChromaDB 规模上限
 
 - **当前方案**：共用 Collection + Metadata 隔离，适用于 **< 5 万 chunk** 总量
 - **风险**：共享 Collection 下，`WHERE` 过滤发生在查询阶段而非索引阶段，chunk 数量增大后检索延迟线性增长
 - **缓解**：当 total_chunks > 5 万或 P95 检索延迟 > 500ms 时，评估迁移至独立 Collection 方案
 - **长期方向**：如业务需要支持 100 万+ chunk 规模，考虑迁移至 Milvus 或 Qdrant
 
-### 9.2 Celery 任务超时
+### 10.2 Celery 任务超时
 
 - 单文档入库 soft_time_limit 设为 600s（10 分钟）
 - **风险**：超大 PDF（200+ 页）可能在 10 分钟内无法完成 Embedding API 调用
 - **缓解**：超大文档在上传前建议拆分为子文档；后续可考虑分页并行 Embedding
 
-### 9.3 BM25 实现
+### 10.3 BM25 实现
 
 - 使用 rank-bm25 (BM25Okapi) + jieba 中文分词
 - **风险**：IDF 基于初始化时语料固定，文档删除后不自动衰减；语料变更需重建实例
 - **缓解**：BM25 仅作为 RRF 融合的一路信号，非最终排序依据；Rerank 阶段可修正排序偏差
 
-### 9.4 LLM 幻觉与溯源准确性
+### 10.4 LLM 幻觉与溯源准确性
 
 - **风险**：LLM 可能引用不存在的文档内容（幻觉），或错误归因来源
 - **缓解**：Prompt 中强调「仅基于提供的文档内容回答，无法回答时明确说明」；来源引用以 chunk_id 为准在 MySQL 中回溯文档名和页码
 
-### 9.5 前端 JS/TS
+### 10.5 前端 JS/TS
 
 - 当前使用 JavaScript，不引入 TypeScript
 - **风险**：随着组件增多，props/events 类型缺少编译期检查
 - **缓解**：保持组件数量可控（< 20 个）；如后续扩展团队，可渐进式迁移
 
-> TODO: [待补充] 部署架构图 — 生产环境的 Nginx 反向代理、SSL 终结、静态资源托管策略。
-> TODO: [待补充] Refresh Token 设计 — 当前为纯无状态 JWT，access_token 签发后无法主动吊销（如改密/踢下线），token 过期后需重新登录。后续引入 refresh_token（长有效期，哈希存 MySQL/Redis），搭配 access_token（短有效期），支持无感续期和主动吊销。
-> TODO: [待补充] 监控与告警方案 — 应用级指标（请求延迟、错误率）+ LLM 调用监控（Token 消耗、API 失败重试）。
+> TODO: [待补充，Phase 5] 部署架构图 — 生产环境的 Nginx 反向代理、SSL 终结、静态资源托管策略。
+> TODO: [待补充，Phase 5] 限流策略 — 开发阶段不设固定阈值，Phase 5 压测后根据 P50/P99 数据确定聊天/上传/登录接口的合理限流值。
+> TODO: [待补充，Phase 5] 监控与告警方案 — 基于结构化日志（§9.3）接入日志聚合系统，应用级指标（请求延迟、错误率）+ LLM 调用监控（Token 消耗、API 失败重试）。
 
 ---
 
-## 10. 相关文档
+## 11. 相关文档
 
 - [产品需求文档](PRD.md)
 - [数据库设计文档](../backend/docs/DATABASE.md)

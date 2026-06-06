@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.9 |
+| 文档版本 | v0.10 |
 | 最后更新 | 2026-06-05 |
 | 作者 | yuz |
 | 状态 | 草稿 |
@@ -18,8 +18,10 @@ users (用户表)
   │     └── documents (文档表)
   │           └── chunks (分块表)
   │
-  └── conversations (会话表)
-        └── messages (消息表)
+  ├── conversations (会话表)
+  │     └── messages (消息表)
+  │
+  └── refresh_tokens (刷新令牌表)
 ```
 
 **关系说明**：
@@ -29,6 +31,7 @@ users (用户表)
 - 一个用户可发起多个会话，每个会话属于一个用户（1:N）
 - 一个会话包含多条消息，每条消息属于一个会话（1:N）
 - 会话可关联一个知识库（可选），表示当前对话的知识库上下文
+- 一个用户可有多个刷新令牌，每个令牌属于一个用户（1:N）
 
 ---
 
@@ -254,6 +257,41 @@ CREATE TABLE messages (
 | metadata | JSON | 扩展元数据（可空）。Phase 4 不使用，为 future Tool Call / Web Search / Agent 预留 |
 | created_at | DATETIME | 创建时间 |
 
+### 2.7 刷新令牌表 `refresh_tokens`
+
+> **Phase 4 新增**。配合 Refresh Token 机制（见 ARCHITECTURE.md §9.2），持久化存储刷新令牌哈希。
+
+```sql
+CREATE TABLE refresh_tokens (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    token_hash VARCHAR(256) NOT NULL COMMENT 'refresh_token 的 SHA-256 哈希，不存明文',
+    expires_at DATETIME NOT NULL COMMENT '过期时间（创建后 7 天）',
+    revoked_at DATETIME NULL COMMENT '吊销时间（NULL=有效，非NULL=已吊销及吊销时间）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_token_hash (token_hash),
+    INDEX idx_user_active (user_id, revoked_at, expires_at) COMMENT '查询某用户有效 token',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| id | BIGINT | 主键 |
+| user_id | BIGINT | 所属用户 ID |
+| token_hash | VARCHAR(256) | refresh_token 的 SHA-256 哈希值（不存明文，防数据库泄露后伪造） |
+| expires_at | DATETIME | Token 过期时间（创建后 +7 天） |
+| revoked_at | DATETIME | 吊销时间（NULL=有效；非 NULL=已吊销，值为吊销时间） |
+| created_at | DATETIME | 创建时间 |
+
+**安全设计**：
+- **不存明文**：数据库仅存 SHA-256 哈希。攻击者获取数据库后无法伪造 refresh_token
+- **Rotation 实现**：调用 `POST /api/auth/refresh` 时，旧 token 行 `UPDATE revoked_at = NOW()`，新 token 行 `INSERT`
+- **泄露检测**：若用已吊销的旧 token 请求刷新 → 该用户全部 token `UPDATE revoked_at = NOW()`（E5009）
+- **改密吊销**：`PUT /api/auth/password` → 该用户全部 token `UPDATE revoked_at = NOW()`
+- **过期清理**：`expires_at < NOW()` 的 token 即使 `revoked_at IS NULL` 也视为无效
+
 ---
 
 ## 3. 索引策略
@@ -269,12 +307,16 @@ CREATE TABLE messages (
 | conversations | idx_user_id | 普通索引 | 按用户列出会话 |
 | conversations | idx_conversations_user_updated (user_id, updated_at) | 复合索引 | Phase 4：按用户列出会话并按更新时间倒序排列 |
 | messages | idx_conversation_id | 普通索引 | 按会话列出消息 |
+| refresh_tokens | idx_user_id | 普通索引 | 按用户查询刷新令牌 |
+| refresh_tokens | idx_token_hash | 普通索引 | 按 token 哈希查找（刷新校验入口） |
+| refresh_tokens | idx_user_active (user_id, revoked_at, expires_at) | 复合索引 | 查询用户有效 token + 改密批量吊销 + Rotation 检测 |
 
 > **注意**：MySQL 会自动为外键列创建索引（若该列尚未建立索引）。上表中 `chunks.doc_id`、`chunks.kb_id` 等因已有显式索引，不再重复；`conversations.kb_id` 无外键索引，如需频繁按知识库查询会话，可后续补充。
 
 > TODO: [待补充] 如后续文档量和用户量增大，考虑：
 > - `documents` 表增加 `(kb_id, status)` 复合索引用于状态过滤
 > - `messages` 表增加 `(conversation_id, created_at)` 复合索引用于按时间排序
+> - `refresh_tokens` 表定期清理过期 token 的定时任务
 
 ---
 
@@ -289,6 +331,7 @@ CREATE TABLE messages (
 | `conversations.user_id` | `users(id)` | `ON DELETE CASCADE` | 用户删除时自动清理其会话历史，避免悬空数据 |
 | `conversations.kb_id` | `knowledge_bases(id)` | `ON DELETE SET NULL` | 知识库删除后会话保留，仅解除关联（kb_id 置空），防止历史对话丢失 |
 | `messages.conversation_id` | `conversations(id)` | `ON DELETE CASCADE` | 删除会话时自动清理全部消息，与业务「删除会话及其全部消息」对齐 |
+| `refresh_tokens.user_id` | `users(id)` | `ON DELETE CASCADE` | 用户删除时自动清理其刷新令牌，避免悬空数据 |
 
 > **重要**：知识库/文档的实际删除采用 **Celery 异步物理删除**（先标记 `deleting` → Worker 清理 ChromaDB 向量 + 磁盘文件 → 物理 `DELETE FROM` MySQL 记录）。`ON DELETE CASCADE` 作为数据库层兜底保障——即使 Celery 仅执行 `DELETE FROM knowledge_bases WHERE id=?`，子记录（documents → chunks）也会由 FK CASCADE 自动级联清理，无需显式逐表删除。
 
