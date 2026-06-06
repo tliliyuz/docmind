@@ -8,10 +8,12 @@
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.rag.chunker import estimate_tokens
 from app.rag.retriever import RetrievalOutput, RetrievalResult
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +26,7 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个企业知识库助手。请仅基于以�
 
 请用中文回答，引用来源时标注 [来源N]（N 为文档编号）。"""
 
-# Token 预算常量
-DEFAULT_MAX_CONTEXT_TOKENS = 3000  # 上下文软上限
-DEFAULT_MAX_CHUNKS = 5  # 最大 chunk 数（与 NoopReranker top_k 对齐）
+# Token 预算常量（从 settings 读取）
 
 
 @dataclass
@@ -37,6 +37,7 @@ class PromptBuildResult:
     used_chunks: list[RetrievalResult]
     total_context_tokens: int
     chunks_count: int
+    history_messages: list[dict[str, str]] = field(default_factory=list)
 
 
 def _format_chunk_reference(chunk: RetrievalResult, index: int) -> str:
@@ -59,8 +60,9 @@ def _format_chunk_reference(chunk: RetrievalResult, index: int) -> str:
 def build_prompt(
     question: str,
     retrieval_output: RetrievalOutput,
-    max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
-    max_chunks: int = DEFAULT_MAX_CHUNKS,
+    history_messages: list[dict[str, str]] | None = None,
+    max_context_tokens: int = settings.RETRIEVAL_BUDGET,
+    max_chunks: int = settings.PROMPT_MAX_CHUNKS,
 ) -> PromptBuildResult:
     """组装 Prompt：检索结果拼接 + 用户问题，软上限预算控制。
 
@@ -71,6 +73,7 @@ def build_prompt(
     Args:
         question: 用户问题
         retrieval_output: 检索结果（已融合+重排序）
+        history_messages: 历史消息列表（Phase 4 透传，不影响检索结果组装）
         max_context_tokens: 上下文 token 软上限
         max_chunks: 最大 chunk 数
 
@@ -85,6 +88,7 @@ def build_prompt(
             used_chunks=[],
             total_context_tokens=0,
             chunks_count=0,
+            history_messages=history_messages or [],
         )
 
     # 保持 RRF 相关性排序（已由上游 NoopReranker 按相关性降序排列）
@@ -141,4 +145,5 @@ def build_prompt(
         used_chunks=used_chunks,
         total_context_tokens=total_tokens,
         chunks_count=len(used_chunks),
+        history_messages=history_messages or [],
     )

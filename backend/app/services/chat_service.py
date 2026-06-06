@@ -1,16 +1,17 @@
 """问答业务逻辑 — 检索 → RRF → Rerank → Prompt → LLM SSE 流式输出
 
-对齐 ARCHITECTURE.md §5.1 / ROADMAP.md §5.2：
-- 单轮问答核心链路（Phase 3 不含完整意图识别和问题重写）
+对齐 ARCHITECTURE.md §5.1 / ROADMAP.md §6.1：
+- 多轮对话上下文：_load_history() 加载历史消息注入 LLM messages
+- Token 预算四池子分拆：System 2000 / History 6000 / Retrieval 10000 / Question 2000
 - 轻量闲谈检测：问候/致谢/告别等跳过检索，直接 LLM 回复
-- conversation_id=null 时自动创建会话，不注入历史（history=[]）
-- 标题自动生成：截取用户问题前 12 字
+- 会话标题 LLM 生成：finish 先返回截断标题，SSE 流结束后异步调用 LLM 更新
 - SSE 6 种事件类型 + 15s 心跳
 - deep_thinking → extra_body thinking 参数映射
 """
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.database import async_session
 from app.core.exceptions import (
     ConversationAccessDeniedException,
@@ -28,7 +30,7 @@ from app.core.exceptions import (
     QuestionEmptyException,
     RetrievalServiceException,
 )
-from app.core.llm import stream_chat_completion
+from app.core.llm import chat_completion, stream_chat_completion
 from app.core.redis_client import get_redis
 from app.core.sse import format_sse_event, stream_with_heartbeat
 from app.models.conversation import Conversation
@@ -107,6 +109,91 @@ def _generate_title(question: str) -> str:
     return title.strip() or "新对话"
 
 
+async def _generate_title_llm(question: str) -> str:
+    """LLM 生成会话标题，失败时回退到前 12 字截断。
+
+    对齐 ROADMAP.md §6.1 任务 3：替换「前 12 字截断」方案。
+    此函数在 SSE 流结束后异步调用，不阻塞 finish 事件。
+    """
+    try:
+        result = await chat_completion(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是一个标题生成器。根据用户的提问，生成一个简洁的中文对话标题（不超过 20 字）。只输出标题文本，不要加引号或其他格式。",
+                },
+                {"role": "user", "content": question},
+            ],
+            deep_thinking=False,
+        )
+        title = result.content.strip().strip('"\'""')
+        if title and len(title) <= 50:
+            return title[:20]
+    except Exception:
+        logger.warning("LLM 标题生成失败，回退到截断方案")
+
+    # 回退：前 12 字截断（保留原逻辑）
+    return _generate_title(question)
+
+
+async def _load_history(
+    db: AsyncSession,
+    conversation_id: int,
+    max_tokens: int = settings.HISTORY_BUDGET,
+    max_messages: int = settings.HISTORY_MAX_MESSAGES,
+) -> list[dict[str, str]]:
+    """从 DB 加载历史消息，Token 预算截断 + [来源N] 去除。
+
+    对齐 ARCHITECTURE.md §8.2：
+    1. 查询最近 N 条消息（ORDER BY created_at DESC LIMIT 40）
+    2. 反转为时间正序
+    3. 从旧到新逐条累加 token，超 HISTORY_BUDGET 停止
+    4. assistant 消息去除 [来源N] 标记
+    5. 不注入 thinking_content
+
+    Returns:
+        [{"role": "user"/"assistant", "content": "..."}, ...]
+    """
+    # 查询（取 40 条，足够覆盖 max_messages=20 × 2 角色）
+    q = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(40)
+    )
+    rows = (await db.execute(q)).scalars().all()
+
+    # 反转为时间正序
+    rows = list(reversed(rows))
+
+    # Token 优先截断 + 条数硬上限
+    result: list[dict[str, str]] = []
+    total_tokens = 0
+    for msg in rows:
+        # system 消息不注入历史（系统 prompt 由 Prompt Builder 单独管理）
+        if msg.role == "system":
+            continue
+
+        content = msg.content
+        # assistant 消息去除 [来源N] 标记（§8.4）
+        if msg.role == "assistant":
+            content = re.sub(r'\[来源\d+\]', '', content).strip()
+        # 不注入 thinking_content（§8.5）
+
+        tokens = estimate_tokens(content)
+        if total_tokens + tokens > max_tokens:
+            # 跳过当前大消息，尝试后续（更新的）较小消息
+            # 使用 continue 而非 break，避免一条大旧消息阻塞所有后续消息
+            continue
+        if len(result) >= max_messages:
+            break
+
+        result.append({"role": msg.role, "content": content})
+        total_tokens += tokens
+
+    return result
+
+
 def _extract_citation_indices(text: str) -> set[str]:
     """从 LLM 回答中提取所有 [来源N] 的编号 N，去重返回。
 
@@ -152,6 +239,7 @@ async def _generate_sse_stream(
     task_id: str,
     question: str,
     deep_thinking: bool,
+    is_first_turn: bool,
     prompt_result: PromptBuildResult,
     reranked_output: RetrievalOutput,
     doc_map: dict[int, str],
@@ -172,9 +260,10 @@ async def _generate_sse_stream(
     })
 
     try:
-        # 构建 OpenAI 格式消息列表
+        # 构建 OpenAI 格式消息列表（含历史消息注入，对齐 ARCHITECTURE.md §8.2）
         messages = [
             {"role": "system", "content": prompt_result.system_prompt},
+            *prompt_result.history_messages,  # Phase 4：历史消息
             {"role": "user", "content": prompt_result.user_prompt},
         ]
 
@@ -269,23 +358,36 @@ async def _generate_sse_stream(
         )
         db.add(assistant_msg)
         conv.message_count += 1
+        # 手动同步 updated_at（对齐 ARCHITECTURE.md §8.6）
+        conv.updated_at = datetime.now(timezone.utc)
         await db.flush()
         await db.refresh(assistant_msg)
 
-        # 标题自动生成（仅首轮，对齐 ROADMAP.md Decision #24）
+        # 标题生成（首轮：截断标题立即返回，LLM 标题异步更新）
         title = None
-        if conv.message_count == 2:  # user(1) + assistant(1) = 首轮
+        if is_first_turn:
             title = _generate_title(question)
             conv.title = title
 
         await db.commit()
 
-        # 发送 finish 事件
+        # 发送 finish 事件（含截断标题，保证不延迟）
         yield format_sse_event("finish", {
             "message_id": assistant_msg.id,
             "title": title,
             "token_usage": token_usage,
         })
+
+        # SSE 流结束后，异步调用 LLM 生成更好标题
+        if is_first_turn:
+            try:
+                llm_title = await _generate_title_llm(question)
+                conv.title = llm_title
+                await db.commit()
+                logger.info("LLM 标题生成成功: %s", llm_title)
+            except Exception:
+                logger.warning("LLM 标题生成失败，保留截断标题")
+
     except Exception:
         logger.exception("保存助手消息失败")
         await db.rollback()
@@ -308,7 +410,7 @@ async def _validate_and_prepare(
     所有校验在 SSE 连接建立前执行，失败直接抛 HTTP 异常。
 
     Returns:
-        (conv, reranked_output, prompt_result, doc_map)
+        (conv, is_first_turn, reranked_output, prompt_result, doc_map)
     """
     # 基础校验
     if not question or not question.strip():
@@ -334,17 +436,22 @@ async def _validate_and_prepare(
     if doc_count == 0:
         raise KnowledgeBaseEmptyException(kb_id)
 
-    # 会话自动创建（Phase 3 不注入历史）
+    # 会话处理 + 历史消息加载
     if conversation_id:
         conv = await db.get(Conversation, conversation_id)
         if conv is None:
             raise ConversationNotFoundException(conversation_id)
         if conv.user_id != user_id:
             raise ConversationAccessDeniedException()
+        is_first_turn = (conv.message_count == 0)  # 在插入用户消息前判定
+        # 加载历史消息（在保存用户消息之前！避免当前消息被重复注入）
+        history_messages = await _load_history(db, conv.id)
     else:
         conv = Conversation(user_id=user_id, kb_id=kb_id)
         db.add(conv)
         await db.flush()
+        is_first_turn = True
+        history_messages = []  # 新会话无历史
 
     # 保存用户消息
     user_msg = Message(
@@ -354,9 +461,11 @@ async def _validate_and_prepare(
     )
     db.add(user_msg)
     conv.message_count += 1
+    # 手动同步 updated_at（对齐 ARCHITECTURE.md §8.6）
+    conv.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # 闲谈检测：跳过检索，直接使用无上下文 Prompt
+    # 闲谈检测：跳过检索，直接使用无上下文 Prompt（仍注入历史，对齐设计决策）
     if _is_casual_chat(question):
         logger.info("检测到闲谈输入，跳过检索: %s", question[:30])
         reranked_output = RetrievalOutput()
@@ -366,6 +475,7 @@ async def _validate_and_prepare(
             used_chunks=[],
             total_context_tokens=0,
             chunks_count=0,
+            history_messages=history_messages,
         )
     else:
         # 多路检索（失败包装为 E4003）
@@ -374,7 +484,7 @@ async def _validate_and_prepare(
             bm25_output = await _bm25_retriever.search(question, kb_id)
             fused_output = rrf_fusion(vector_output, bm25_output)
             reranked_output = await _reranker.rerank(question, fused_output)
-            prompt_result = build_prompt(question, reranked_output)
+            prompt_result = build_prompt(question, reranked_output, history_messages=history_messages)
         except Exception as e:
             logger.exception("检索链路异常")
             raise RetrievalServiceException(detail=str(e))
@@ -388,7 +498,7 @@ async def _validate_and_prepare(
         )
         doc_map = {row.id: row.filename for row in doc_rows.all()}
 
-    return conv, reranked_output, prompt_result, doc_map
+    return conv, is_first_turn, reranked_output, prompt_result, doc_map
 
 
 async def chat(
@@ -408,7 +518,7 @@ async def chat(
     - LLM 流式输出通过 SSE 事件推送
     - LLM 失败时先发 sources 再发 error
     """
-    conv, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
+    conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
         db=db, user_id=user_id, role=role,
         conversation_id=conversation_id, kb_id=kb_id, question=question,
     )
@@ -422,6 +532,7 @@ async def chat(
             task_id=task_id,
             question=question,
             deep_thinking=deep_thinking,
+            is_first_turn=is_first_turn,
             prompt_result=prompt_result,
             reranked_output=reranked_output,
             doc_map=doc_map,
