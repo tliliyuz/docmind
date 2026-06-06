@@ -28,4 +28,6 @@ class User(Base):
     )
 
     knowledge_bases = relationship("KnowledgeBase", back_populates="owner")
-    conversations = relationship("Conversation", back_populates="user")
+    conversations = relationship(
+        "Conversation", back_populates="user", passive_deletes=True
+    )

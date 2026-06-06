@@ -36,7 +36,9 @@ class Conversation(Base):
 
     user = relationship("User", back_populates="conversations")
     knowledge_base = relationship("KnowledgeBase", back_populates="conversations")
-    messages = relationship("Message", back_populates="conversation")
+    messages = relationship(
+        "Message", back_populates="conversation", passive_deletes=True
+    )
 
     __table_args__ = (
         Index("idx_conversations_user_updated", "user_id", "updated_at"),

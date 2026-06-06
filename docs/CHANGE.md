@@ -1,5 +1,26 @@
 # DocMind 变更日志
 
+## 2026-06-06 — 修复：Sidebar 知识库导航固定 + Conversation 删除 FK 级联
+
+### 修复（前端）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/layout/Sidebar.vue` | `.sidebar-middle` 改为 flex column 容器（`overflow: hidden`），新增 `.conv-section` 独立滚动区域（`flex: 1; overflow-y: auto`），`.kb-nav` / `.admin-nav` 加 `flex-shrink: 0`。修复知识库导航随会话列表滚出视野的问题——现在无论会话列表多长，知识库入口始终固定在侧边栏可见 |
+
+### 修复（后端）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/models/conversation.py` | `messages` relationship 新增 `passive_deletes=True`。修复删除含消息的会话时 SQLAlchemy ORM 先 `UPDATE SET conversation_id=NULL` 导致 IntegrityError（Column 'conversation_id' cannot be null）的问题——对齐 DATABASE.md §4 规定的「所有 NOT NULL FK 的 relationship 必须加 passive_deletes=True」 |
+| `backend/app/models/user.py` | `conversations` relationship 新增 `passive_deletes=True`（同类隐患预防性修复） |
+
+### 说明
+
+- **根因**：`messages.conversation_id` FK 定义了 `ON DELETE CASCADE`（数据库层），但 SQLAlchemy `relationship()` 默认 `passive_deletes=False`，删除父对象前 ORM 会先尝试把所有子记录 FK 置 NULL，而 `conversation_id` 是 `NOT NULL`，直接报 IntegrityError
+- `KnowledgeBase.documents/chunks` 和 `Document.chunks` 此前已正确配置 `passive_deletes=True`，仅 `Conversation.messages` 和 `User.conversations` 遗漏
+- 全部 649 个后端测试、211 个前端测试通过
+
 ## 2026-06-06 — Phase 4.4 前端：会话列表 + 路由 + Token 刷新
 
 ### 新增
