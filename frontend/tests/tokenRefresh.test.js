@@ -55,7 +55,7 @@ describe('Axios 拦截器 — 请求拦截器', () => {
     expect(localStorage.getItem('access_token')).toBe('token')
   })
 
-  it('401 + 非 E5003 错误码时清除 token', async () => {
+  it('401 + E5004 Token 无效时清除 token', async () => {
     localStorage.setItem('access_token', 'token')
     localStorage.setItem('refresh_token', 'refresh')
 
@@ -71,6 +71,25 @@ describe('Axios 拦截器 — 请求拦截器', () => {
 
     expect(localStorage.getItem('access_token')).toBeNull()
     expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
+  it('401 + E5002 密码错误时不触发清除（透传给调用方）', async () => {
+    localStorage.setItem('access_token', 'token')
+    localStorage.setItem('refresh_token', 'refresh')
+
+    const error401 = {
+      response: { status: 401, data: { code: 'E5002', message: '用户名或密码错误' } },
+      config: { headers: {} },
+    }
+
+    const mockAdapter = vi.fn().mockRejectedValue(error401)
+    api.defaults.adapter = mockAdapter
+
+    await expect(api.get('/test')).rejects.toEqual(error401)
+
+    // E5002 是业务错误（密码错误），token 不应被清除
+    expect(localStorage.getItem('access_token')).toBe('token')
+    expect(localStorage.getItem('refresh_token')).toBe('refresh')
   })
 
   it('401 + E5003 且无 refresh_token 时清除 token', async () => {

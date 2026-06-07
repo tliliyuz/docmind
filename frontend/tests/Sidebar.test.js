@@ -18,6 +18,7 @@ const {
   mockMsgSuccess,
   mockMsgError,
   mockLogout,
+  mockChangePassword,
 } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockClearMessages: vi.fn(),
@@ -32,6 +33,7 @@ const {
   mockMsgSuccess: vi.fn(),
   mockMsgError: vi.fn(),
   mockLogout: vi.fn(),
+  mockChangePassword: vi.fn(),
 }))
 
 // ===== Mock 路由 =====
@@ -86,11 +88,18 @@ vi.mock('@/stores/conversation', () => ({
   useConversationStore: () => mockConvState,
 }))
 
+// ===== Mock Auth API（changePassword 直接导入到 Sidebar） =====
+vi.mock('@/api/auth', () => ({
+  changePassword: (...args) => mockChangePassword(...args),
+}))
+
+import ElementPlus from 'element-plus'
 import Sidebar from '@/components/layout/Sidebar.vue'
 
 function mountSidebar() {
   return mount(Sidebar, {
     global: {
+      plugins: [ElementPlus],
       stubs: {
         'router-link': { template: '<a><slot /></a>', props: ['to'] },
       },
@@ -335,16 +344,35 @@ describe('Sidebar 会话列表', () => {
 
   // ==================== 退出登录 ====================
 
-  it('点击退出按钮调用 logout', async () => {
+  it('点击用户菜单退出登录项确认后调用 logout', async () => {
+    mockConfirm.mockResolvedValue('confirm')
     mockLogout.mockResolvedValue(undefined)
     const wrapper = mountSidebar()
-    const logoutBtn = wrapper.find('.logout-btn')
-    await logoutBtn.trigger('click')
+    // 点击头像打开用户菜单
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    // 点击退出登录菜单项
+    const logoutItem = wrapper.find('.user-menu-item.danger')
+    expect(logoutItem.exists()).toBe(true)
+    await logoutItem.trigger('click')
     await flushPromises()
 
+    expect(mockConfirm).toHaveBeenCalled()
     expect(mockLogout).toHaveBeenCalled()
     expect(mockMsgSuccess).toHaveBeenCalledWith('已退出登录')
     expect(mockPush).toHaveBeenCalledWith('/login')
+  })
+
+  it('退出登录取消确认时不调用 logout', async () => {
+    mockConfirm.mockRejectedValue('cancel')
+    const wrapper = mountSidebar()
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    await wrapper.find('.user-menu-item.danger').trigger('click')
+    await flushPromises()
+
+    expect(mockConfirm).toHaveBeenCalled()
+    expect(mockLogout).not.toHaveBeenCalled()
   })
 
   // ==================== 折叠/展开 ====================
@@ -376,5 +404,172 @@ describe('Sidebar 会话列表', () => {
 
     // 折叠态标题不可见（conv-info 被隐藏）
     expect(wrapper.find('.sidebar').classes()).toContain('collapsed')
+  })
+
+  // ==================== 用户菜单卡片 ====================
+
+  it('点击头像切换用户菜单可见性', async () => {
+    const wrapper = mountSidebar()
+    // 初始不可见（v-show="false" 设置 display: none）
+    const card = wrapper.find('.user-menu-card')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('style')).toContain('display: none')
+    // 点击头像 → 可见
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    expect(card.attributes('style')).not.toContain('display: none')
+    // 再次点击头像 → 关闭
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    expect(card.attributes('style')).toContain('display: none')
+  })
+
+  it('点击用户菜单外部关闭菜单', async () => {
+    const wrapper = mountSidebar()
+    // 打开菜单
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    const card = wrapper.find('.user-menu-card')
+    expect(card.attributes('style')).not.toContain('display: none')
+    // 等待 setTimeout(0) 注册 document click 监听
+    await new Promise(r => setTimeout(r, 10))
+    // 点击文档外部区域，应关闭菜单
+    document.body.click()
+    await nextTick()
+    expect(card.attributes('style')).toContain('display: none')
+  })
+
+  it('用户菜单显示用户名和角色', async () => {
+    const wrapper = mountSidebar()
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    const menuText = wrapper.find('.user-menu-card').text()
+    expect(menuText).toContain('testuser')
+    expect(menuText).toContain('用户')
+    expect(menuText).toContain('修改密码')
+    expect(menuText).toContain('退出登录')
+  })
+
+  it('点击用户菜单修改密码项后菜单关闭', async () => {
+    const wrapper = mountSidebar()
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    const card = wrapper.find('.user-menu-card')
+    expect(card.attributes('style')).not.toContain('display: none')
+    // 点击修改密码
+    await wrapper.find('.user-menu-item:not(.danger)').trigger('click')
+    await nextTick()
+    // 菜单应关闭
+    expect(card.attributes('style')).toContain('display: none')
+  })
+
+  // ==================== 修改密码弹窗 ====================
+
+  /** 辅助函数：打开用户菜单 → 点击「修改密码」→ 打开改密弹窗 */
+  async function openChangePasswordDialog(wrapper) {
+    // 先点击头像打开用户菜单
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    // 点击菜单中的「修改密码」项
+    const menuItem = wrapper.find('.user-menu-item:not(.danger)')
+    expect(menuItem.exists()).toBe(true)
+    await menuItem.trigger('click')
+    await nextTick()
+  }
+
+  it('点击头像打开用户菜单，点击修改密码项打开弹窗', async () => {
+    const wrapper = mountSidebar()
+    // 点击头像
+    await wrapper.find('.user-avatar').trigger('click')
+    await nextTick()
+    // 用户菜单应可见（v-show 不设 display: none）
+    const menuCard = wrapper.find('.user-menu-card')
+    expect(menuCard.attributes('style')).not.toContain('display: none')
+    // 菜单中应包含「修改密码」和「退出登录」选项
+    const menuText = menuCard.text()
+    expect(menuText).toContain('修改密码')
+    expect(menuText).toContain('退出登录')
+    // 点击修改密码项
+    const menuItem = wrapper.find('.user-menu-item:not(.danger)')
+    await menuItem.trigger('click')
+    await nextTick()
+    // 弹窗应可见
+    expect(wrapper.html()).toContain('当前密码')
+    expect(wrapper.html()).toContain('新密码')
+    expect(wrapper.html()).toContain('确认新密码')
+  })
+
+  it('修改密码-空表单提交触发校验', async () => {
+    const wrapper = mountSidebar()
+    // 通过菜单打开弹窗
+    await openChangePasswordDialog(wrapper)
+    // 弹窗已打开，直接点击确认修改按钮（不填任何字段）
+    const submitBtn = wrapper.find('.el-button--primary')
+    await submitBtn.trigger('click')
+    await nextTick()
+    // 应触发校验错误提示（el-form validate 失败，changePassword 不应被调用）
+    expect(mockChangePassword).not.toHaveBeenCalled()
+  })
+
+  it('修改密码-提交成功', async () => {
+    mockChangePassword.mockResolvedValueOnce({ data: { code: '0' } })
+    const wrapper = mountSidebar()
+
+    // 通过菜单打开弹窗
+    await openChangePasswordDialog(wrapper)
+
+    // 填充表单
+    const passwordInputs = wrapper.findAll('.el-input__inner')
+    await passwordInputs[0].setValue('oldPass123')
+    await passwordInputs[1].setValue('newPass456')
+    await passwordInputs[2].setValue('newPass456')
+    await nextTick()
+
+    // 点击确认
+    const submitBtn = wrapper.find('.el-button--primary')
+    await submitBtn.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    // 验证 API 调用参数
+    expect(mockChangePassword).toHaveBeenCalledWith('oldPass123', 'newPass456')
+    // 验证成功提示
+    expect(mockMsgSuccess).toHaveBeenCalledWith('密码修改成功，请重新登录')
+    // 验证注销并跳转
+    expect(mockChatReset).toHaveBeenCalled()
+    expect(mockLogout).toHaveBeenCalled()
+    expect(mockPush).toHaveBeenCalledWith('/login')
+  })
+
+  it('修改密码-原密码错误时提示且不清除登录态', async () => {
+    mockChangePassword.mockRejectedValueOnce({
+      response: { status: 401, data: { code: 'E5002', message: '用户名或密码错误' } },
+    })
+    const wrapper = mountSidebar()
+
+    // 通过菜单打开弹窗
+    await openChangePasswordDialog(wrapper)
+
+    // 填充表单（填写错误原密码）
+    const passwordInputs = wrapper.findAll('.el-input__inner')
+    await passwordInputs[0].setValue('wrongOldPass')
+    await passwordInputs[1].setValue('newPass456')
+    await passwordInputs[2].setValue('newPass456')
+    await nextTick()
+
+    // 点击确认
+    const submitBtn = wrapper.find('.el-button--primary')
+    await submitBtn.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    // 验证 API 被调用
+    expect(mockChangePassword).toHaveBeenCalledWith('wrongOldPass', 'newPass456')
+    // 验证错误提示（不应注销）
+    expect(mockMsgError).toHaveBeenCalledWith('用户名或密码错误')
+    // 验证登录态未被清除（不应触发 clearAndRedirect）
+    expect(mockChatReset).not.toHaveBeenCalled()
+    expect(mockLogout).not.toHaveBeenCalled()
+    expect(mockPush).not.toHaveBeenCalledWith('/login')
   })
 })

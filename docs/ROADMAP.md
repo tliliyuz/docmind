@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.35 |
+| 文档版本 | v0.36 |
 | 最后更新 | 2026-06-06 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 完成，Phase 4.1 会话管理+多轮上下文已完成，Phase 4.2 基础设施加固已完成） |
+| 状态 | 进行中（Phase 3 完成，Phase 4 会话管理+多轮上下文+基础设施加固+修改密码已完成） |
 
 ---
 
@@ -339,6 +339,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Sidebar 会话列表 | 展示当前用户会话列表 + 切换加载 + 高亮当前会话 |
 | ✅ | Token 自动刷新（Axios 拦截器） | 响应拦截器捕获 401+E5003 → 调 `POST /api/auth/refresh` → 重放原请求（最多 1 次）；并发请求防抖（`isRefreshing` 标志位）；刷新失败 → 清除 token → 跳转 `/login`；`scheduleRefresh` 定时器（access_token 到期前 1 分钟自动刷新） |
 | ✅ | ChatPage 会话路由 | `onMounted` 读取 `route.query.conversation_id` → 加载历史消息；新建对话 → URL 回到 `/chat` |
+| ✅ | 修改密码弹窗 | Sidebar 用户栏头像/用户名 `@click` → `el-dialog`（420px）→ 表单（旧密码 + 新密码 + 确认新密码，含一致性校验）→ `PUT /api/auth/password`。成功后 `ElMessage.success('密码修改成功，请重新登录')` → 注销 + 跳转 `/login` |
 
 ### 6.5 本阶段不做的
 

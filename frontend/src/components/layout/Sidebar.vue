@@ -230,16 +230,9 @@
           </div>
         </template>
 
-        <!-- 会话列表（收起态：仅图标 + tooltip） -->
+        <!-- 会话列表（收起态：仅展示单个历史对话 icon，不可点击，不随会话数量变化） -->
         <template v-else>
-          <div
-            v-for="conv in convStore.conversations.slice(0, 10)"
-            :key="conv.id"
-            class="conv-item conv-item-collapsed"
-            :class="{ active: isActive(conv.id) }"
-            :title="conv.title || '新对话'"
-            @click="handleSelectConversation(conv)"
-          >
+          <div class="conv-item conv-item-collapsed conv-item-static" title="历史会话">
             <div class="conv-icon">
               <i class="fas fa-message"></i>
             </div>
@@ -305,34 +298,105 @@
 
     <!-- 底部：用户信息 -->
     <div class="sidebar-bottom">
-      <div class="user-bar">
-        <div class="user-avatar" :title="collapsed ? (authStore.user?.username || '用户') : ''">
+      <div class="user-bar" ref="userBarRef">
+        <div
+          class="user-avatar"
+          :title="collapsed ? '用户菜单' : ''"
+          @click.stop="toggleUserMenu"
+        >
           {{ authStore.user?.username?.charAt(0)?.toUpperCase() || 'U' }}
         </div>
-        <div class="user-info" v-show="!collapsed">
+        <div class="user-info" v-show="!collapsed" @click.stop="toggleUserMenu">
           <div class="user-name">{{ authStore.user?.username || '用户' }}</div>
           <div class="user-role">{{ authStore.isAdmin ? '管理员' : '用户' }}</div>
         </div>
-        <button
-          class="logout-btn"
-          title="退出登录"
-          @click.stop="handleLogout"
-          v-show="!collapsed"
-        >
-          <i class="fas fa-sign-out-alt"></i>
-        </button>
+
+        <!-- 用户菜单卡片 -->
+        <div class="user-menu-card" v-show="showUserMenu" @click.stop>
+          <!-- 用户信息头部 -->
+          <div class="user-menu-header">
+            <div class="user-avatar">
+              {{ authStore.user?.username?.charAt(0)?.toUpperCase() || 'U' }}
+            </div>
+            <div class="user-menu-header-info">
+              <div class="user-name">{{ authStore.user?.username || '用户' }}</div>
+              <div class="user-role">{{ authStore.isAdmin ? '管理员' : '用户' }}</div>
+            </div>
+          </div>
+          <!-- 菜单选项 -->
+          <button class="user-menu-item" @click="handleMenuChangePassword">
+            <i class="fas fa-lock"></i>
+            <span>修改密码</span>
+          </button>
+          <button class="user-menu-item danger" @click="handleMenuLogout">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>退出登录</span>
+          </button>
+        </div>
       </div>
     </div>
+
+    <!-- 修改密码弹窗 -->
+    <el-dialog
+      v-model="changePasswordDialogVisible"
+      title="修改密码"
+      width="420px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form
+        ref="passwordFormRef"
+        :model="passwordForm"
+        :rules="passwordFormRules"
+        label-position="top"
+        @submit.prevent="handleChangePassword"
+      >
+        <el-form-item label="当前密码" prop="oldPassword">
+          <el-input
+            v-model="passwordForm.oldPassword"
+            type="password"
+            show-password
+            placeholder="请输入当前密码"
+            autocomplete="current-password"
+          />
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input
+            v-model="passwordForm.newPassword"
+            type="password"
+            show-password
+            placeholder="请输入新密码，至少 6 位"
+            autocomplete="new-password"
+          />
+        </el-form-item>
+        <el-form-item label="确认新密码" prop="confirmPassword">
+          <el-input
+            v-model="passwordForm.confirmPassword"
+            type="password"
+            show-password
+            placeholder="请再次输入新密码"
+            autocomplete="new-password"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="changePasswordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submittingPassword" @click="handleChangePassword">
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
   </aside>
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, reactive, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useConversationStore } from '@/stores/conversation'
+import { changePassword } from '@/api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -342,6 +406,96 @@ const convStore = useConversationStore()
 
 /** 侧边栏折叠状态 */
 const collapsed = ref(false)
+
+// ===== 用户菜单卡片 =====
+const showUserMenu = ref(false)
+const userBarRef = ref(null)
+
+/** 切换用户菜单卡片可见性 */
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+}
+
+/** 关闭用户菜单卡片 */
+function closeUserMenu() {
+  showUserMenu.value = false
+}
+
+/** 点击菜单「修改密码」→ 关闭卡片 → 打开改密弹窗 */
+function handleMenuChangePassword() {
+  closeUserMenu()
+  openChangePasswordDialog()
+}
+
+/** 点击菜单「退出登录」→ 关闭卡片 → 执行退出 */
+function handleMenuLogout() {
+  closeUserMenu()
+  handleLogout()
+}
+
+/** 点击文档任意位置关闭用户菜单（排除菜单内部和触发区域） */
+function onDocumentClick(e) {
+  const userBar = userBarRef.value
+  if (userBar && !userBar.contains(e.target)) {
+    closeUserMenu()
+  }
+}
+
+// 菜单打开时注册 document click 监听（setTimeout 推迟避免与打开菜单的同一 click 事件冲突）
+watch(showUserMenu, (val) => {
+  if (val) {
+    setTimeout(() => {
+      document.addEventListener('click', onDocumentClick)
+    }, 0)
+  } else {
+    document.removeEventListener('click', onDocumentClick)
+  }
+})
+
+onMounted(() => {
+  // 加载会话列表
+  if (authStore.isLoggedIn) {
+    convStore.loadConversations()
+  }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+})
+
+// ===== 修改密码弹窗 =====
+const changePasswordDialogVisible = ref(false)
+const passwordFormRef = ref(null)
+const submittingPassword = ref(false)
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+
+/** 确认密码一致性校验 */
+function validateConfirmPassword(rule, value, callback) {
+  if (value !== passwordForm.newPassword) {
+    callback(new Error('两次输入的新密码不一致'))
+  } else {
+    callback()
+  }
+}
+
+const passwordFormRules = {
+  oldPassword: [
+    { required: true, message: '请输入当前密码', trigger: 'blur' },
+    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+  ],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    { validator: validateConfirmPassword, trigger: 'blur' },
+  ],
+}
 
 // ===== 重命名相关 =====
 const editingId = ref(null)
@@ -440,18 +594,61 @@ async function handleDelete(conv) {
 
 /** 退出登录 */
 async function handleLogout() {
+  try {
+    await ElMessageBox.confirm(
+      '退出后需重新登录，是否继续？',
+      '确认退出',
+      {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+  } catch {
+    return // 用户取消，不执行退出
+  }
   chatStore.reset()
   await authStore.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
 }
 
-// 加载会话列表
-onMounted(() => {
-  if (authStore.isLoggedIn) {
-    convStore.loadConversations()
+/** 打开修改密码弹窗（清空表单 + 重置校验） */
+function openChangePasswordDialog() {
+  passwordForm.oldPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  if (passwordFormRef.value) {
+    passwordFormRef.value.resetFields()
   }
-})
+  changePasswordDialogVisible.value = true
+}
+
+/** 提交修改密码 */
+async function handleChangePassword() {
+  if (!passwordFormRef.value) return
+  try {
+    await passwordFormRef.value.validate()
+  } catch {
+    return // 校验失败不提交
+  }
+  submittingPassword.value = true
+  try {
+    await changePassword(passwordForm.oldPassword, passwordForm.newPassword)
+    ElMessage.success('密码修改成功，请重新登录')
+    changePasswordDialogVisible.value = false
+    // 改密后吊销全部 refresh_token，清空本地状态并跳转登录
+    chatStore.reset()
+    await authStore.logout()
+    router.push('/login')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '修改失败，请检查当前密码是否正确')
+  } finally {
+    submittingPassword.value = false
+  }
+}
+
 </script>
 
 <style scoped>
@@ -581,8 +778,8 @@ onMounted(() => {
 
 /* 收起态：仅图标的按钮 */
 .new-chat-btn-icon {
-  width: 40px;
-  height: 40px;
+  width: var(--dm-sidebar-logo-size);
+  height: var(--dm-sidebar-logo-size);
   padding: 0;
   margin: 0 auto;
   border-radius: var(--dm-radius-sm);
@@ -685,10 +882,15 @@ onMounted(() => {
   font-weight: var(--dm-weight-semibold);
 }
 
-/* 收起态：居中仅图标 */
+/* 收起态：居中仅图标，不可点击，仅展示用途 */
 .conv-item-collapsed {
   justify-content: center;
   padding: 10px 0;
+  cursor: default;
+}
+
+.conv-item-collapsed:hover {
+  background: transparent;
 }
 
 .conv-icon {
@@ -844,6 +1046,7 @@ onMounted(() => {
   padding: var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   transition: background var(--dm-transition-fast);
+  position: relative;
 }
 
 /* 收起态：用户栏居中 */
@@ -863,11 +1066,18 @@ onMounted(() => {
   font-size: var(--dm-text-xs);
   font-weight: var(--dm-weight-semibold);
   flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity var(--dm-transition-fast);
+}
+
+.user-avatar:hover {
+  opacity: 0.85;
 }
 
 .user-info {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
 }
 
 .user-name {
@@ -884,22 +1094,71 @@ onMounted(() => {
   color: var(--dm-text-tertiary);
 }
 
-.logout-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--dm-text-tertiary);
-  cursor: pointer;
-  border-radius: var(--dm-radius-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--dm-transition-fast);
+/* ===== 用户菜单卡片 ===== */
+.user-menu-card {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: var(--dm-space-2);
+  min-width: 200px;
+  background: var(--dm-bg-card);
+  border: 1px solid var(--dm-border);
+  border-radius: var(--dm-radius-md);
+  box-shadow: var(--dm-shadow-lg);
+  overflow: hidden;
+  z-index: 100;
+  animation: menuSlideUp var(--dm-transition-normal) ease;
 }
 
-.logout-btn:hover {
-  background: var(--dm-danger-light);
+@keyframes menuSlideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.user-menu-header {
+  padding: var(--dm-space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--dm-space-3);
+  border-bottom: 1px solid var(--dm-border-light);
+}
+
+.user-menu-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--dm-space-3);
+  padding: 12px var(--dm-space-4);
+  cursor: pointer;
+  transition: background var(--dm-transition-fast);
+  font-size: var(--dm-text-body);
+  color: var(--dm-text-primary);
+  border: none;
+  background: transparent;
+  width: 100%;
+  font-family: inherit;
+}
+
+.user-menu-item:hover {
+  background: var(--dm-bg-page);
+}
+
+/* 危险操作项 */
+.user-menu-item.danger {
   color: var(--dm-danger);
+}
+
+.user-menu-item.danger:hover {
+  background: var(--dm-danger-light);
+}
+
+.user-menu-item i {
+  width: 18px;
+  text-align: center;
+  font-size: var(--dm-text-sm);
 }
 </style>

@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
-| 最后更新 | 2026-06-06 |
+| 文档版本 | v0.19 |
+| 最后更新 | 2026-06-07 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 4 前端已实现） |
 
@@ -332,17 +332,70 @@ ChatPage 支持两种进入方式：
 
 | 操作 | 行为 |
 |:---|:---|
-| 点击头像/用户名 | 跳转个人资料页（Phase 1 预留，当前无操作） |
-| 点击退出图标 | 调 `POST /api/auth/logout` 吊销 refresh_token → `ElMessage.success('已退出登录')` → 清除 access_token + refresh_token → 停止 scheduleRefresh 定时器 → 跳转 `/login` |
+| 点击头像/用户名 | 弹出用户菜单卡片（详见 §4.5.6）。收起态仅有头像，`title` 提示「用户菜单」 |
+| 用户菜单 → 修改密码 | 关闭卡片 → 弹出修改密码对话框（详见 §4.7） |
+| 用户菜单 → 退出登录 | 关闭卡片 → 调 `POST /api/auth/logout` 吊销 refresh_token → `ElMessage.success('已退出登录')` → 清除 access_token + refresh_token → 停止 scheduleRefresh 定时器 → 跳转 `/login` |
 
 #### 4.5.5 侧边栏展开/收起
 
 - **切换按钮**：侧边栏顶部右侧，`fa-chevron-left`（展开态）/ `fa-chevron-right`（收起态）
-- **展开态**（260px）：Logo 图标 + 「知识库问答平台」副标题 + 新建对话按钮（含文字）+ 导航项（图标 + 文字）+ 用户信息（头像 + 用户名 + 角色 + 退出按钮）
+- **展开态**（260px）：Logo 图标 + 「知识库问答平台」副标题 + 新建对话按钮（含文字）+ 导航项（图标 + 文字）+ 用户信息（头像 + 用户名 + 角色，点击弹出用户菜单）
 - **收起态**（64px）：Logo 图标居中 + 新建对话「+」图标按钮 + 导航项（仅图标，hover 显示 `title` tooltip）+ 用户头像居中
 - **过渡动画**：`width var(--dm-transition-normal)`（0.2s ease）
 - **状态管理**：`Sidebar.vue` 本地 `ref`，不持久化（刷新恢复展开）
 - **产品名移除**：Logo 区域不显示「DocMind」产品名，标题由 `AppLayout.vue` 顶部 header 展示（Chat 路由显示「DocMind」）
+
+#### 4.5.6 用户菜单卡片
+
+点击侧边栏底部用户栏的头像或用户名时，从用户栏上方弹出菜单卡片。替代原有的「点击头像直接打开改密弹窗 + 独立退出按钮」方案，为未来更多选项（如个人设置、主题切换等）预留扩展空间。
+
+**卡片布局**：
+
+```
+┌─────────────────────────┐
+│  [A]  用户名            │  ← 用户信息头部（头像 + 用户名 + 角色）
+│        用户              │
+├─────────────────────────┤
+│  🔒  修改密码            │  ← 菜单项（默认样式）
+│  🚪  退出登录            │  ← 菜单项（danger 样式，红色文字）
+└─────────────────────────┘
+```
+
+**卡片定位**：`position: absolute; bottom: 100%; right: 0`，从用户栏上方弹出，右对齐。用户栏需设置 `position: relative` 作为锚点。
+
+**菜单项**：
+
+| 选项 | 图标 | 样式 | 行为 |
+|:---|:---|:---|:---|
+| 修改密码 | `fa-lock` | 默认（`--dm-text-primary`） | 关闭卡片 → 打开修改密码弹窗（§4.7） |
+| 退出登录 | `fa-sign-out-alt` | danger（`--dm-danger`，hover 背景 `--dm-danger-light`） | 关闭卡片 → `handleLogout()` |
+
+**交互流程**：
+
+```
+点击头像/用户名
+    ↓
+showUserMenu = true（toggle）→ 卡片从用户栏上方滑入（menuSlideUp 动画）
+    ↓
+用户点击「修改密码」→ closeUserMenu() → 打开修改密码弹窗
+用户点击「退出登录」→ closeUserMenu() → handleLogout()
+用户点击卡片外部区域 → closeUserMenu()（document click 监听）
+```
+
+**关闭行为**：
+- 点击卡片内菜单项 → 关闭卡片 + 执行操作
+- 点击卡片外部（document 全局监听，排除 `.user-bar` 和 `.user-menu-card` 内部点击）→ 关闭卡片
+- 再次点击头像 → toggle，关闭卡片
+
+**状态变量**：
+
+| 变量 | 类型 | 说明 |
+|:---|:---|:---|
+| `showUserMenu` | `ref(false)` | 卡片可见性，`v-show` 控制 |
+
+**收起态**：仅头像可见，`title="用户菜单"`，点击同样弹出卡片（位置自动适配，因为锚点仍为用户栏）。
+
+---
 
 ### 4.6 空状态（WelcomeScreen）
 
@@ -350,6 +403,53 @@ ChatPage 支持两种进入方式：
 - 大 Logo + 欢迎语「我是 DocMind，你的企业知识助手」
 - 快捷问题卡片（如「报销流程是怎样的？」「入职需要准备什么？」）
 - 点击快捷问题直接填入输入框并发送
+
+---
+
+### 4.7 修改密码对话框
+
+**触发入口**：Sidebar 底部用户栏 → 点击头像/用户名 → 弹出用户菜单卡片（§4.5.6）→ 点击「修改密码」项。
+
+**弹窗**（`el-dialog`）：
+- 标题：「修改密码」
+- 宽度：420px
+- `:close-on-click-modal="false"`（防误触关闭）
+- `destroy-on-close`（关闭时销毁 DOM，清空表单）
+
+**表单字段**（`el-form`，`label-position="top"`）：
+
+| 字段 | 组件 | 校验规则 |
+|:---|:---|:---|
+| 当前密码 | `el-input type="password" show-password` | `required` + `min_length=6` |
+| 新密码 | `el-input type="password" show-password` | `required` + `min_length=6` |
+| 确认新密码 | `el-input type="password" show-password` | `required` + 自定义 validator：必须与新密码一致 |
+
+**交互流程**：
+
+```
+点击头像/用户名
+    ↓
+清空表单 → 打开弹窗
+    ↓
+输入当前密码 + 新密码 + 确认新密码
+    ↓
+点击「确认修改」
+    ↓
+前端校验（el-form validate）→ 失败：表单内提示
+    ↓
+PUT /api/auth/password { old_password, new_password }
+    ↓
+成功：ElMessage.success('密码修改成功，请重新登录')
+      → 关闭弹窗 → authStore.logout() → router.push('/login')
+失败：ElMessage.error（后端错误信息或兜底文案）
+```
+
+**状态变量**：
+- `changePasswordDialogVisible: ref(false)` — 弹窗可见性
+- `passwordForm: reactive({ oldPassword, newPassword, confirmPassword })` — 表单数据
+- `submittingPassword: ref(false)` — 提交 loading 状态
+
+**Footer**：取消按钮（关闭弹窗）+ 确认按钮（`:loading="submittingPassword"`，type="primary"）
 
 ---
 

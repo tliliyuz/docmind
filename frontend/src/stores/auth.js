@@ -9,6 +9,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** access_token 过期前自动刷新的定时器 ID */
   let refreshTimerId = null
+  /** 防止并发刷新（避免定时器与时拦截器同时触发） */
+  let _refreshing = false
 
   const isLoggedIn = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
@@ -73,11 +75,18 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value
   }
 
-  /** 刷新 Token — 调用 refresh API 换取新 token 对 */
+  /** 刷新 Token — 调用 refresh API 换取新 token 对。
+   *  带并发防护：避免定时器与拦截器同时触发刷新时，第二个请求
+   *  使用已被 Rotation 吊销的旧 refresh_token 导致踢下线。 */
   async function refresh() {
     if (!refreshTokenValue.value) {
       throw new Error('无 refresh_token')
     }
+    if (_refreshing) {
+      // 已有刷新进行中，直接返回（调用方可通过 token 获取最新值）
+      return true
+    }
+    _refreshing = true
     try {
       const res = await refreshApi(refreshTokenValue.value)
       const { access_token, refresh_token } = res.data.data
@@ -97,6 +106,8 @@ export const useAuthStore = defineStore('auth', () => {
       // 刷新失败 → 清除全部状态
       clearState()
       throw err
+    } finally {
+      _refreshing = false
     }
   }
 
@@ -128,6 +139,20 @@ export const useAuthStore = defineStore('auth', () => {
       }
     }
     clearState()
+  }
+
+  // ── Store 初始化：恢复用户信息 + 启动自动刷新 ──
+  // 从 token 解析用户信息（localStorage 中 user 可能因旧版本丢失）
+  if (token.value && !user.value) {
+    const parsed = parseJwtUser(token.value)
+    if (parsed) {
+      user.value = parsed
+      localStorage.setItem('user', JSON.stringify(parsed))
+    }
+  }
+  // 启动 proactive refresh（页面刷新后重新注册定时器）
+  if (token.value) {
+    scheduleRefresh()
   }
 
   return {

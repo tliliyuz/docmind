@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.47 |
+| 文档版本 | v0.48 |
 | 最后更新 | 2026-06-06 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 全部完成 + Phase 4.1 会话管理/多轮上下文已完成 + Phase 4.2 基础设施加固已完成） |
+| 状态 | 进行中（Phase 3 全部完成 + Phase 4 会话管理/多轮上下文/基础设施加固/修改密码已完成） |
 
 ---
 
@@ -678,6 +678,9 @@
 | C4.10 | Token 刷新-无 refresh_token | `api/index.js` Axios 拦截器 | localStorage 无 refresh_token | 直接清除 token → 跳转 `/login`，不调 refresh 接口 | ✅ | 2026-06-06 | — |
 | C4.11 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ✅ | 2026-06-06 | authStore.scheduleRefresh 实现 |
 | C4.12 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ✅ | 2026-06-06 | authStore.clearRefreshTimer 实现 |
+| C4.13 | 修改密码-弹窗打开 | `Sidebar` | 点击头像/用户名 | 弹出修改密码 el-dialog，表单已清空 | ✅ | 2026-06-06 | — |
+| C4.14 | 修改密码-表单校验 | `Sidebar` | 提交空表单/密码不一致/密码过短 | 对应字段校验失败提示 | ✅ | 2026-06-06 | — |
+| C4.15 | 修改密码-提交成功 | `Sidebar` | 输入正确旧密码 + 新密码 + 确认新密码 | 调用 `PUT /api/auth/password` → `ElMessage.success` → 关闭弹窗 → 注销跳转登录 | ✅ | 2026-06-06 | mock API 验证 |
 
 ### 6.5 错误处理测试（Phase 4 新增 — 从 Phase 5 提前）
 

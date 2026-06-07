@@ -1,5 +1,92 @@
 # DocMind 变更日志
 
+## 2026-06-07 — 新增：用户菜单卡片（Sidebar 头像交互重构）
+
+### 修改（前端）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/layout/Sidebar.vue` | 重构用户栏交互：点击头像/用户名弹出用户菜单卡片（`v-show` 控制），替代原有的「点击头像直接改密 + 独立退出按钮」方案。卡片包含用户信息头部 + 修改密码 + 退出登录两个菜单项。新增 `showUserMenu` / `toggleUserMenu` / `closeUserMenu` / `handleMenuChangePassword` / `handleMenuLogout` 状态与函数。卡片外点击关闭通过 `watch(showUserMenu)` + `setTimeout(0)` 推迟注册 `document click` 监听实现，`onBeforeUnmount` 清理监听 |
+| `frontend/tests/Sidebar.test.js` | 调整已有测试适配新交互流程（退出登录从 `.logout-btn` 改为先打开菜单再点击 `.user-menu-item.danger`；改密测试统一通过 `openChangePasswordDialog()` 辅助函数打开）；新增 4 个用户菜单测试：切换可见性 / 外部点击关闭 / 显示用户名和角色 / 点击菜单项后关闭 |
+
+### 修改（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/docs/FRONTEND.md` | v0.18→v0.19。§4.5.4 重写为菜单卡片触发流程；§4.5.5 移除「退出按钮」描述；§4.5.6 新增用户菜单卡片完整规格（布局/菜单项/交互流程/关闭行为/状态变量）；§4.7 触发入口改为菜单卡片 |
+| `frontend/docs/UIDESIGN.md` | v0.10→v0.11。§4.16 用户信息栏新增 `position: relative` + `.user-avatar` / `.user-info` 各自 `cursor: pointer`（移除 `.user-bar` 整体 cursor）；§4.20 移除头像/用户信息区 hover 反馈（已移至 §4.16），触发入口改为菜单卡片；新增 §4.21 用户菜单卡片完整样式规范（容器/头部/菜单项/图标/分隔线/动画/选项表） |
+
+### 说明
+
+- 原方案可拓展性差（点头像直接改密），新增菜单卡片中间层后，未来可轻松添加「个人设置」「主题切换」等选项
+- 全部 220 个前端测试通过（新增 4 个用户菜单测试 + 调整已有测试）
+
+## 2026-06-06 — 修复：改密原密码错误被踢下线 + 补充 E5002 测试覆盖
+
+### 修复（前端）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/api/index.js` | 响应拦截器新增 E5002 提前透传：`401 + E5002`（用户名或密码错误）不再执行 `clearAndRedirect()`，直接 `Promise.reject(error)` 交给调用方处理。E5002 是业务层错误（登录/改密密码不正确），与 token 无关，不应清除登录态 |
+
+### 新增（测试）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/tests/tokenRefresh.test.js` | 原 `'401 + 非 E5003 错误码时清除 token'` 更名为 `'401 + E5004 Token 无效时清除 token'`（语义精确化）；新增 `'401 + E5002 密码错误时不触发清除（透传给调用方）'` — 验证 E5002 响应后 access_token / refresh_token 仍在 localStorage |
+| `frontend/tests/Sidebar.test.js` | 新增 `'修改密码-原密码错误时提示且不清除登录态'` — mock API reject E5002 → 验证 `ElMessage.error` 被调用 + `mockLogout` / `mockPush` 均未被调用 |
+
+### 说明
+
+- **根因**：`PUT /api/auth/password` 原密码错误时后端返回 `401 + E5002`，但 Axios 拦截器对所有 401 统一执行 `clearAndRedirect()` 清除 token 跳转登录。E5002 是密码错误而非 token 问题，不应踢下线
+- **之前的测试为何没覆盖**：拦截器测试仅验证了「非 E5003 的 401 清除 token」的正向行为，未反向验证 E5002 不清除；组件测试仅覆盖成功路径，未 mock API reject 错误路径
+- 全部 216 个前端测试通过
+
+## 2026-06-06 — 新增：修改密码前端 + 设计文档补全（Phase 4）
+
+### 新增（前端）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/api/auth.js` | 新增 `changePassword(oldPassword, newPassword)` — `PUT /api/auth/password` |
+| `frontend/src/components/layout/Sidebar.vue` | 用户栏头像/用户名 `@click` → 弹出修改密码 `el-dialog`（420px，`destroy-on-close`）。表单字段：旧密码 + 新密码 + 确认新密码（含一致性 validator）。成功后 `ElMessage.success` → `authStore.logout()` → `router.push('/login')`。头像/用户信息区添加 `cursor: pointer` + hover 反馈 |
+
+### 修改（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.35→v0.36。§6.4 新增「修改密码弹窗」任务项（✅ 已完成） |
+| `frontend/docs/FRONTEND.md` | v0.17→v0.18。§4.5.4 点击头像/用户名行为从「预留」改为「弹出修改密码对话框」。新增 §4.7 修改密码对话框完整规格（触发入口/弹窗配置/表单字段/交互流程/状态变量） |
+| `frontend/docs/UIDESIGN.md` | v0.9→v0.10。新增 §4.20 修改密码对话框样式规格（容器属性/表单规范/按钮区/头像 hover 反馈/用户信息区 cursor） |
+| `docs/TEST_CASES.md` | v0.47→v0.48。Phase 4 新增 C4.13/C4.14/C4.15 三个修改密码测试用例 |
+
+### 新增（测试）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/tests/Sidebar.test.js` | 新增 3 个测试用例：弹窗打开 / 空表单校验拒绝 / 提交成功（mock API + 验证 logout + push login）。引入 Element Plus plugin + mock `@/api/auth` |
+
+### 说明
+
+- 后端 `PUT /api/auth/password` 已在 Phase 4.2 实现，此前前端未对接
+- 全部 214 个前端测试通过（含新增 3 个 Sidebar 修改密码测试）
+
+## 2026-06-06 — 修复：侧边栏收起态 + Token 刷新踢下线 + 对话历史展示
+
+### 修复（前端）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/layout/Sidebar.vue` | ① 收起态新建对话按钮尺寸从硬编码 `40px` 改为 `var(--dm-sidebar-logo-size)`（32px），与 Logo 图标对齐；② 收起态会话列表从 N 个可点击项改为**单个静态展示 icon**（`pointer-events: none`，无点击响应）；③ `.collapsed .conv-section` 禁用滚动（`overflow-y: visible; flex: 0 0 auto`） |
+| `frontend/src/api/index.js` | `doRefresh()` 刷新后通过 `await import('@/stores/auth')` 同步更新 Pinia store 的 token 对 + 重新注册 proactive refresh 定时器。修复仅更新 localStorage 导致 store 内持已吊销旧 refresh_token 的 Bug |
+| `frontend/src/stores/auth.js` | ① `refresh()` 新增 `_refreshing` 并发防护（`finally` 中清除），防止定时器与拦截器同时触发导致第二个请求用已吊销 token 被踢下线；② Store 初始化时若 token 存在则自动调用 `scheduleRefresh()`，修复页面刷新后丢失 proactive timer 的 Bug；③ 初始化时若 user 为 null 但 token 有效则从 JWT payload 解析恢复 |
+
+### 说明
+
+- **Token 踢下线根因**：两条独立刷新路径共享同一个 refresh_token，但 `doRefresh()` 只更新 localStorage 不更新 Pinia store。拦截器刷新成功后 store 仍持旧 refresh_token，定时器触发 `store.refresh()` 用已吊销的旧 token 请求刷新 → 后端 Rotation 返回 E5007 → `clearState()` 踢下线
+- **修复策略**：`doRefresh()` 每次成功刷新后同步 store 的双 token + 重新注册定时器；`store.refresh()` 加 `_refreshing` 锁防止并发；store 初始化时恢复定时器
+- 全部 211 个前端测试通过
+
 ## 2026-06-06 — 修复：Sidebar 知识库导航固定 + Conversation 删除 FK 级联
 
 ### 修复（前端）

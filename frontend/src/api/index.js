@@ -36,7 +36,9 @@ function clearAndRedirect() {
   }
 }
 
-/** 执行 Token 刷新（独立调用，不经过拦截器循环） */
+/** 执行 Token 刷新（独立调用，不经过拦截器循环）。
+ *  刷新后同步更新 Pinia store，防止 store 内持过期/已吊销 refresh_token
+ *  导致后续 store.refresh() 失败而踢下线。 */
 async function doRefresh() {
   const refreshToken = localStorage.getItem('refresh_token')
   if (!refreshToken) {
@@ -50,6 +52,18 @@ async function doRefresh() {
   const { access_token, refresh_token: newRefreshToken } = res.data.data
   localStorage.setItem('access_token', access_token)
   localStorage.setItem('refresh_token', newRefreshToken)
+
+  // 同步更新 Pinia store 的 token 对，确保 store.refresh() 使用最新 refresh_token
+  // （避免 store 用已吊销的旧 token 调 refresh 导致用户被踢下线）
+  try {
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    authStore.setTokens(access_token, newRefreshToken)
+    authStore.scheduleRefresh()
+  } catch {
+    // store 尚未初始化时忽略（如未挂载 Pinia 的独立 axios 调用场景）
+  }
+
   return access_token
 }
 
@@ -74,6 +88,11 @@ api.interceptors.response.use(
     }
 
     const code = error.response?.data?.code
+
+    // E5002：用户名或密码错误（登录/改密场景）→ 非 token 问题，透传错误给调用方
+    if (code === 'E5002') {
+      return Promise.reject(error)
+    }
 
     // E5003：Token 过期 → 尝试刷新
     if (code === 'E5003') {
@@ -103,7 +122,7 @@ api.interceptors.response.use(
       }
     }
 
-    // 其他 401（E5004/E5005/E5009 等）→ 直接清除跳转
+    // 其他 401（E5004/E5005/E5006/E5007/E5008/E5009 等）→ 清除 token 跳转登录
     clearAndRedirect()
     return Promise.reject(error)
   }

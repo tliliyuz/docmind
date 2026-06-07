@@ -3,8 +3,8 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.9
-> 日期: 2026-06-05
+> 版本: v0.11
+> 日期: 2026-06-07
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考
 > 说明: 所有样式基于 Vue 3 + Element Plus 项目
 
@@ -1133,6 +1133,8 @@ body {
 
 ### 4.16 用户信息栏 (User Bar)
 
+用户栏位于侧边栏底部，包含头像、用户名、角色。点击头像弹出用户菜单卡片（§4.21）。
+
 ```css
 .user-bar {
     display: flex;
@@ -1140,7 +1142,7 @@ body {
     gap: var(--dm-space-3);                      /* 12px */
     padding: var(--dm-space-2);                  /* 8px */
     border-radius: var(--dm-radius-sm);          /* 6px */
-    cursor: pointer;
+    position: relative;                          /* 用户菜单卡片定位锚点 */
     transition: background var(--dm-transition-fast);
 }
 
@@ -1160,12 +1162,27 @@ body {
     font-size: var(--dm-text-xs);                /* 13px */
     font-weight: var(--dm-weight-semibold);
     flex-shrink: 0;
+    cursor: pointer;
+    transition: opacity var(--dm-transition-fast);
+}
+
+.user-avatar:hover {
+    opacity: 0.85;
+}
+
+.user-info {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
 }
 
 .user-name {
     font-size: var(--dm-text-xs);                /* 13px */
     font-weight: var(--dm-weight-semibold);
     color: var(--dm-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .user-role {
@@ -1173,6 +1190,8 @@ body {
     color: var(--dm-text-tertiary);
 }
 ```
+
+> **变更说明**：`.user-bar` 不再整体设置 `cursor: pointer`，改为 `.user-avatar` 和 `.user-info` 各自设置，明确点击热区。新增 `position: relative` 作为用户菜单卡片的定位锚点。
 
 ---
 
@@ -1255,6 +1274,138 @@ body {
     margin-bottom: var(--dm-space-4);
 }
 ```
+
+---
+
+### 4.20 修改密码对话框
+
+使用 Element Plus `el-dialog` + `el-form`，对齐 §4.2 输入框规范。触发入口为用户菜单卡片（§4.21）中的「修改密码」项。
+
+**容器**：
+| 属性 | 值 |
+|:---|:---|
+| width | 420px |
+| close-on-click-modal | false |
+| destroy-on-close | true |
+
+**表单**（`label-position="top"`，`size="default"`）：
+- 标签字号：`var(--dm-text-xs)`，颜色 `var(--dm-text-secondary)`，字重 `var(--dm-weight-medium)`
+- 输入框高度：`var(--dm-input-height)`（40px）
+- 输入框间距：`var(--dm-space-4)`（16px）表单底部间距
+
+**按钮区 footer**：
+- 取消按钮：`el-button`（默认样式，灰色边框）
+- 确认按钮：`el-button type="primary"`（黑底白字，`--dm-primary`），`:loading` 态防重复提交
+
+---
+
+### 4.21 用户菜单卡片 (User Menu Card)
+
+点击用户栏头像或用户名时，从用户栏上方弹出菜单卡片。卡片包含用户信息头部和菜单选项列表，为未来扩展预留空间。
+
+**卡片容器** — 绝对定位，从用户栏上方弹出，右对齐：
+
+```css
+.user-menu-card {
+    position: absolute;
+    bottom: 100%;                                /* 从用户栏上方弹出 */
+    right: 0;
+    margin-bottom: var(--dm-space-2);            /* 8px */
+    min-width: 200px;
+    background: var(--dm-bg-card);
+    border: 1px solid var(--dm-border);
+    border-radius: var(--dm-radius-md);          /* 12px */
+    box-shadow: var(--dm-shadow-lg);
+    overflow: hidden;
+    z-index: 100;
+    animation: menuSlideUp var(--dm-transition-normal) ease;
+}
+
+@keyframes menuSlideUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+```
+
+**用户信息头部** — 卡片顶部展示当前用户信息：
+
+```css
+.user-menu-header {
+    padding: var(--dm-space-4);                  /* 16px */
+    display: flex;
+    align-items: center;
+    gap: var(--dm-space-3);                      /* 12px */
+    border-bottom: 1px solid var(--dm-border-light);
+}
+```
+
+头部内头像复用 `.user-avatar` 样式；用户名使用 `.user-name`；角色使用 `.user-role`。
+
+**菜单项** — 通用可点击行：
+
+```css
+.user-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--dm-space-3);                      /* 12px */
+    padding: 12px var(--dm-space-4);             /* 12px 16px */
+    cursor: pointer;
+    transition: background var(--dm-transition-fast);
+    font-size: var(--dm-text-body);              /* 14px */
+    color: var(--dm-text-primary);
+    border: none;
+    background: transparent;
+    width: 100%;
+}
+
+.user-menu-item:hover {
+    background: var(--dm-bg-page);
+}
+
+/* 危险操作项（退出登录等） */
+.user-menu-item.danger {
+    color: var(--dm-danger);
+}
+
+.user-menu-item.danger:hover {
+    background: var(--dm-danger-light);
+}
+```
+
+**菜单图标** — 菜单项左侧图标：
+
+```css
+.user-menu-item i {
+    width: 18px;
+    text-align: center;
+    font-size: var(--dm-text-sm);                /* 15px */
+}
+```
+
+**菜单分隔线**：
+
+```css
+.user-menu-divider {
+    height: 1px;
+    background: var(--dm-border-light);
+    margin: 0;
+}
+```
+
+**当前选项列表**（Phase 4）：
+
+| 选项 | 图标 | 样式 | 行为 |
+|:---|:---|:---|:---|
+| 修改密码 | `fa-lock` | 默认 `.user-menu-item` | 关闭卡片 → 打开修改密码弹窗（§4.20） |
+| 退出登录 | `fa-sign-out-alt` | `.user-menu-item.danger` | 关闭卡片 → `authStore.logout()` → 跳转 `/login` |
+
+**交互行为**：
+- 点击头像/用户名 → `toggleUserMenu()` 切换卡片可见（`v-show`）
+- 点击菜单项 → 关闭卡片 + 执行对应操作
+- 点击卡片外部任意区域 → 关闭卡片（`document.addEventListener('click')` 全局监听，排除 `.user-bar` 和 `.user-menu-card` 内部点击）
+- `v-show` 切换不销毁 DOM，`showUserMenu` 默认 `false`
+
+**收起态**：`title="用户菜单"`，仅头像可见，点击同样弹出卡片。
 
 ---
 

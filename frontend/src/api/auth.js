@@ -23,3 +23,12 @@ export function refreshToken(refreshToken) {
 export function logout(refreshToken) {
   return api.post('/auth/logout', { refresh_token: refreshToken })
 }
+
+/**
+ * 修改密码（改密后全部 refresh_token 吊销，须重新登录）
+ * @param {string} oldPassword - 当前密码
+ * @param {string} newPassword - 新密码
+ */
+export function changePassword(oldPassword, newPassword) {
+  return api.put('/auth/password', { old_password: oldPassword, new_password: newPassword })
+}
