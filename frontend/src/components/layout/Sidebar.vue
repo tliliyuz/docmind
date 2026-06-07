@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar" :class="{ collapsed }">
+  <aside class="sidebar" :class="{ collapsed, 'menu-open': showUserMenu }">
     <!-- 顶部：折叠按钮 + Logo + 新建对话 -->
     <div class="sidebar-top">
       <!-- 收起按钮（仅展开态显示） -->
@@ -665,6 +665,11 @@ async function handleChangePassword() {
   overflow-x: hidden;
 }
 
+/* 用户菜单打开时解除 overflow 裁剪，确保收起态卡片不被截断 */
+.sidebar.menu-open {
+  overflow-x: visible;
+}
+
 /* 收起状态 */
 .sidebar.collapsed {
   width: var(--dm-sidebar-width-collapsed);
@@ -1108,6 +1113,16 @@ async function handleChangePassword() {
   overflow: hidden;
   z-index: 100;
   animation: menuSlideUp var(--dm-transition-normal) ease;
+}
+
+/* 收起态：卡片从用户栏右侧弹出，底部对齐用户栏、向上展开 */
+.collapsed .user-menu-card {
+  left: 100%;
+  right: auto;
+  bottom: 0;
+  top: auto;
+  margin-bottom: 0;
+  margin-left: var(--dm-space-2);
 }
 
 @keyframes menuSlideUp {
