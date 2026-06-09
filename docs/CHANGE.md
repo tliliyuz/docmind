@@ -1,5 +1,214 @@
 # DocMind 变更日志
 
+## 2026-06-09 — Phase 4 全部完成 + 第 2 轮人工评分
+
+### Phase 4 完成总结
+
+18 项任务全部完成：会话管理（CRUD + 多轮上下文 + LLM 标题）+ Query Rewrite（v2 信号词策略）+ 基础设施加固（错误处理 / Refresh Token / 结构化日志）+ 前端（会话列表 + Token 刷新 + 修改密码）+ 测试（单元/接口/组件/多轮 RAG 回归/人工评分）。
+
+### 第 2 轮人工评分结果
+
+- **Session 综合分平均**：4.76/5.0 ✅ 远超 ≥ 4.0 目标
+- **轮次均分**：4.62/5.0（vs 第 1 轮 4.38/5.0，↑ +0.24）
+- **RAG 保活性**：满分 5.0/5.0，23 轮均有 sources，未出现 RAG 退化
+- **上下文连贯性**：4.8/5.0（平均）
+- **历史记忆准确性**：4.8/5.0（平均）
+
+### 修正说明
+
+评分过程中发现「同一文档不同 chunk 标注为不同来源编号」被误扣分。经确认：同一文档的不同 chunk 赋予不同来源编号是正确做法——每个 chunk 内容不同、位置不同，不同编号便于区分「文档中的哪一段」。仅同一 chunk 重复标注或无关文档错误引用才扣分。修正后平均分从 4.68 提升至 4.76。
+
+### 发现的问题
+
+| 问题 | 严重程度 | 说明 |
+|:---|:---|:---|
+| 无关文档错误引用 | 高 | Session 1-T3/Session 3-T3（培训发展计划）、Session 5-T9（打印机使用说明） |
+| 编造细节 | 高 | Session 5-T10 编造「A座南广场旗杆处」等原文不存在的集合点位置 |
+| 回答立场软化 | 中 | Session 5-T9「不建议」而非明确「禁止」 |
+| 主题漂移 | 中 | Session 1-T2 将「报销审批时长」与「出差提前申请」混淆 |
+| 长对话后期幻觉 | 高 | T9-T10 出现内容质量问题，可能与历史截断后 LLM 依赖内部知识补全有关 |
+
+### 更新（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.36→v0.37。Phase 4 全部任务标记 ✅；第 2 轮人工评分完成；文件头状态更新为「Phase 4 全部完成，进入 Phase 5」 |
+| `docs/ARCHITECTURE.md` | v0.30→v0.31。文件头状态更新；§1 技术选型表「问题重写」「会话记忆」状态 [Planned]→[Implemented]；§8/§9 标题标记更新 |
+| `docs/TEST_CASES.md` | v0.52→v0.53。第 2 轮人工评分状态更新；多轮 RAG 回归测试完整结果；文件头状态更新 |
+| `docs/TESTING.md` | v0.13→v0.14。文件头状态更新；人工评分结果填入 |
+| `docs/CHANGE.md` | 新增本条目 |
+| `backend/tests/human_eval_template.md` | 第 2 轮评分模板填入修正后完整评分数据（5 Session 逐轮评分 + 汇总 + 对比 + 问题记录） |
+
+## 2026-06-08 — 记录：Query Rewrite v2 已知局限 + 后续优化方向
+
+### 问题
+
+multi-001 T2「审批流程需要多长时间？」**Rewrite 未触发**：问题不含任何信号词（代词/指示词/上下文引用），但语义上省略了主语「报销」——前轮讨论报销制度，用户追问审批流程，完整意图是「报销审批流程需要多长时间？」。
+
+`_needs_rewrite()` 返回 `False` → 原始 query 直接检索 → 返回合同审批/采购审批/差旅审批 → 来源不匹配。
+
+### 根因
+
+**纯省略/隐含依赖无法通过信号词检测**。v2 策略的 13 个信号词（代词/指示词/「上面」「前面说的」「刚才」）覆盖的是**显式引用**，无法覆盖「审批流程需要多长时间？」这类**语法完整但语义残缺**的省略。
+
+这是信号词方案的**结构性盲区**——可以继续扩充信号词，但每次扩充都增加误触发风险，最终走向规则地狱。
+
+### 后续优化方向：Retrieval-aware Rewrite（方案 E）
+
+流程从「先 Rewrite 再检索」改为「先检索，结果差时再 Rewrite」：
+
+```
+Question → Retrieval → 结果好 → 直接回答
+                      → 结果差 → Rewrite → Retrieval → 回答
+```
+
+**优势**：
+- 成本低：95% 问题一次检索解决，仅 5% 触发 Rewrite 补救
+- 零规则维护：不需要 `AMBIGUOUS_SIGNALS` 列表
+- 契合 RAG 生产实践：检索质量本身就是最准确的 Rewrite 触发信号
+
+**触发条件**：Top1 score < 阈值 或 TopK 文档分散度 > 阈值（待设计）
+
+**计划**：Phase 5 或后续 Phase 实施。
+
+### 更新（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | §5.1.5 新增「已知局限」小节，记录纯省略盲区 + 方案 E 方向 |
+| `docs/ROADMAP.md` | §6.5 推迟项新增「Retrieval-aware Rewrite」 |
+| `docs/CHANGE.md` | 新增本条目 |
+
+## 2026-06-08 — 修复：Query Rewrite 触发策略过度触发
+
+### 问题
+
+`SHORT_QUESTION_THRESHOLD = 15` 阈值过激：中文问题天然短（「病假需要提供医院证明吗」14 字、「VPN 密码忘了怎么办」11 字），大量语义完整的独立问题被强制改写，导致 multi-005 T5、multi-004 T3 等多轮回归退化。
+
+### 修改（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/query_rewriter.py` | **移除** `SHORT_QUESTION_THRESHOLD = 15` 短问题阈值。`_needs_rewrite()` 简化为仅检查明确歧义信号词。`AMBIGUOUS_SIGNALS` 从 7 个扩展到 13 个：新增「他们」「这些」「那些」「上面」「前面说的」「刚才」。更新 docstring 说明触发策略变更原因 |
+| `backend/tests/test_query_rewriter.py` | 27 用例（原 21 + 6 新增信号词用例 - 1 移除阈值用例）。U8.22 改为不触发（无信号词）；U8.25 移除阈值断言；U8.26 改为触发（「刚才」为新增信号词）；新增 U8.28-U8.33 覆盖 6 个新信号词。移除 `SHORT_QUESTION_THRESHOLD` 相关常量测试，替换为信号词完整性 + 非空验证 |
+
+### 更新（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | §5.1.5 触发策略重写：短问题阈值 → 仅信号词触发。代码块更新为 13 个信号词的 `AMBIGUOUS_SIGNALS` 列表 + 简化后的 `_needs_rewrite()`。决策表更新：新增 2 行（病假跳过 + 前面说的触发），修正「不通过的话怎么办？」为不触发，修正「刚才说的 VPN」为触发。「设计要点」表触发方式行更新 |
+| `docs/TEST_CASES.md` | §6.2.2 更新：测试文件 27 用例（原 21）。触发判断表从 8 行扩展至 14 行（U8.20-U8.33），包含 6 个新增信号词用例 + 修正 U8.22/U8.25/U8.26/U8.27 预期。Rewrite 正确性测试 ID 调整为 U8.34-U8.37 |
+| `docs/CHANGE.md` | 新增本条目 |
+
+### 设计权衡
+
+**「不通过的话怎么办？」不触发改写**：此问题在多轮语境下可能确实需要补全，但「把短问题全量送去改写」的代价远大于收益。牺牲少数省略主语场景的改写，换取大多数短问题的稳定检索。
+
+## 2026-06-08 — 修复：Sources 事件脆弱耦合（LLM 格式导致 RAG 退化误判）
+
+### 问题
+
+Sources 事件发送逻辑存在脆弱耦合：`sources` 是否发送 = LLM 是否在回答中写了 `[来源N]`。
+
+**根因**：`_generate_sse_stream()` 中 `_cited_indices = _extract_citation_indices(answer)` → `if _cited_indices:` 才发送 sources。Prompt 中「引用来源时标注 [来源N]」是**建议而非强约束**，DeepSeek/Qwen/Kimi 等模型经常正确回答但忘记写 `[来源N]`。
+
+**后果**：
+- 检索成功 → chunk 进入 Prompt → LLM 基于 chunk 给出正确答案 → 但没写 `[来源N]` → sources 事件消失
+- 多轮回归测试中 T3（会议室取消）、T5（病假证明）、T7（VPN 密码）等案例：答案正确但来源缺失，被误判为 RAG 退化
+- 概率估算：Sources 过滤逻辑问题 80% | Rewrite 问题 10% | History Budget 问题 5% | Retriever 真退化 5%
+
+**验证**：编写反例测试（`test_LLM正确回答但未写来源N时sources仍应发送_回退全量`），模拟 LLM 基于检索内容正确回答但不写 `[来源N]` → 确认 sources 被静默丢弃。used_chunks=1, cited=set(), answer 含「二级甲等以上医院证明」。
+
+### 修复（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | `_generate_sse_stream()` sources 发送逻辑修改：LLM 写了 `[来源N]` 时保留引用过滤优化（仅发送被引用的 chunk）；LLM 未引用时**回退发送全部 used_chunks**，防止因 LLM 格式问题导致 sources 消失。新增 `SOURCES_DIAG` 和 `SOURCES_FALLBACK` 日志 |
+| `backend/tests/test_chat_service.py` | 原 `test_LLM零引用时sources不发送`（固化了 bug 行为）改为 `test_LLM零引用时sources仍发送_回退全量`：断言 sources **应发送**全部 used_chunks。新增 `test_LLM正确回答但未写来源N时sources仍应发送_回退全量`：模拟多轮场景验证修复 |
+
+### 设计权衡
+
+**citation filter 从「必须」降级为「优化」**：LLM 写了 `[来源N]` 时仍做引用过滤（减少无关 chunk 发送），LLM 不写时回退全量。这是对 LLM 输出格式不可控性的务实应对——「sources 应来自 used_chunks，而非 LLM 是否记得写 [来源N]」。
+
+**`SOURCES_DIAG` 日志保留在 INFO 级别**：便于线上观察 LLM 引用行为分布，为后续优化引用过滤策略提供数据依据。
+
+## 2026-06-08 — 实现：Query Rewrite（问题重写）
+
+### 新增（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/rag/query_rewriter.py` | 新建。`_needs_rewrite()` 轻量歧义检测（无历史跳过 / 含歧义信号词或 <15 字触发）+ `rewrite_query()` LLM 上下文补全改写（仅取最近 2 轮 history / 失败降级返回原始 question / `deep_thinking=False`）。常量 `AMBIGUOUS_SIGNALS` / `SHORT_QUESTION_THRESHOLD=15` / `MIN_REWRITE_LENGTH=2`。引号剥离 `_QUOTE_CHARS` 覆盖 ASCII + 中文双/单引号 |
+| `backend/tests/test_query_rewriter.py` | 新建，21 用例全部通过。触发判断 8 例（U8.20-U8.27）/ Rewrite 正确性 4 例（U8.30-U8.33）/ 降级 4 例（U8.40-U8.43）/ 常量验证 5 例 |
+
+### 修改（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | 导入 `_needs_rewrite` + `rewrite_query`。`_validate_and_prepare()` 中 `await db.commit()` 后插入 Query Rewrite 调用：有歧义时 `question = await rewrite_query(question, history_messages)`，改写结果仅用于检索（原始 question 已存入 messages 表） |
+
+### 更新（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.27→v0.28。§5.1.5 添加 `[Implemented]` 标记 + 文件引用。触发判断表修正错误示例（「入职第一天需要做什么？」11 字 →「新员工入职流程具体包含哪些步骤？」16 字） |
+| `docs/ROADMAP.md` | §6.1 Phase 4 后端「问题重写」任务 ⬜ → ✅ |
+| `docs/TEST_CASES.md` | v0.50→v0.51。§6.2.2 测试文件标记从「待实现」→「已实现」。全部 16 用例 ⬜ → ✅，最后运行日期 2026-06-08；R4.2/R4.3 回归测试备注移除「未实现前必然退化」 |
+| `docs/CHANGE.md` | 新增本条目 |
+
+## 2026-06-08 — 设计：Query Rewrite（问题重写）Phase 4 提前
+
+### 背景
+
+多轮 RAG 回归测试（`regression_multi_turn_test.py`）稳定复现 multi-004 T2 退化：指代词「它需要几个人参加？」直接发给检索器 → 嵌入模型无法消解指代 → 检索出无关文档 → LLM 回答「知识库中未找到相关信息」。原决策「推迟到 Phase 5，DeepSeek 结合 history 可自然消解」被证伪——**检索发生在 LLM 之前**，history 注入无法解决检索阶段的 query 歧义。
+
+### 更新（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.26→v0.27。§1 技术选型表「问题重写」状态 `[Planned: Phase 5]` → `[Planned: Phase 4]`。§5 问答流程图 `[Rewrite]` 状态 `[Planned: Phase 4]` → `[Implemented: Phase 4]`。§5.1 标题从「Phase 3 实际问答流程」升级为「Phase 4 实际问答流程」，流程图中新增 Rewrite 触发判断 + 降级分支。**新增 §5.1.5 Query Rewrite 完整设计**：轻量 `_needs_rewrite()` 触发策略（无歧义跳过 / 含代词或 <15 字触发）/ Rewrite Prompt 严格约束输出格式 / 最近 2 轮 history 截取 / LLM 失败降级到原始 question。§5.2 伪代码更新：注释掉的问题重写改为已实现。§8.10 「问题重写」从推迟决策改为已实现，引用 §5.1.5 设计细节 |
+| `docs/ROADMAP.md` | §6.1 Phase 4 后端新增「问题重写」任务（⬜，决策 #32）。§6.5 推迟项移除「问题重写」。§6.7 新增决策 #32：问题重写提前至 Phase 4。§7.1 Phase 5 体验完善移除「问题重写」 |
+| `docs/TEST_CASES.md` | v0.49→v0.50。**新增 §6.2.2 Query Rewrite 单元测试**：触发判断 8 用例（U8.20-U8.27）/ Rewrite 正确性 4 用例（U8.30-U8.33）/ 降级 4 用例（U8.40-U8.43）。§6.3 多轮 RAG 回归测试 R4.2/R4.3 备注更新：标注依赖 Query Rewrite（未实现前必然退化） |
+
+### 设计要点
+
+| 要点 | 决策 |
+|:---|:---|
+| 触发方式 | `_needs_rewrite()` 先过滤：无历史/无歧义信号 → 跳过，零额外延迟 |
+| 歧义信号 | 代词/指示词（它/这个/那个/该/此/呢/那）+ 问题 < 15 字 |
+| History 范围 | 仅取最近 2 轮（4 条消息），避免全量历史浪费 token + 引入噪声 |
+| Rewrite Prompt | 严格约束「只输出改写后的问题，不要解释」 |
+| 降级 | LLM 失败/空输出/单字符 → 返回原始 question，不阻塞主流程 |
+| 不落库 | 改写结果仅用于检索，不持久化到 messages 表 |
+
+## 2026-06-08 — 新增：多轮 RAG 回归测试脚本 + 测试集 + 第 2 轮人工评分模板
+
+### 新增（测试）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/eval_multi_turn_test_set.py` | 多轮 RAG 回归测试集：5 个 Session（报销三连问 / 多主题切换 / 离职跨文档追问 / 指代消解 / 长对话 RAG 保活），共 23 轮。每轮标注 `context_dependent`（是否依赖前轮上下文）+ `expected_docs` + `has_sources` 期望 |
+| `backend/tests/regression_multi_turn_test.py` | 多轮回归脚本：同一 Session 内复用 `conversation_id` 实现真正的多轮对话。在单轮检查项（答案非空 / sources 有效 / SSE 格式 / 错误率）基础上新增：① **RAG 退化检测**（Turn ≥2 时 sources 消失 → 标记 `rag_degraded`）；② **上下文依赖追踪**（`context_dependent` 轮次单独统计通过率）；③ **Session × Turn 结果矩阵**（✅/❌/🔻 一览）。输出 Session 级汇总 + 退化统计 |
+
+### 更新（测试模板）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/tests/human_eval_template.md` | 新增「第 2 轮：多轮对话人工评分」完整章节：① 评分标准差异说明（单轮 vs 多轮）；② 跨轮维度定义（上下文连贯性 25% / RAG 保活性 20% / 历史记忆准确性 10%）；③ Session 综合分公式（轮次均分×0.45 + 跨轮三维度）；④ 5 个 Session 的逐轮评分表 + 跨轮评分表；⑤ 与第 1 轮对比表；⑥ 多轮特有退化记录区（RAG 退化/上下文断裂/指代消解失败） |
+
+### 更新（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/TESTING.md` | v0.12→v0.13。§6 新增 §6.4「多轮对话评分补充」：定义跨轮三维度 + 综合分公式 + 同口径/增量对比方式。§7.4 末尾补充脚本引用（`eval_multi_turn_test_set.py` + `regression_multi_turn_test.py`）+ 运行命令 |
+| `docs/TEST_CASES.md` | v0.48→v0.49。§6.3 多轮 RAG 回归测试用例从 5 个扩充至 15 个（覆盖 5 Session 的所有轮次），标注「脚本就绪」；新增脚本运行说明 |
+
+### 说明
+
+- **第 2 轮与第 1 轮的本质差异**：第 1 轮评估单轮独立问答质量（4 维度），第 2 轮在此基础上增加跨轮维度——上下文连贯性（多轮核心价值）、RAG 保活性（Phase 4 关键验证点：防止历史消息挤掉检索结果导致 RAG 静默退化）、历史记忆准确性（辅助）
+- 排期文档（ROADMAP.md）暂不更新，待第 2 轮人工评分完成后一并更新
+- 多轮回归脚本与单轮脚本（`regression_test.py`）独立运行，不互相影响
+
 ## 2026-06-07 — 新增：用户菜单卡片（Sidebar 头像交互重构）
 
 ### 修改（前端）

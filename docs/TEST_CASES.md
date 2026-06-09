@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.48 |
-| 最后更新 | 2026-06-06 |
+| 文档版本 | v0.53 |
+| 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 3 全部完成 + Phase 4 会话管理/多轮上下文/基础设施加固/修改密码已完成） |
+| 状态 | 进行中（Phase 4 全部完成 + 第 2 轮人工评分完成，进入 Phase 5） |
 
 ---
 
@@ -367,7 +367,7 @@
 | U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ✅ | 2026-06-02 | — |
 | U7.63b | Service-sources 抑制 | `_generate_sse_stream` | LLM 回答含"未找到相关信息" | 前缀 35 字符匹配 → 抑制；全文匹配 + 无 [来源N] 引用 → 抑制；有引用 → 保留 | ✅ | 2026-06-04 | 4 用例：真阴性前缀/假阳性有引用/真阴性无引用/正常回答 |
 | U7.63c | Service-sources chunk_index | `_build_sources` | 正常检索结果 | 每个 chunk 含 `chunk_index` 字段，与 LLM Prompt 中 [来源N] 编号一致 | ✅ | 2026-06-04 | 使用 `prompt_result.used_chunks` 确保编号一致 |
-| U7.63d | Service-sources 引用过滤 | `_extract_citation_indices` + `_generate_sse_stream` | 多种引用场景 | ① 提取 [来源N] 编号（单个/多个/去重）；② 无引用返回空集合；③ sources 仅含被引用 chunk；④ 全引用时全量发送；⑤ 零引用时不发送 sources；⑥ LLM 失败时回退全量发送；⑦ 幻觉编号忽略 | ✅ | 2026-06-04 | 9 用例（TestExtractCitationIndices 5 + TestChatCitationFiltering 4），决策 #27 |
+| U7.63d | Service-sources 引用过滤 | `_extract_citation_indices` + `_generate_sse_stream` | 多种引用场景 | ① 提取 [来源N] 编号（单个/多个/去重）；② 无引用返回空集合；③ sources 仅含被引用 chunk（LLM 写 [来源N] 时）；④ 全引用时全量发送；⑤ 零引用时回退发送全部 used_chunks（修复 LLM 格式脆弱耦合）；⑥ LLM 失败时回退全量发送；⑦ 幻觉编号忽略 | ✅ | 2026-06-08 | 10 用例（TestExtractCitationIndices 5 + TestChatCitationFiltering 5），修复脆弱耦合 |
 | U7.64 | Service-kb 无文档 | `chat_service.chat()` | kb chunks=0 | SSE event: error (E4001) | ✅ | 2026-06-02 | — |
 | U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ✅ | 2026-06-02 | — |
 | U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-02 | — |
@@ -607,6 +607,8 @@
 | E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ✅ | 2026-06-04 | 通过（Q26 首个相关排第 3 位以外，其余全部首位命中） |
 | E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ✅ | 2026-06-04 | 通过（RRF 融合后所有期望文档均被召回） |
 | E6 | 人工答案评分（第 1 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.38** | ✅ | 2026-06-04 | 10 题 × 4 维度，详见 `backend/tests/human_eval_template.md` |
+| E7 | 人工答案评分（第 2 轮） | Session 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.76** | ✅ | 2026-06-09 | 5 Session × 23 轮，修正后评分。轮次均分 4.62/5.0，RAG 保活性满分。详见 `backend/tests/human_eval_template.md` |
+| E8 | 多轮 RAG 回归测试 | 各轮次均有 sources | 23/23 轮 | **23/23** | ✅ | 2026-06-09 | 5 Session 全部通过，RAG 未退化。脚本：`regression_multi_turn_test.py` |
 
 ---
 
@@ -652,15 +654,69 @@
 | U8.14 | LLM 返回过长标题 | `_generate_title_llm` | >20 字标题 | 截断至 20 字 | ✅ | 2026-06-05 | `title[:20]` |
 | U8.15 | 回退结果与截断一致 | `_generate_title_llm` | LLM 失败回退 | 回退结果与直接调 `_generate_title` 相同 | ✅ | 2026-06-05 | — |
 
+### 6.2.2 Query Rewrite 单元测试
+
+> 测试文件：`tests/test_query_rewriter.py`（已实现，27 用例全部通过）。详细设计见 ARCHITECTURE.md §5.1.5。
+> **触发策略 v2**：仅检查明确歧义信号词（13 个），不使用短问题阈值。
+
+**触发判断 `_needs_rewrite` 测试**
+
+| ID | 测试用例 | 被测函数 | 输入 | 预期输出 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U8.20 | 无历史-跳过 | `_needs_rewrite` | question="它需要几个人参加？", history=[] | `False` | ✅ | 2026-06-08 | 无参考上下文 |
+| U8.21 | 有历史+含代词-触发 | `_needs_rewrite` | question="它需要几个人参加？", history=[...] | `True` | ✅ | 2026-06-08 | 「它」为歧义信号词 |
+| U8.22 | 有历史+短问题但无信号词-跳过 | `_needs_rewrite` | question="不通过的话怎么办？", history=[...] | `False` | ✅ | 2026-06-08 | 无歧义信号词，v2 短问题本身不触发 |
+| U8.23 | 有历史+含「这个」-触发 | `_needs_rewrite` | question="这个怎么处理？", history=[...] | `True` | ✅ | 2026-06-08 | 「这个」为歧义信号词 |
+| U8.24 | 有历史+含「那」-触发 | `_needs_rewrite` | question="那请假呢？", history=[...] | `True` | ✅ | 2026-06-08 | 「那」+「呢」均为歧义信号 |
+| U8.25 | 有历史+独立完整问题-跳过 | `_needs_rewrite` | question="新员工入职流程具体包含哪些步骤？", history=[...] | `False` | ✅ | 2026-06-08 | 无歧义信号词 |
+| U8.26 | 有历史+含「刚才」-触发 | `_needs_rewrite` | question="刚才说的 VPN，忘记密码怎么办？", history=[...] | `True` | ✅ | 2026-06-08 | v2：「刚才」为新增信号词 |
+| U8.27 | 有历史+含「呢」-触发 | `_needs_rewrite` | question="具体多少钱呢？", history=[...] | `True` | ✅ | 2026-06-08 | 「呢」为歧义信号词 |
+| U8.28 | 有历史+含「他们」-触发 | `_needs_rewrite` | question="他们的分工是什么？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| U8.29 | 有历史+含「这些」-触发 | `_needs_rewrite` | question="这些材料有模板吗？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| U8.30 | 有历史+含「那些」-触发 | `_needs_rewrite` | question="那些福利需要申请吗？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| U8.31 | 有历史+含「上面」-触发 | `_needs_rewrite` | question="上面提到的迟到怎么处理？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| U8.32 | 有历史+含「前面说的」-触发 | `_needs_rewrite` | question="前面说的内部培训费用谁出？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| U8.33 | 有历史+含「刚才」-触发 | `_needs_rewrite` | question="刚才说的客户端在哪里下载？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+
+**Rewrite 正确性测试**
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U8.34 | 代词消解-「它」 | `rewrite_query` | history: T1「代码评审的标准是什么？」; question:「它需要几个人参加？」 | 改写后含「代码评审」+「需要几个人参加」 | ✅ | 2026-06-08 | Mock LLM 返回固定改写结果 |
+| U8.35 | 省略补全-「不通过」 | `rewrite_query` | history: T1 代码评审; question:「不通过的话怎么办？」 | 改写后含「代码评审」+「不通过怎么办」 | ✅ | 2026-06-08 | — |
+| U8.36 | 指代消解-「金额限制」 | `rewrite_query` | history: T1「介绍一下公司的报销制度」; question:「金额限制具体是多少？」 | 改写后含「报销制度」+「金额限制」 | ✅ | 2026-06-08 | — |
+| U8.37 | Rewrite 仅取最近 2 轮 | `rewrite_query` | history: 6 条消息（3 轮），仅最后 2 轮相关 | 传入 LLM 的 history 仅含最近 4 条（2 轮） | ✅ | 2026-06-08 | 验证 `history[-4:]` 截取 |
+
+**Rewrite 正确性测试**
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U8.30 | 代词消解-「它」 | `rewrite_query` | history: T1「代码评审的标准是什么？」; question:「它需要几个人参加？」 | 改写后含「代码评审」+「需要几个人参加」 | ✅ | 2026-06-08 | Mock LLM 返回固定改写结果 |
+| U8.31 | 省略补全-「不通过」 | `rewrite_query` | history: T1 代码评审; question:「不通过的话怎么办？」 | 改写后含「代码评审」+「不通过怎么办」 | ✅ | 2026-06-08 | — |
+| U8.32 | 指代消解-「金额限制」 | `rewrite_query` | history: T1「介绍一下公司的报销制度」; question:「金额限制具体是多少？」 | 改写后含「报销制度」+「金额限制」 | ✅ | 2026-06-08 | — |
+| U8.33 | Rewrite 仅取最近 2 轮 | `rewrite_query` | history: 6 条消息（3 轮），仅最后 2 轮相关 | 传入 LLM 的 history 仅含最近 4 条（2 轮） | ✅ | 2026-06-08 | 验证 `history[-4:]` 截取 |
+
+**降级测试**
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U8.40 | LLM 调用失败降级 | `rewrite_query` | LLM 抛异常 | 返回原始 question | ✅ | 2026-06-08 | 不抛异常，不阻塞主流程 |
+| U8.41 | LLM 返回空字符串降级 | `rewrite_query` | LLM 返回 `""` | 返回原始 question | ✅ | 2026-06-08 | `len(rewritten) < 2` |
+| U8.42 | LLM 返回解释性文本降级 | `rewrite_query` | LLM 返回「改写后的问题是：代码评审...」 | 由 `strip(_QUOTE_CHARS)` 处理；若仍含前缀则可能被采用（≥2 字即通过） | ✅ | 2026-06-08 | Prompt 约束应避免此情况 |
+| U8.43 | LLM 返回单字符降级 | `rewrite_query` | LLM 返回 `"。"` | 返回原始 question | ✅ | 2026-06-08 | `len("。") < 2` |
+
 ### 6.3 多轮 RAG 回归测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| R1.1 | 报销制度三连问-T1 | SSE API | 「介绍报销制度」 | 有答案 + 有 sources + RAG 正常 | ⬜ | — | Turn 1 基准 |
-| R1.2 | 报销制度三连问-T2 | SSE API | 「审批时间呢？」 | 有答案 + 有 sources + 上下文连贯（主题仍为报销） + **RAG 未退化** | ⬜ | — | **关键**：验证 sources 事件仍存在 |
-| R1.3 | 报销制度三连问-T3 | SSE API | 「金额限制多少？」 | 有答案 + 有 sources + 上下文连贯 + **RAG 未退化** | ⬜ | — | **关键**：3 轮后检索仍正常 |
-| R2.1 | 多主题切换 | SSE API | Q1「VPN 配置」→ Q2「入职需要什么材料」 | 两轮均正常检索 + sources 事件正常 + 主题不混淆 | ⬜ | — | 验证历史不干扰本轮检索 |
-| R3.1 | 长对话 RAG 保活 | SSE API | 连续 15 轮问答 | 前几轮被截断后，最后 3 轮仍有 sources 事件 | ⬜ | — | 验证截断后 RAG 不退化 |
+| R1.1 | 报销制度三连问-T1 | SSE API | 「介绍报销制度」 | 有答案 + 有 sources + RAG 正常 | ✅ | 2026-06-09 | Turn 1 基准，通过 |
+| R1.2 | 报销制度三连问-T2 | SSE API | 「审批时间呢？」 | 有答案 + 有 sources + 上下文连贯（主题仍为报销） + **RAG 未退化** | ✅ | 2026-06-09 | **关键**：sources 存在，但内容存在概念漂移（报销审批→出差审批） |
+| R1.3 | 报销制度三连问-T3 | SSE API | 「金额限制多少？」 | 有答案 + 有 sources + 上下文连贯 + **RAG 未退化** | ✅ | 2026-06-09 | **关键**：3 轮后检索仍正常，sources 存在 |
+| R2.1 | 多主题切换 | SSE API | Q1「VPN 配置」→ Q2「入职需要什么材料」→ Q3「病假怎么申请」→ Q4「刚才说的VPN」 | 所有轮次均正常检索 + sources 事件正常 + 主题不混淆 + T4 正确关联 T1 | ✅ | 2026-06-09 | 验证历史不干扰本轮检索，上下文记忆正确 |
+| R3.1 | 长对话 RAG 保活 | SSE API | 连续 10 轮不同主题问答 | 最后 3 轮（T8-T10）仍有 sources 事件 + RAG 未退化 | ✅ | 2026-06-09 | 验证历史截断后 RAG 不退化。T8/T9/T10 均有 sources ✅ |
+| R4.1 | 指代消解-T1 | SSE API | 「代码评审的标准是什么？」 | 正常检索 + 有 sources | ✅ | 2026-06-09 | 通过 |
+| R4.2 | 指代消解-T2 | SSE API | 「它需要几个人参加？」 | 「它」→ 正确消解为「代码评审」 + 有 sources | ✅ | 2026-06-09 | **关键**：代词消解成功，Query Rewrite 生效 |
+| R4.3 | 指代消解-T3 | SSE API | 「不通过的话怎么办？」 | 「不通过」→ 正确关联「代码评审不通过」 + 有 sources | ✅ | 2026-06-09 | **关键**：省略补全，Query Rewrite 未触发（无信号词），但 LLM 结合 history 正确理解 |
 
 ### 6.4 前端组件测试
 
