@@ -90,24 +90,8 @@ export const useChatStore = defineStore('chat', () => {
 
   // ===== 消息操作 =====
 
-  /** 发送消息 */
-  function sendUserMessage(question, deepThinking = false) {
-    if (!selectedKBId.value) {
-      throw new Error('请先选择知识库')
-    }
-    if (!question.trim()) {
-      throw new Error('问题不能为空')
-    }
-
-    // 插入用户消息
-    const userMsg = {
-      id: genClientId(),
-      role: 'user',
-      content: question,
-      status: 'complete',
-    }
-    messages.value.push(userMsg)
-
+  /** 发起助手消息 SSE 流（不插入用户消息，供 sendUserMessage / regenerate 共用） */
+  function startAssistantStream(question, deepThinking = false) {
     // 插入助手占位消息
     const assistantMsg = {
       id: genClientId(),
@@ -150,6 +134,27 @@ export const useChatStore = defineStore('chat', () => {
     return assistantMsg.id
   }
 
+  /** 发送消息 */
+  function sendUserMessage(question, deepThinking = false) {
+    if (!selectedKBId.value) {
+      throw new Error('请先选择知识库')
+    }
+    if (!question.trim()) {
+      throw new Error('问题不能为空')
+    }
+
+    // 插入用户消息
+    const userMsg = {
+      id: genClientId(),
+      role: 'user',
+      content: question,
+      status: 'complete',
+    }
+    messages.value.push(userMsg)
+
+    return startAssistantStream(question, deepThinking)
+  }
+
   /** 处理 SSE 事件 */
   function handleSSEEvent(msgId, eventType, data) {
     const msg = messages.value.find(m => m.id === msgId)
@@ -171,7 +176,9 @@ export const useChatStore = defineStore('chat', () => {
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
-          } catch { /* store 可能未初始化 */ }
+          } catch (err) {
+            console.error('添加会话到侧边栏失败:', err)
+          }
         }
         break
 
@@ -207,7 +214,9 @@ export const useChatStore = defineStore('chat', () => {
             try {
               const convStore = useConversationStore()
               convStore.updateConversationTitle(conversationId.value, data.title)
-            } catch { /* store 可能未初始化 */ }
+            } catch (err) {
+              console.error('更新会话标题到侧边栏失败:', err)
+            }
           }
         }
         if (data.token_usage) {
@@ -330,9 +339,8 @@ export const useChatStore = defineStore('chat', () => {
       messages.value.splice(lastAssistantIdx, 1)
     }
 
-    // 重新发送
-    const question = lastUserMsg.content
-    sendUserMessage(question, false)
+    // 仅启动新的助手流，不新增用户消息（避免重复问题）
+    startAssistantStream(lastUserMsg.content, false)
   }
 
   /** 重置全部状态（退出登录 / 切换账号时调用） */
@@ -350,7 +358,9 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const convStore = useConversationStore()
       convStore.reset()
-    } catch { /* store 可能未初始化 */ }
+    } catch (err) {
+      console.error('重置会话列表 Store 失败:', err)
+    }
   }
 
   return {

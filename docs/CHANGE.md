@@ -1,5 +1,14 @@
 # DocMind 变更日志
 
+## 2026-06-09 — 修复：前端对话页Bug
+
+### 修复
+
+| Bug | 根因 | 修改文件 |
+|:---|:---|:---|
+| 重新生成重复用户消息 | `regenerate()` 调用 `sendUserMessage()` 会新增一条用户消息 | `frontend/src/stores/chat.js` — 提取 `startAssistantStream()` 辅助函数，`regenerate()` 仅删除助手消息后直接启动新流 |
+| 会话标题不随对话更新 | 1. 标题更新处 try-catch 静默吞错；2. LLM 标题异步生成后未推前端 | `frontend/src/stores/chat.js` SSE 事件处理器 — 静默 catch 改为 `console.error` |
+
 ## 2026-06-09 — Phase 4 全部完成 + 第 2 轮人工评分
 
 ### Phase 4 完成总结
