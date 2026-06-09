@@ -1,10 +1,11 @@
 """知识库表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models._types import UTCDateTime
 
 
 class KnowledgeBase(Base):
@@ -38,10 +39,10 @@ class KnowledgeBase(Base):
         Integer, default=0, server_default=text("0")
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime,
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )

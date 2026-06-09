@@ -1,10 +1,11 @@
 """会话表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, func, text
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models._types import UTCDateTime
 
 
 class Conversation(Base):
@@ -26,10 +27,10 @@ class Conversation(Base):
         Integer, default=0, server_default=text("0")
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime,
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )

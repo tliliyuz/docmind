@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.31 |
+| 文档版本 | v0.32 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 4 全部完成，进入 Phase 5） |
@@ -49,6 +49,7 @@
 | HTTP 客户端 | Axios | 前端请求封装 | [Implemented] |
 | 前端路由 | Vue Router | SPA 路由管理 | [Implemented] |
 | 图标库 | Font Awesome 6 Free | UI 图标统一方案 | [Implemented] |
+| 时区策略 | 四层 UTC 统一 | DB(UTC) → 后端(`datetime.now(timezone.utc)`) → API(ISO 8601+`+00:00`) → 前端(`new Date()` 本地显示)，详见 §12 | [Implemented] |
 
 ---
 
@@ -1282,7 +1283,57 @@ backend/app/main.py           ← 中间件注入 request_id
 
 ---
 
-## 11. 相关文档
+## 11. 时区策略 [Implemented]
+
+### 11.1 设计原则
+
+项目采用**四层 UTC 统一**策略，确保时间数据在全链路中一致、可比较、可跨时区部署。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      时区数据流                                  │
+│                                                                 │
+│  MySQL                   后端                    前端           │
+│  ┌──────────┐    ┌──────────────────┐    ┌──────────────────┐   │
+│  │ DATETIME │───▶│ datetime.now(    │───▶│ new Date(        │   │
+│  │ (UTC)    │    │   timezone.utc)  │    │   isoString)     │   │
+│  │          │◀───│                  │    │                  │   │
+│  │ CURRENT_ │    │ API: ISO 8601    │    │ 显示: 本地时区    │   │
+│  │ TIMESTAMP│    │ +00:00           │    │                  │   │
+│  └──────────┘    └──────────────────┘    └──────────────────┘   │
+│       ▲                ▲                        ▲               │
+│       │                │                        │               │
+│  time_zone=     DateTime(timezone   new Date() 自动             │
+│  '+00:00'       =True) 自动附加     转换为本地时区               │
+│                  UTC tzinfo                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 11.2 各层约定
+
+| 层 | 约定 | 实施方式 |
+|:---|:---|:---|
+| **数据库** | 所有 DATETIME 列存储 UTC | MySQL 连接 `init_command=SET time_zone='%2B00:00'`；ORM `UTCDateTime` TypeDecorator（写入剥离 tzinfo / 读取附加 UTC tzinfo） |
+| **后端** | 统一使用 `datetime.now(timezone.utc)` | CLAUDE.md 编码规范强制，禁止 `datetime.utcnow()` |
+| **API** | 返回 ISO 8601 + `+00:00` 格式 | Pydantic 序列化 aware datetime → `2026-06-09T11:26:20+00:00` |
+| **前端** | 按用户本地时区显示 | `new Date(isoString).toLocaleString('zh-CN', {...})` |
+
+### 11.3 关键约束
+
+- **禁止 `datetime.utcnow()`**（Python 3.12+ 已弃用）
+- **禁止 `datetime.utcfromtimestamp()`**（同上）
+- **禁止 naive datetime 写入数据库**：ORM `DateTime(timezone=True)` 在读取时自动附加 UTC tzinfo，写入时自动剥离
+- **MySQL `DATETIME` vs `TIMESTAMP`**：项目使用 `DATETIME`（值不变）+ 约定 UTC，不使用 `TIMESTAMP`（会随会话时区自动转换，行为不透明）
+- **Celery**：`timezone="Asia/Shanghai"` + `enable_utc=True`（调度用本地时间，消息传输用 UTC，仅影响日志/调度感知）
+
+### 11.4 部署约束
+
+- MySQL 服务器建议 `default_time_zone='+00:00'`
+- 如无法修改全局配置，连接串 `init_command` 已确保会话级 UTC
+- 开发和测试环境共用相同约定
+
+
+## 12. 相关文档
 
 - [产品需求文档](PRD.md)
 - [数据库设计文档](../backend/docs/DATABASE.md)
@@ -1291,3 +1342,5 @@ backend/app/main.py           ← 中间件注入 request_id
 - [开发排期](ROADMAP.md)
 - [测试策略](TESTING.md)
 - [UI 设计规范](../frontend/docs/UIDESIGN.md)
+
+---

@@ -1,5 +1,39 @@
 # DocMind 变更日志
 
+## 2026-06-09 — 重构：时区标准化（四层 UTC 统一）
+
+### 新增
+
+- **ARCHITECTURE.md §12**：时区策略章节，含数据流图、各层约定、关键约束、部署约束
+- **DATABASE.md §0**：时区约定小节，明确所有 DATETIME 列存储 UTC
+- **DEVELOPMENT.md §7**：MySQL 时区配置指南，含服务器级设置和验证方法
+
+### 新增（文件）
+
+- **`models/_types.py`**：`UTCDateTime(TypeDecorator)` — `process_bind_param` 写入剥离 tzinfo 存 naive UTC，`process_result_value` 读取附加 UTC tzinfo 返回 aware datetime
+
+### 修改
+
+- **`config.py`**：`mysql_url` 属性附加 `init_command=SET time_zone='%2B00:00'`，确保 `CURRENT_TIMESTAMP` 返回 UTC
+- **7 个 ORM 模型**：所有 `DateTime` 列统一改为 `UTCDateTime` TypeDecorator，ORM 层自动完成 aware ↔ naive 双向转换
+- **`auth_service.py`**：移除 `rt.expires_at.replace(tzinfo=timezone.utc)` 手动补丁（TypeDecorator 已自动返回 aware datetime）
+- **`CLAUDE.md`**：时区规范从单条 `datetime.utcnow()` 禁令扩展为四层 UTC 统一规范
+- **`ARCHITECTURE.md` §1**：技术选型表新增时区策略条目
+- **`DEVELOPMENT.md` §1**：MySQL 环境要求添加 `time_zone='+00:00'` 约束
+
+### 方案演进
+
+| 尝试 | 方案 | 结果 |
+|:---|:---|:---|
+| v1 | `DateTime(timezone=True)` | ❌ 对 PyMySQL/aiomysql 驱动不生效 |
+| v2 | Pydantic `PlainSerializer` 强制补 `Z` | ⚠️ 表现层补丁，Pydantic 感知识别 |
+| v3（最终） | `UTCDateTime` TypeDecorator | ✅ 数据层修复，ORM→Pydantic→API 全链路透明 |
+
+### 修复
+
+- **根因**：MySQL DATETIME 列不存储时区，PyMySQL/aiomysql 驱动返回 naive datetime → Pydantic 序列化无时区后缀 → 前端 `new Date()` 当成本地时间，偏差 8 小时
+- **方案**：ORM 层 `UTCDateTime` TypeDecorator — 读取时自动附加 UTC tzinfo → Pydantic 自然拿到 aware datetime → 自动序列化 `2026-06-09T12:00:02Z` → 前端 `new Date("...Z")` 正确转为本地时区
+
 ## 2026-06-09 — 修复：前端对话页Bug
 
 ### 修复

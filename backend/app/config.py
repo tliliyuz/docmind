@@ -113,10 +113,11 @@ class Settings(BaseSettings):
 
     @property
     def mysql_url(self) -> str:
-        """构造异步 MySQL 连接串"""
+        """构造异步 MySQL 连接串（强制会话 time_zone=UTC，确保 CURRENT_TIMESTAMP 返回 UTC）"""
         return (
             f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
             f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+            f"?init_command=SET time_zone='%2B00:00'"
         )
 
 

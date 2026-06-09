@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.13 |
-| 最后更新 | 2026-05-27 |
+| 文档版本 | v0.14 |
+| 最后更新 | 2026-06-09 |
 | 作者 | yuz |
 | 状态 | 草稿 |
 
@@ -15,7 +15,7 @@
 |:---|:---|:---|
 | Python | 3.11+ | 后端运行环境 |
 | Node.js | 18+ | 前端构建环境 |
-| MySQL | 8.0+ | 业务数据库 |
+| MySQL | 8.0+ | 业务数据库，**必须配置 `time_zone='+00:00'`**（连接串已通过 `init_command` 强制执行会话级 UTC），详见 §7 |
 | Redis | 7.0+ | 缓存 + Celery broker |
 
 ---
@@ -382,7 +382,43 @@ httpx==0.28.*
 
 ---
 
-## 7. 常用命令速查
+## 7. MySQL 时区配置
+
+> **所有 DATETIME 列均存储 UTC 时间**，对齐 [ARCHITECTURE.md §12](ARCHITECTURE.md#12-时区策略-implemented)。
+
+### 7.1 连接级强制（已内置）
+
+`config.py` 的 `mysql_url` 属性已附加 `init_command=SET time_zone='%2B00:00'`，每个连接建立后自动执行。**新部署无需额外配置**。
+
+### 7.2 服务器级设置（推荐）
+
+```sql
+-- 查看当前时区
+SELECT @@global.time_zone, @@session.time_zone;
+
+-- 设置全局默认时区为 UTC（需 SUPER 权限）
+SET GLOBAL time_zone = '+00:00';
+```
+
+或在 MySQL 配置文件 `my.cnf` 中：
+
+```ini
+[mysqld]
+default_time_zone = '+00:00'
+```
+
+> **注意**：若无法修改全局配置，仅靠连接串 `init_command` 即可保证正确性，但 MySQL 重启前全局非 UTC 会影响 `SHOW VARIABLES` 等管理命令的显示值（不影响数据）。
+
+### 7.3 验证
+
+```sql
+-- 连接后执行，应返回 +00:00
+SELECT @@session.time_zone;
+```
+
+---
+
+## 8. 常用命令速查
 
 ```bash
 # === 后端 ===
@@ -414,7 +450,7 @@ npm run test:ui    # vitest UI 模式
 
 ---
 
-## 8. 编码约定
+## 9. 编码约定
 
 详见项目根目录 [CLAUDE.md](../CLAUDE.md) 的「关键约定」章节。核心要点：
 
@@ -425,7 +461,7 @@ npm run test:ui    # vitest UI 模式
 
 ---
 
-## 9. 相关文档
+## 10. 相关文档
 
 - [架构设计文档](ARCHITECTURE.md)
 - [数据库设计文档](../backend/docs/DATABASE.md)

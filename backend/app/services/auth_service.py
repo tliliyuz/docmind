@@ -128,8 +128,8 @@ async def refresh(db: AsyncSession, refresh_token_str: str) -> TokenResponse:
         await _revoke_all_user_tokens(db, user_id)
         raise TokenLeakDetectedException()
 
-    # 检查过期
-    if rt.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+    # 检查过期（DB 已存储 UTC，ORM DateTime(timezone=True) 返回 aware datetime）
+    if rt.expires_at < datetime.now(timezone.utc):
         raise RefreshTokenExpiredException()
 
     # 4. 旧 token 标记失效（Rotation）

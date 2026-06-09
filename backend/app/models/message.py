@@ -1,10 +1,11 @@
 """消息表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, JSON, Text, func, text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Integer, JSON, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models._types import UTCDateTime
 
 
 class Message(Base):
@@ -29,7 +30,7 @@ class Message(Base):
         comment="扩展元数据：未来 Tool Call / Web Search / Agent 等场景的非结构化数据"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
 
     conversation = relationship("Conversation", back_populates="messages")

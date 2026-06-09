@@ -1,11 +1,12 @@
 """分块表 — 存储分块文本和 ChromaDB 引用"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models._types import UTCDateTime
 
 
 class Chunk(Base):
@@ -34,7 +35,7 @@ class Chunk(Base):
         "metadata", JSON, comment="页码、段落标题等"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
 
     document = relationship("Document", back_populates="chunks")

@@ -2,10 +2,25 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.10 |
-| 最后更新 | 2026-06-05 |
+| 文档版本 | v0.11 |
+| 最后更新 | 2026-06-09 |
 | 作者 | yuz |
 | 状态 | 草稿 |
+
+---
+
+## 0. 时区约定
+
+> **所有 DATETIME 列均存储 UTC 时间。**
+
+| 层面 | 约定 | 实施方式 |
+|:---|:---|:---|
+| MySQL 会话 | `time_zone='+00:00'` | 连接串 `init_command=SET time_zone='%2B00:00'`，确保 `CURRENT_TIMESTAMP` 返回 UTC |
+| ORM 声明 | `UTCDateTime` TypeDecorator | 自定义 `TypeDecorator(DateTime)` — 写入剥离 tzinfo、读取附加 UTC tzinfo，对 Pydantic 透明 |
+| Python 代码 | `datetime.now(timezone.utc)` | 禁止 `datetime.utcnow()`；业务代码写入的时间值也是 UTC |
+| API 序列化 | ISO 8601 + `+00:00` | Pydantic 序列化 aware datetime 自动输出 `2026-06-09T11:26:20+00:00` |
+
+> **注意**：MySQL 的 `DATETIME` 类型本身不存储时区信息，UTC 约定是应用层的协议。`app/models/_types.py` 中的 `UTCDateTime` TypeDecorator 在 ORM 层完成 aware ↔ naive 双向转换——写入时剥离 tzinfo 存 naive UTC，读取时附加 UTC tzinfo 返回 aware datetime。Pydantic 自然收到 aware datetime → 自动序列化 `2026-06-09T12:00:02Z`。底层列依然是 `DATETIME`，不需要数据迁移。
 
 ---
 

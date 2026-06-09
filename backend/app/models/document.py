@@ -1,11 +1,12 @@
 """文档表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.enums import DocumentStatus
+from app.models._types import UTCDateTime
 
 
 class Document(Base):
@@ -44,10 +45,10 @@ class Document(Base):
         Integer, default=0, server_default=text("0"), comment="最后成功的批次号，用于批次级 checkpoint"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime,
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )

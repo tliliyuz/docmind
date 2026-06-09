@@ -1,10 +1,11 @@
 """刷新令牌表 — 对齐 DATABASE.md §2.7 / ARCHITECTURE.md §9.2"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy import BigInteger, ForeignKey, Index, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models._types import UTCDateTime
 
 
 class RefreshToken(Base):
@@ -19,15 +20,15 @@ class RefreshToken(Base):
         comment="refresh_token 的 SHA-256 哈希，不存明文",
     )
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False,
-        comment="过期时间（创建后 7 天）",
+        UTCDateTime, nullable=False,
+        comment="过期时间（创建后 7 天，UTC）",
     )
     revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, server_default=text("NULL"),
-        comment="吊销时间（NULL=有效，非NULL=已吊销）",
+        UTCDateTime, nullable=True, server_default=text("NULL"),
+        comment="吊销时间（NULL=有效，非NULL=已吊销，UTC）",
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
 
     __table_args__ = (

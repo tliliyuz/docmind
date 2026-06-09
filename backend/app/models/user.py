@@ -1,10 +1,11 @@
 """用户表"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Enum, String, func, text
+from sqlalchemy import BigInteger, Enum, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models._types import UTCDateTime
 
 
 class User(Base):
@@ -19,10 +20,10 @@ class User(Base):
         server_default=text("'user'"),
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.current_timestamp()
+        UTCDateTime, server_default=func.current_timestamp()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        UTCDateTime,
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
