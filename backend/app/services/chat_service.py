@@ -42,6 +42,7 @@ from app.rag.bm25 import BM25Retriever
 from app.rag.chunker import estimate_tokens
 from app.rag.fusion import rrf_fusion
 from app.rag.prompt_builder import build_prompt, PromptBuildResult
+from app.rag.query_rewriter import _needs_rewrite, rewrite_query
 from app.rag.reranker import NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
 from app.schemas.chat import ChatSourceChunk
@@ -315,11 +316,12 @@ async def _generate_sse_stream(
         })
         return
 
-    # 发送 sources 事件（有检索结果 + LLM 未声明"未找到"+ LLM 实际引用了来源时发送）
+    # 发送 sources 事件
     # 对齐 API.md §6.1：
-    #   1. "未找到相关信息"抑制（两级匹配，见下）
-    #   2. 引用过滤：仅发送 LLM 回答中 [来源N] 实际引用的 chunk
-    #   3. 零引用：LLM 未引用任何来源时抑制（与"未找到"互补）
+    #   1. "未找到相关信息"抑制（两级匹配）
+    #   2. 引用过滤：LLM 写了 [来源N] 时仅发送被引用的 chunk（保留引用过滤优化）
+    #   3. 回退：LLM 未引用 [来源N] 但有检索结果时，发送全部 used_chunks
+    #      防止因 LLM 格式问题（DeepSeek/Qwen 常忘记写 [来源N]）导致 sources 消失
     _answer_stripped = assistant_content.strip()
     _answer_head = _answer_stripped[:35]
     _has_citation = bool(_CITATION_PATTERN.search(_answer_stripped))
@@ -327,10 +329,15 @@ async def _generate_sse_stream(
         any(kw in _answer_head for kw in _NOT_FOUND_KEYWORDS)
         or (any(kw in _answer_stripped for kw in _NOT_FOUND_KEYWORDS) and not _has_citation)
     )
+    logger.info(
+        "SOURCES_DIAG used_chunks=%d cited=%s answer_head=%s",
+        len(prompt_result.used_chunks) if prompt_result.used_chunks else 0,
+        _extract_citation_indices(_answer_stripped) if _answer_stripped else set(),
+        _answer_stripped[:200] if _answer_stripped else "(empty)",
+    )
+
     if reranked_output.results and not _not_found:
-        # 使用 prompt_result.used_chunks：与 LLM Prompt 中 [来源N] 编号一一对应
         _send_chunks = prompt_result.used_chunks or reranked_output.results
-        # 引用过滤：仅保留 LLM 实际引用的 chunk
         _cited_indices = _extract_citation_indices(_answer_stripped)
         if _cited_indices:
             _cited_with_orig_index = [
@@ -342,10 +349,18 @@ async def _generate_sse_stream(
                     [c for _, c in _cited_with_orig_index],
                     doc_map,
                 )
-                # 保持原始 Prompt 编号（与 LLM 回答中 [来源N] 一致），不重新编号
                 for j, (orig_idx, _) in enumerate(_cited_with_orig_index):
                     sources[j].chunk_index = orig_idx
                 yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
+        else:
+            # 回退：LLM 未引用 [来源N] 但检索有结果 → 发送全部 used_chunks
+            # 防止因 LLM 格式问题导致 sources 事件消失（RAG 退化误判）
+            logger.info(
+                "SOURCES_FALLBACK: LLM 未引用 [来源N]，回退发送全部 used_chunks (%d 个)",
+                len(_send_chunks),
+            )
+            sources = _build_sources(_send_chunks, doc_map)
+            yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
     # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）
     try:
@@ -464,6 +479,20 @@ async def _validate_and_prepare(
     # 手动同步 updated_at（对齐 ARCHITECTURE.md §8.6）
     conv.updated_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # 问题重写：仅在检测到歧义时调用 LLM（对齐 ARCHITECTURE.md §5.1.5）
+    _original_question = question
+    if _needs_rewrite(question, history_messages):
+        question = await rewrite_query(question, history_messages)
+        logger.info(
+            "QUERY_REWRITE original=%s rewritten=%s triggered=True",
+            _original_question[:100], question[:100],
+        )
+    else:
+        logger.info(
+            "QUERY_REWRITE original=%s rewritten=(skipped) triggered=False",
+            _original_question[:100],
+        )
 
     # 闲谈检测：跳过检索，直接使用无上下文 Prompt（仍注入历史，对齐设计决策）
     if _is_casual_chat(question):

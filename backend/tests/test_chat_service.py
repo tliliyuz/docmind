@@ -1024,8 +1024,13 @@ class TestChatCitationFiltering:
         )
 
     @pytest.mark.asyncio
-    async def test_LLM零引用时sources不发送(self):
-        """LLM 回答未引用任何 [来源N]（用自身知识回答），sources 事件不发送"""
+    async def test_LLM零引用时sources仍发送_回退全量(self):
+        """LLM 未引用 [来源N] 但有检索结果 → sources 回退发送全部 used_chunks。
+
+        原行为（BUG）：LLM 没写 [来源N] → sources 不发送 → RAG 退化误判。
+        修复后：LLM 没写 [来源N] 时回退发送全部 used_chunks，
+        防止因 LLM 格式问题（DeepSeek/Qwen 常忘记写 [来源N]）导致 sources 消失。
+        """
         from app.services.chat_service import chat
 
         db = AsyncMock()
@@ -1056,9 +1061,62 @@ class TestChatCitationFiltering:
             events = await _consume_sse(response)
 
         event_types = [e["event"] for e in events]
-        assert "sources" not in event_types, (
-            f"LLM 未引用任何 [来源N] 且未声明'未找到'时，"
-            f"sources 不应发送（LLM 使用了自身知识），实际: {event_types}"
+        assert "sources" in event_types, (
+            f"LLM 未引用 [来源N] 时仍应发送 sources（回退到全部 used_chunks），"
+            f"防止 LLM 格式问题导致 RAG 退化误判，实际: {event_types}"
+        )
+        sources = next(e for e in events if e["event"] == "sources")
+        assert len(sources["data"]["chunks"]) == 1, (
+            f"回退模式应发送全部 used_chunks (1 个)，实际: {len(sources['data']['chunks'])}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_LLM正确回答但未写来源N时sources仍发送_回退全量(self):
+        """LLM 正确使用了检索内容但未写 [来源N] → sources 回退发送全部 used_chunks。
+
+        验证脆弱耦合修复：sources 来自 used_chunks，而非 LLM 是否写 [来源N]。
+        场景模拟 multi-005 T3/T5/T7：LLM 基于 chunk 给出了正确答案但忘记标注来源。
+        """
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        # 模拟 multi-005 T5 场景：检索到病假证明相关内容
+        retrieval_output = RetrievalOutput(
+            results=[
+                RetrievalResult(doc_id=1, chunk_index=0,
+                                content="员工请病假需提供二级甲等以上医院出具的病假证明。",
+                                score=0.95, page=5),
+            ],
+            total=1,
+        )
+        # LLM 正确回答了（体现了 retrieval 内容），但没写 [来源N]
+        # 这在 DeepSeek/Qwen/Kimi 等模型非常常见
+        llm_chunks = _make_llm_chunks([
+            "根据公司病假制度，员工需要提供二级甲等以上医院证明。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="病假需要提供医院证明吗？", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        event_types = [e["event"] for e in events]
+        assert "sources" in event_types, (
+            f"LLM 未写 [来源N] 但检索有结果时，sources 仍应发送（回退到全部 used_chunks），"
+            f"实际: {event_types}"
+        )
+        sources = next(e for e in events if e["event"] == "sources")
+        assert len(sources["data"]["chunks"]) == 1, (
+            f"回退模式应发送全部 used_chunks (1 个)，实际: {len(sources['data']['chunks'])}"
         )
 
     @pytest.mark.asyncio
