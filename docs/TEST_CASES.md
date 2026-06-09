@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.53 |
+| 文档版本 | v0.54 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 4 全部完成 + 第 2 轮人工评分完成，进入 Phase 5） |
@@ -632,8 +632,8 @@
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U8.1 | History 超限截断 | `chat_service._load_history` | 历史 token > HISTORY_BUDGET(6000) | 超大旧消息被 `continue` 跳过，最新消息优先保留 | ✅ | 2026-06-05 | Token 优先，非条数优先；审查修复 break→continue |
-| U8.2 | Retrieval 超限截断 | `prompt_builder` | 检索结果 token > RETRIEVAL_BUDGET(10000) | 从低分 chunk 开始丢弃 | ⬜ | — | — |
-| U8.3 | History + Retrieval 同时超限 | `chat_service` | 两池子均超预算 | 各自独立截断，互不侵蚀 | ⬜ | — | **P0 Bug 防御**：避免历史挤掉检索 |
+| U8.2 | Retrieval 超限截断 | `prompt_builder` | 检索结果 token > RETRIEVAL_BUDGET(10000) | 从低分 chunk 开始丢弃 | ⬜ | — | Phase 5 补充（依赖 Rerank 排序完整性） |
+| U8.3 | History + Retrieval 同时超限 | `chat_service` | 两池子均超预算 | 各自独立截断，互不侵蚀 | ⬜ | — | Phase 5 补充；**P0 Bug 防御**：避免历史挤掉检索 |
 | U8.4 | 条数硬上限兜底 | `chat_service._load_history` | 30 条短消息（未超 token 预算） | 最多 20 条消息，即使 token 预算未满 | ✅ | 2026-06-05 | `max_messages=20` 硬截断 |
 | U8.5 | 空历史 | `chat_service._load_history` | 新建会话无历史 | 返回 `[]`，不影响正常问答 | ✅ | 2026-06-05 | — |
 | U8.6 | `[来源N]` 标记剥离 | `chat_service._load_history` | assistant 消息含 `[来源1][来源2]` | 注入历史中已去除所有 `[来源N]`，user 消息不去除 | ✅ | 2026-06-05 | 2 用例：assistant 去除 + user 保留 |
@@ -686,15 +686,6 @@
 | U8.35 | 省略补全-「不通过」 | `rewrite_query` | history: T1 代码评审; question:「不通过的话怎么办？」 | 改写后含「代码评审」+「不通过怎么办」 | ✅ | 2026-06-08 | — |
 | U8.36 | 指代消解-「金额限制」 | `rewrite_query` | history: T1「介绍一下公司的报销制度」; question:「金额限制具体是多少？」 | 改写后含「报销制度」+「金额限制」 | ✅ | 2026-06-08 | — |
 | U8.37 | Rewrite 仅取最近 2 轮 | `rewrite_query` | history: 6 条消息（3 轮），仅最后 2 轮相关 | 传入 LLM 的 history 仅含最近 4 条（2 轮） | ✅ | 2026-06-08 | 验证 `history[-4:]` 截取 |
-
-**Rewrite 正确性测试**
-
-| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
-|:---|:---|:---|:---|:---|:---|:---|:---|
-| U8.30 | 代词消解-「它」 | `rewrite_query` | history: T1「代码评审的标准是什么？」; question:「它需要几个人参加？」 | 改写后含「代码评审」+「需要几个人参加」 | ✅ | 2026-06-08 | Mock LLM 返回固定改写结果 |
-| U8.31 | 省略补全-「不通过」 | `rewrite_query` | history: T1 代码评审; question:「不通过的话怎么办？」 | 改写后含「代码评审」+「不通过怎么办」 | ✅ | 2026-06-08 | — |
-| U8.32 | 指代消解-「金额限制」 | `rewrite_query` | history: T1「介绍一下公司的报销制度」; question:「金额限制具体是多少？」 | 改写后含「报销制度」+「金额限制」 | ✅ | 2026-06-08 | — |
-| U8.33 | Rewrite 仅取最近 2 轮 | `rewrite_query` | history: 6 条消息（3 轮），仅最后 2 轮相关 | 传入 LLM 的 history 仅含最近 4 条（2 轮） | ✅ | 2026-06-08 | 验证 `history[-4:]` 截取 |
 
 **降级测试**
 
@@ -861,7 +852,7 @@
 | `api/conversation.py` | ≥ 90% | ✅ 100% | Phase 4.1：会话 API（20 用例，2026-06-05） |
 | `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py，2026-06-05） |
 | `services/chat_service.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py，2026-06-05） |
-| `core/error_handlers.py` | ≥ 80% | ⬜ | Phase 4.2：全局异常处理（3 用例，U9.1-U9.3） |
+| `core/error_handlers.py` | ≥ 80% | ✅ | Phase 4.2：全局异常处理（test_error_handlers.py，9 用例，U9.1-U9.3） |
 | `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（12 用例） |
 | `services/auth_service.py` (refresh) | ≥ 80% | ✅ | Phase 4.2：Refresh Token 机制（20 用例） |
 | `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |

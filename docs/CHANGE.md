@@ -1,5 +1,15 @@
 # DocMind 变更日志
 
+## 2026-06-09 — 修复：Phase 4 文档审查问题
+
+### 修复
+
+- **TEST_CASES.md**：删除 Query Rewrite 段重复表格（U8.30-U8.33 与 U8.34-U8.37 内容重复），消除 ID 冲突
+- **TEST_CASES.md**：覆盖率表 `core/error_handlers.py` 由 ⬜ 改为 ✅（已有 test_error_handlers.py 9 用例）
+- **TEST_CASES.md**：U8.2/U8.3 备注补充 Phase 5 排期说明（依赖 Rerank 排序完整性）
+- **API.md**：版本 v0.22→v0.23，新增 §1.3 时间字段约定（datetime 统一 ISO 8601 +00:00）
+- **ROADMAP.md**：版本 v0.37→v0.38，U8.2/U8.3 排期说明从「待补充」改为「已排入 Phase 5」
+
 ## 2026-06-09 — 重构：时区标准化（四层 UTC 统一）
 
 ### 新增

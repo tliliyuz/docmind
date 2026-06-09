@@ -37,6 +37,7 @@ git diff --name-only origin/main...HEAD
 - [ ] **测试跟踪一致性**：检查 `docs/TEST_CASES.md` 中标记为 ✅ 的用例，是否在测试代码中存在对应实现；不存在视为 🔴 严重问题。同时对照 CLAUDE.md 测试质量约束检查用例质量（详见第 4 步「测试规范检查项」）
 - [ ] **进度偏差**：检查 `docs/ROADMAP.md` 中标记为 ✅ 的任务是否真实完成；检查「本阶段不做/推迟」项是否有代码提前实现（过度设计）
 - [ ] **已实现功能提示待补充**：检查文档中是否仍有「待补充」「TODO」描述某功能，而该功能已在当前分支实现；视为 🟡 规范问题
+- [ ] **时区一致性**：DATABASE.md §0 / ARCHITECTURE.md §12 的时区约定是否与代码实现一致（`UTCDateTime` TypeDecorator / `mysql_url` 含 `time_zone` / `datetime.now(timezone.utc)` / Pydantic 原生 `datetime` 类型）？不一致视为 🟡 规范问题
 
 **若发现文档与代码冲突，标记为 🔴 严重问题，必须与开发人员确认。**
 
@@ -55,7 +56,11 @@ git diff --name-only origin/main...HEAD
 - [ ] 所有 `*_id` 字段是否声明了 `sa.ForeignKey(...)`，级联策略是否对齐 DATABASE.md §4
 - [ ] `default=0` 等 Python 默认值是否同步 `server_default=sa.text('0')`
 - [ ] 业务异常是否继承 `AppException`
-- [ ] 时间处理是否使用 `datetime.now(timezone.utc)`（禁止 `datetime.utcnow()`）
+- [ ] **时区四层检查**（对齐 ARCHITECTURE.md §12）：
+  1. **ORM 模型** — 所有 `DateTime` 列是否使用 `UTCDateTime` TypeDecorator（`app/models/_types.py`），而非裸 `DateTime` 或 `DateTime(timezone=True)`？**裸 `DateTime` 视为 🔴 严重问题**（MySQL 驱动返回 naive datetime，API 序列化无时区后缀，前端偏差 8 小时）
+  2. **Python 代码** — 是否使用 `datetime.now(timezone.utc)`（禁止 `datetime.utcnow()` / `datetime.utcfromtimestamp()`）？是否残存 `replace(tzinfo=timezone.utc)` 手动补丁（TypeDecorator 已统一处理，手动补丁冗余且易遗漏）？
+  3. **MySQL 连接** — `config.py` 的 `mysql_url` 是否包含 `init_command=SET time_zone='%2B00:00'`？缺失时 `CURRENT_TIMESTAMP` 返回 MySQL 系统时区而非 UTC
+  4. **Pydantic Schema** — 时间字段类型是否为原生 `datetime`（而非自定义 PlainSerializer 补丁）？ORM 层 TypeDecorator 已确保返回 aware datetime，Pydantic 自然序列化 `Z` 后缀
 - [ ] JWT payload 提取是否有 `KeyError/ValueError` 防护，返回 401 而非 500
 
 #### 前端规范检查项
@@ -64,6 +69,7 @@ git diff --name-only origin/main...HEAD
 - [ ] 请求是否走 `api/` 封装（禁止组件内直接 axios）
 - [ ] 状态是否提升到 Pinia store
 - [ ] 样式是否严格使用 `--dm-*` Design Token（禁止硬编码颜色/字号/间距）
+- [ ] 时间显示是否通过 `new Date(isoString)` 转换（禁止手动解析字符串再拼接时区偏移——JavaScript 自动识别 `Z`/`+00:00` 后缀为 UTC → 本地时区）
 - [ ] 交互流程是否遵循 FRONTEND.md 页面状态机
 
 #### 通用规范检查项
