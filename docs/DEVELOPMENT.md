@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.14 |
+| 文档版本 | v0.15 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 草稿 |
+| 状态 | 草稿（Phase 5 Docker 部署命令已补充） |
 
 ---
 
@@ -450,7 +450,101 @@ npm run test:ui    # vitest UI 模式
 
 ---
 
-## 9. 编码约定
+## 9. Docker 部署（Phase 5）
+
+### 9.1 前置条件
+
+| 工具 | 最低版本 | 说明 |
+|:---|:---|:---|
+| Docker | 20.10+ | 容器运行时 |
+| Docker Compose | 2.0+ | 服务编排 |
+
+### 9.2 快速启动
+
+```bash
+# 1. 配置环境变量
+# 复制模板并填入实际凭证
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，确保 JWT_SECRET_KEY 和 LLM_API_KEY 等已配置
+
+# 2. 构建镜像并启动所有服务
+docker-compose up -d --build
+
+# 3. 查看服务状态
+docker-compose ps
+
+# 4. 查看日志
+docker-compose logs -f backend      # 后端日志
+docker-compose logs -f celery       # Celery Worker 日志
+docker-compose logs -f frontend     # Nginx 日志
+docker-compose logs -f              # 所有服务日志
+
+# 5. 执行数据库迁移
+docker-compose exec backend alembic upgrade head
+
+# 6. 停止服务
+docker-compose down
+
+# 7. 停止并清理数据卷（⚠️ 删除所有持久化数据）
+docker-compose down -v
+```
+
+### 9.3 服务访问
+
+| 服务 | 地址 | 说明 |
+|:---|:---|:---|
+| 前端页面 | `http://localhost` | Nginx 托管 Vite 构建产物，端口 80 |
+| 后端 API | `http://localhost/api` | 通过 Nginx 反向代理到 backend:8000 |
+| API 文档 | `http://localhost:8000/docs` | Swagger UI（开发环境可直连后端端口） |
+| MySQL | `localhost:3306` | 数据库（本地调试时可连接） |
+| Redis | `localhost:6379` | 缓存（本地调试时可连接） |
+
+### 9.4 常用运维命令
+
+```bash
+# 进入容器调试
+docker-compose exec backend bash
+docker-compose exec mysql mysql -u root -p docmind
+
+# 查看后端实时日志（含结构化 JSON）
+docker-compose logs -f backend | jq '.'
+
+# 重启单个服务
+docker-compose restart backend
+docker-compose restart celery
+
+# 重新构建单个服务
+docker-compose up -d --build backend
+
+# 扩展 Celery Worker（Linux 生产环境，Windows 不支持 fork）
+docker-compose up -d --scale celery=3
+
+# 查看资源使用
+docker stats
+```
+
+### 9.5 环境变量注入
+
+`docker-compose.yml` 通过 `env_file: backend/.env` 统一注入环境变量。以下变量**必须**在生产环境修改：
+
+| 变量 | 默认值 | 生产环境要求 |
+|:---|:---|:---|
+| `JWT_SECRET_KEY` | `dev-secret-key` | 更换为 64 字符随机字符串 |
+| `LLM_API_KEY` | `sk-xxx` | 填入真实 API Key |
+| `EMBEDDING_API_KEY` | `sk-xxx` | 填入真实 API Key |
+| `MYSQL_PASSWORD` | `docmind` | 更换为强密码 |
+| `DEBUG` | `true` | 设为 `false` |
+| `CORS_ORIGINS` | `*` | 设为实际前端域名 |
+
+### 9.6 Windows 注意事项
+
+- Docker Desktop 使用 WSL2 后端，Celery Worker 以 Linux 容器运行，无需 `--pool=solo`（Windows 限制仅影响原生运行）
+- `docker-compose.yml` 中 Celery command 不加 `--pool=solo`，使用默认 prefork pool
+- 挂卷路径使用相对路径（`./chroma_data`），Docker Compose 自动转换为容器内路径
+
+---
+
+## 10. 编码约定
 
 详见项目根目录 [CLAUDE.md](../CLAUDE.md) 的「关键约定」章节。核心要点：
 
@@ -461,7 +555,7 @@ npm run test:ui    # vitest UI 模式
 
 ---
 
-## 10. 相关文档
+## 11. 相关文档
 
 - [架构设计文档](ARCHITECTURE.md)
 - [数据库设计文档](../backend/docs/DATABASE.md)

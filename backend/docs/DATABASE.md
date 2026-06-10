@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.11 |
+| 文档版本 | v0.12 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 草稿 |
+| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充） |
 
 ---
 
@@ -332,6 +332,27 @@ CREATE TABLE refresh_tokens (
 > - `documents` 表增加 `(kb_id, status)` 复合索引用于状态过滤
 > - `messages` 表增加 `(conversation_id, created_at)` 复合索引用于按时间排序
 > - `refresh_tokens` 表定期清理过期 token 的定时任务
+
+#### 3.1 Admin 统计接口查询优化
+
+> Phase 5 `GET /api/admin/stats` 对 6 张表执行 `SELECT COUNT(*)` + `SUM()` 聚合。数据量小时（< 10 万条）直接查询即可；数据增长后需考虑以下优化：
+
+| 优化级别 | 方案 | 适用规模 | 说明 |
+|:---|:---|:---|:---|
+| 当前（Phase 5） | 直接 SQL 聚合 | < 10 万行 | `SELECT COUNT(*)` 在 InnoDB 小表上毫秒级完成，无需额外优化 |
+| 中等规模 | Redis 缓存统计数（TTL 60s） | 10-100 万行 | 避免每次 Admin 页面刷新都触发 6 次 `COUNT(*)`。缓存 60s 延迟可接受 |
+| 大规模 | 汇总表 `admin_stats` + Celery 定时刷新 | > 100 万行 | 独立汇总表存储预计算统计值，Celery beat 每 5 分钟刷新一次 |
+
+**需关注的表**：
+
+| 表 | `COUNT(*)` 代价 | 说明 |
+|:---|:---|:---|
+| `messages` | 🟡 中 | 每次问答产生 2 条消息（user + assistant），增长最快。10 万条以下无压力 |
+| `chunks` | 🟡 中 | 每个文档产生 10-100+ 条 chunk，与文档量成正比 |
+| `conversations` | 🟢 低 | 增长较慢，每个会话可能含多轮消息 |
+| `users` / `knowledge_bases` / `documents` | 🟢 低 | 数量级远小于 messages/chunks |
+
+> **实现建议**：Phase 5 先用直接 SQL 方案（简单可靠），Redis 缓存作为 `admin_service.get_stats()` 的可选增强（通过 `RATE_LIMIT_ENABLED` 类似的 `STATS_CACHE_ENABLED` 开关控制）。汇总表方案推迟 Phase 6。
 
 ---
 

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.19 |
-| 最后更新 | 2026-06-07 |
+| 文档版本 | v0.20 |
+| 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 4 前端已实现） |
+| 状态 | 草稿（Phase 4 前端已实现，Phase 5 sources 智能预览设计补充完成） |
 
 ---
 
@@ -900,7 +900,7 @@ function parseSSEEvent(raw) {
 | meta | 连接建立后首个事件 | 记录 `conversation_id`（新对话时后端自动创建）、`task_id` |
 | thinking | `deep_thinking=true` 时 | 助手气泡内展开黄色边框折叠面板，内容逐字追加。**仅实时展示，不落库**（刷新丢失） |
 | message | 正常生成 | 逐字追加到助手消息内容区，Markdown 实时渲染 |
-| sources | 检索结果就绪（message 前或后） | 消息底部渲染引用来源卡片（[来源N] 编号 + 文档名 + 页码 + 内容摘要），`chunk_index` 与 LLM Prompt 编号一致 |
+| sources | 检索结果就绪（message 前或后） | 消息底部渲染引用来源卡片（[来源N] 编号 + 文档名 + 页码 + 智能预览）。优先使用 `preview_text`（定位到 LLM 引用位置 ±100 字符，高亮匹配片段）；降级使用 `content` 前 200 字符 |
 | finish | 全部输出完毕 | 关闭 typing 动画，更新消息 ID，首轮保存 title，记录 token_usage |
 | error | 检索/LLM 异常 | 替换 typing 为错误提示卡片，关闭 streaming 状态 |
 | (注释帧) | 每 15s | `: ping\n\n`，解析时跳过，用户不可见 |
@@ -911,7 +911,7 @@ function parseSSEEvent(raw) {
 |:---|:---|
 | thinking | 黄色边框卡片，内容逐字追加，默认展开可手动折叠 |
 | message | Markdown 实时渲染，代码块高亮，支持一键复制 |
-| sources | 折叠面板，默认展开，每条显示 [来源N] 标签 + 文档名 + 页码 + 内容摘要（截断 200 字符） |
+| sources | 折叠面板，默认展开，每条显示 [来源N] 标签 + 文档名 + 页码 + 智能预览。优先读取 `preview_text` 字段（LLM 引用位置 ±100 字符上下文窗口），其中 `preview_range` 范围内的引用片段用 `<mark>` 黄色高亮；`preview_text` 不存在时降级为 `content` 前 200 字符截断 |
 
 ---
 
@@ -935,7 +935,7 @@ function parseSSEEvent(raw) {
 | ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮 + 历史会话列表（按时间分组）、重命名（双击编辑）、删除（确认弹窗）、高亮当前会话 | — |
 | ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 | — |
 | MessageList | ✅ 已实现 | 自动滚动底部 + 手动上滚「新消息」浮动按钮 + MessageItem 渲染 | — |
-| MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片 + typing 动画 + 重新生成按钮 | — |
+| MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片 + typing 动画 + 重新生成按钮 | Phase 5：sources 智能预览（`preview_text` + `<mark>` 高亮） |
 | WelcomeScreen | ✅ 已实现 | 欢迎语 + 4 个快捷问题卡片 → emit 触发发送 | — |
 | KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | — | — |
 | PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | — | — |

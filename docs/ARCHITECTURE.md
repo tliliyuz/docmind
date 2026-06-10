@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.32 |
+| 文档版本 | v0.34 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 4 全部完成，进入 Phase 5） |
+| 状态 | 进行中（Phase 5 设计阶段 — 设计补齐完成，含 sources 智能预览） |
 
 ---
 
@@ -50,6 +50,9 @@
 | 前端路由 | Vue Router | SPA 路由管理 | [Implemented] |
 | 图标库 | Font Awesome 6 Free | UI 图标统一方案 | [Implemented] |
 | 时区策略 | 四层 UTC 统一 | DB(UTC) → 后端(`datetime.now(timezone.utc)`) → API(ISO 8601+`+00:00`) → 前端(`new Date()` 本地显示)，详见 §12 | [Implemented] |
+| 限流 | 固定窗口计数器 + Redis | IP/用户级频率限制，阈值压测后确定，详见 §13.2 | [Planned: Phase 5] |
+| 部署方案 | Docker Compose + Nginx | 5 服务编排（MySQL/Redis/Backend/Celery/Nginx），详见 §13.1 | [Planned: Phase 5] |
+| 监控告警 | 结构化日志 → Loki + Grafana | 应用级指标 + LLM 调用监控，详见 §13.3 | [Planned: Phase 5] |
 
 ---
 
@@ -129,7 +132,7 @@
 | 关键词搜索"墨盒怎么换"找不到"打印机耗材更换" | **多路检索** | 向量检索（语义）+ BM25（关键词）+ RRF 融合 | 召回率大幅提升 | [Implemented] |
 | 搜出来的结果排序不准 | **Rerank 重排序** | 当前 NoopReranker 占位，后续 DashScope Rerank 精排 | 相关文档排在前面 | [Implemented] |
 | 用户连续提问"怎么申请"，系统不知道在问什么 | **问题重写** | LLM 结合对话历史补全指代和上下文 | 多轮对话不丢失意图 | [Implemented] |
-| 用户问"今天天气"走知识库检索是浪费 | **意图识别** | LLM 分类：知识查询 / 闲聊 | 路由到正确处理分支 | [Planned: Phase 5] |
+| 用户问"今天天气"走知识库检索是浪费 | **意图识别** | LLM 分类：知识查询 / 闲聊 / 元问题 | 路由到正确处理分支 | [Designed: Phase 5] |
 | 长对话 30 轮后 Token 超限 | **会话记忆** | 滑动窗口 + Token 预算四池子分拆独立截断 | 记忆不丢，Token 受控，RAG 不退化 | [Implemented] |
 
 ### 3.2 模块树
@@ -352,7 +355,7 @@ def ingest_document(self, doc_id):
 ```
 用户提问
     ↓
-[Intent] 意图识别 → 判断类型（查知识库 / 闲聊）       ← [Planned: Phase 5]
+[Intent] 意图识别 → 判断类型（查知识库 / 闲聊 / 元问题）       ← [Designed: Phase 5]
     ↓ （如果是查知识库）
 [Rewrite] 问题重写 → 结合对话历史补全上下文              ← [Implemented: Phase 4]
     ↓
@@ -695,6 +698,294 @@ Question → Retrieval → 结果好 → 直接回答
 
 计划 Phase 5 或后续 Phase 实施。
 
+#### 5.1.6 意图识别（Intent Classification）[Planned: Phase 5]
+
+**背景**：Phase 3 使用 `_is_casual_chat()` 正则 stopgap（6 类模式：问候/致谢/告别/极短输入等）覆盖高频闲谈场景，跳过检索直接回复。但正则无法区分「知识查询」与「真正的闲聊」——「你能做什么」被误判为知识查询走完整 RAG 链路浪费 token，「最近有什么新政策」被正则误判为闲谈跳过检索。Phase 5 用 LLM 分类替换正则，提升分类准确率。
+
+**设计目标**：
+- 分类准确率 > 95%（相比正则 stopgap 的 ~70%）
+- 分类延迟 < 300ms（轻量 Prompt + `deep_thinking=False` + `max_tokens=10`）
+- LLM 分类失败时回退正则 stopgap，不影响主流程可用性
+
+---
+
+**分类体系：3 类**
+
+| 类别 | 标签 | 行为 | 示例 |
+|:---|:---|:---|:---|
+| 知识查询 | `KNOWLEDGE` | 走完整 RAG 链路（检索→RRF→Rerank→Prompt→LLM） | 「报销制度是什么？」「VPN 怎么配置？」 |
+| 闲谈 | `CASUAL` | 跳过检索，使用 `CASUAL_SYSTEM_PROMPT` + 历史消息 → LLM 直接回复 | 「你好」「谢谢」「今天天气真好」 |
+| 元问题 | `META` | 不调 LLM，直接返回固定模板响应（毫秒级） | 「你能做什么？」「支持什么格式？」 |
+
+> **设计决策：不做细粒度问题类型分类**（如事实型/对比型/总结型）。细分类型对 Prompt 组装策略有价值，但分类体系越细、准确率越低。Phase 5 先做 3 类粗分类跑通链路，细粒度分类留给 Phase 6。
+
+---
+
+**分类 Prompt（约 200 tokens）**
+
+```python
+INTENT_SYSTEM_PROMPT = """你是一个查询意图分类器。将用户问题分为以下三类之一：
+
+- KNOWLEDGE：需要使用知识库文档来回答的问题（政策、流程、制度、技术规范等）
+- CASUAL：日常闲聊、问候、致谢、与知识库无关的对话
+- META：询问助手本身能力的问题（你能做什么、支持什么功能等）
+
+仅输出类别标签，不要解释。"""
+
+# few-shot 示例嵌入 user message
+INTENT_USER_TEMPLATE = """示例：
+Q: 报销需要提交哪些材料？ → KNOWLEDGE
+Q: 你好 → CASUAL
+Q: 你能做什么？ → META
+Q: 谢谢你的帮助 → CASUAL
+Q: VPN 密码忘了怎么办？ → KNOWLEDGE
+
+用户问题：{question}
+分类："""
+```
+
+---
+
+**路由逻辑**
+
+```python
+# chat_service._validate_and_prepare() 中，Rewrite 之前插入
+
+from app.rag.intent_classifier import classify_intent, Intent
+
+intent = await classify_intent(question)
+
+if intent == Intent.META:
+    # 元问题：不调 LLM，直接返回固定模板
+    raise MetaQuestionException(question)  # chat() 捕获后返回固定 SSE 响应
+
+if intent == Intent.CASUAL:
+    # 闲谈：跳过检索，使用 CASUAL_SYSTEM_PROMPT
+    search_results = []  # 空检索结果
+    system_prompt = CASUAL_SYSTEM_PROMPT  # Phase 3 已有
+else:  # KNOWLEDGE
+    # 知识查询：走完整 RAG 链路（现有流程不变）
+    ...
+
+# 后续 Rewrite → Retrieval → RRF → Rerank → Prompt → LLM 流程不变
+# 闲谈路径的 search_results=[] 自然触发 prompt_builder 的「无检索结果」分支
+```
+
+---
+
+**延迟优化**
+
+| 要点 | 决策 | 原因 |
+|:---|:---|:---|
+| deep_thinking | `False` | 分类是简单任务，无需深度思考 |
+| max_tokens | `10` | 输出仅需 1 个词（`KNOWLEDGE` / `CASUAL` / `META`），10 tokens 绰绰有余 |
+| 独立 LLM 调用 | ✅ 是 | 分类必须在 Rewrite 和 Retrieval 之前，无法与主 LLM 调用合并 |
+| 预期延迟 | < 300ms | 轻量 Prompt + 短输出，实测应在此范围内 |
+
+> **设计决策：选择一次额外 LLM 调用而非复用主 LLM**。分类结果决定是否触发检索——检索是 RAG 链路中最昂贵的步骤（向量查询 + BM25 + RRF），用 ~300ms 的分类避免不必要的检索是净收益。闲谈和元问题占日常对话的 10-20%，分类可为这些请求节省 2-5s 的检索耗时。
+
+---
+
+**降级策略**
+
+```
+classify_intent(question)
+  ↓ try
+LLM 调用（deep_thinking=False, max_tokens=10）
+  ↓ 成功 + 有效标签 → 返回 Intent 枚举
+  ↓ 失败（网络/API异常/返回无效标签）
+  ↓ except / invalid
+回退 _is_casual_chat(question)  ← Phase 3 正则 stopgap（已有 6 类模式）
+  ├── 命中 → Intent.CASUAL
+  └── 未命中 → Intent.KNOWLEDGE（保守策略：宁可查了没用，不可该查不查）
+  
+日志记录分类失败原因（WARNING 级别），便于线上观察分类 LLM 可用性
+```
+
+**降级原则**：**保守路由**。分类失败时走 `KNOWLEDGE` 路径（触发检索），确保用户的知识查询不会被误判为闲谈而跳过检索。代价是闲谈被误判为知识查询时多走一次检索（~1-2s），但「该查的没查」比「不该查的查了」严重得多。
+
+---
+
+**实现文件**
+
+```
+backend/app/rag/intent_classifier.py   ← 新建：classify_intent() + Intent 枚举 + Prompt 常量
+backend/app/services/chat_service.py   ← 修改：_validate_and_prepare() 集成（Rewrite 之前）
+```
+
+**集成点**：`chat_service._validate_and_prepare()` 中，在 Query Rewrite（§5.1.5）之前：
+```python
+# 0. 意图识别 — [Phase 5]
+intent = await classify_intent(question)
+if intent == Intent.META:
+    raise MetaQuestionException(question)
+skip_retrieval = (intent == Intent.CASUAL)
+
+# 1. 问题重写 — [Implemented: Phase 4]（仅 KNOWLEDGE 路径触发）
+if not skip_retrieval and _needs_rewrite(question, history_messages):
+    question = await rewrite_query(question, history_messages)
+```
+
+---
+
+**已知局限**
+
+| 局限 | 说明 | 缓解 |
+|:---|:---|:---|
+| 额外 LLM 调用延迟 | 每次问答增加 ~300ms 分类延迟 | 闲谈/元问题节省的检索耗时（2-5s）远超分类开销 |
+| 分类边界模糊 | 「最近有什么新政策？」可能是闲谈也可能是知识查询 | 保守路由：歧义时走 KNOWLEDGE |
+| 多语言混合 | 中英混合问题可能分类不准 | few-shot 示例覆盖中英混合场景 |
+| 正则回退的覆盖盲区 | 正则仅覆盖 6 类高频闲谈，新型闲谈模式可能漏判 | 分类 LLM 正常时正则仅作降级兜底；线上观察分类失败率 |
+
+
+#### 5.1.7 sources 智能预览（Chunk Preview）[Planned: Phase 5]
+
+**背景**：当前 `event: sources` 返回完整的 chunk 内容（最长 ~1000 字符）。前端展示时截断为 200 字符摘要——但这 200 字符是从 chunk 开头取的，与 LLM 回答中被引用的具体段落无关。用户点击 [来源N] 看到的可能是 chunk 的前 200 字符，而非 LLM 实际引用位置。Phase 5 实现**精确定位**：在 chunk 内找到 LLM 引用文字的位置，截取该位置前后各 100 字符作为预览窗口，前端高亮渲染。
+
+**设计目标**：
+- 预览窗口精准定位到 LLM 实际引用的段落，而非 chunk 开头盲取
+- 定位算法简单可靠（子串匹配），不引入额外 LLM 调用或 embedding 计算
+- 降级策略完善：定位失败时回退到当前行为（chunk 前 200 字符）
+
+---
+
+**定位算法：子串匹配 + 上下文窗口**
+
+```
+输入: chunk.content（最长 ~1000 chars）, assistant_content（LLM 完整回答）
+输出: preview_text, preview_range: {start, end}
+
+算法:
+  1. 从 assistant_content 中提取 [来源N] 后面的第一句话（取引用位置后 50 字符）
+     → snippet = 紧邻 [来源N] 的文本片段
+  2. 在 chunk.content 中查找 snippet 的子串匹配
+     → idx = chunk.content.find(snippet)
+  3. 匹配成功:
+     → 窗口中心 = idx + len(snippet) // 2
+     → start = max(0, 窗口中心 - 100)
+     → end = min(len(chunk.content), 窗口中心 + 100)
+     → preview_text = chunk.content[start:end]
+     → preview_range = {start, end}
+  4. 匹配失败（snippet 非原文引用 / 过于模糊）:
+     → 降级: preview_text = chunk.content[:200]（当前行为）
+     → preview_range = {start: 0, end: 200}
+```
+
+| 要点 | 决策 | 原因 |
+|:---|:---|:---|
+| 匹配粒度 | snippet = [来源N] 后 50 字符 | 太长可能因 LLM 改写不匹配，太短容易误匹配 |
+| 搜索策略 | 精确子串 `str.find()` | 简单可靠，chunk 本身是原文，LLM 引用大概率原样出现 |
+| 上下文窗口 | ±100 字符 | 200 字符窗口适合前端卡片展示，不挤占消息区域 |
+| 多 chunk 引用 | 每个 [来源N] 独立定位 | 不同 chunk 的引用位置各不同，独立处理 |
+
+> **设计决策：用子串匹配而非 embedding 相似度**。Embedding 相似度需要额外 API 调用（增加延迟和成本），且相似度最高的 chunk 位置不一定是 LLM 实际引用的段落。子串匹配零额外成本、毫秒级完成。
+
+---
+
+**SSE sources 事件扩展**
+
+当前 `event: sources` 格式：
+
+```json
+{
+  "chunks": [
+    {
+      "chunk_id": 42,
+      "doc_name": "入职指南.pdf",
+      "page": 3,
+      "content": "新员工入职流程包括以下步骤：第一步，填写个人..."
+    }
+  ]
+}
+```
+
+Phase 5 新增 `preview_text` 和 `preview_range` 字段：
+
+```json
+{
+  "chunks": [
+    {
+      "chunk_id": 42,
+      "doc_name": "入职指南.pdf",
+      "page": 3,
+      "content": "新员工入职流程包括以下步骤：第一步，填写个人...",
+      "preview_text": "入职流程包括以下步骤：第一步，填写个人信息表并提交身份证复印件...",
+      "preview_range": {"start": 5, "end": 205}
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `preview_text` | string | 定位后的预览文本（200 字符上下文窗口） |
+| `preview_range.start` | int | 预览窗口在 chunk.content 中的起始位置 |
+| `preview_range.end` | int | 预览窗口在 chunk.content 中的结束位置 |
+
+> **兼容性约束**：`content` 字段保留（完整 chunk 内容），`preview_text` 和 `preview_range` 新增。旧版前端不解析新字段时仍可展示 `content` 截断，向前兼容。
+
+---
+
+**前端渲染规格**
+
+| 要素 | 行为 |
+|:---|:---|
+| 默认展示 | 显示 `preview_text`（定位后的智能预览），替代当前 chunk 前 200 字符盲取 |
+| 降级展示 | `preview_text` 不存在时回退到 `content` 前 200 字符（当前行为） |
+| 高亮范围 | `preview_range` 内的引用片段用 `<mark>` 标签包裹（黄色背景高亮），视觉上区分引用文字与上下文 |
+| 展开详情 | 点击来源卡片可展开完整 `content`（与当前 `el-collapse` 行为一致） |
+| 引用编号 | `[来源N]` 编号保持不变，LLM Prompt 和 sources 事件中的编号一一对应 |
+
+---
+
+**降级策略**
+
+```
+定位流程:
+  try:
+    snippet = 提取 [来源N] 后 50 字符
+    idx = chunk.content.find(snippet)
+    if idx >= 0:
+      → 计算 preview_text + preview_range（定位成功）
+    else:
+      → 降级: preview_text = chunk.content[:200], preview_range = {0, 200}
+  except (提取片段异常):
+    → 降级: preview_text = chunk.content[:200], preview_range = {0, 200}
+  
+  日志记录定位成功率（INFO 级别），便于线上观察算法效果
+```
+
+| 降级场景 | 处理 |
+|:---|:---|
+| snippet 在 chunk 中找不到 | `preview_text = content[:200]`，`preview_range = {0, 200}` |
+| snippet 提取异常（[来源N] 后无文字） | 同上降级 |
+| chunk.content 本身 < 200 字符 | 返回完整 content，`preview_range = {0, len(content)}` |
+| LLM 未引用任何 [来源N] | sources 回退全量发送（已有逻辑），每条 chunk 无引用文字可定位 → 全部降级 |
+
+---
+
+**实现文件**
+
+```
+backend/app/services/chat_service.py   ← 修改：_build_sources() 新增定位逻辑
+frontend/src/components/chat/MessageItem.vue  ← 修改：sources 卡片使用 preview_text + 高亮
+```
+
+**实现要点**：
+- 定位逻辑内嵌在 `_build_sources()` 方法中（~30 行），每次构建 sources 事件时对每条 chunk 执行定位
+- 子串匹配不区分大小写（`content.lower().find(snippet.lower())`），提高匹配容错
+- 提取 snippet 时跳过 [来源N] 本身（`re.sub(r'\[来源\d+\]', '', near_text)`），避免匹配到 chunk 中的其他来源标记
+
+---
+
+**已知局限**
+
+| 局限 | 说明 | 缓解 |
+|:---|:---|:---|
+| LLM 改写原文 | LLM 回答可能用自己的话概括而非原文引用，导致 snippet 不匹配 | 降级回退 content[:200]；snippet 取 50 字符足够短以减少被改写概率 |
+| 中英文混合 | 子串匹配在混合文本中可能因全角/半角空格差异失败 | 匹配前统一规范化空格（`re.sub(r'\s+', ' ', ...)`） |
+| 多引用同 chunk | 同一 chunk 被多处引用时，仅取第一个 [来源N] 匹配位置 | 实际上极少发生（RRF Rerank 后每条 chunk 独立引用） |
+
 ---
 
 ### 5.2 问答核心逻辑（伪代码，含阶段标注）
@@ -716,7 +1007,7 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
     user_msg = Message(conversation_id=conv.id, role="user", content=question)
     db.add(user_msg)
 
-    # 1. 意图识别 — [Planned: Phase 5]
+    # 1. 意图识别 — [Designed: Phase 5]
     # intent = await intent_classifier.classify(question)
 
     # 2. 问题重写 — [Implemented: Phase 4]
@@ -1277,9 +1568,7 @@ backend/app/main.py           ← 中间件注入 request_id
 - **风险**：随着组件增多，props/events 类型缺少编译期检查
 - **缓解**：保持组件数量可控（< 20 个）；如后续扩展团队，可渐进式迁移
 
-> TODO: [待补充，Phase 5] 部署架构图 — 生产环境的 Nginx 反向代理、SSL 终结、静态资源托管策略。
-> TODO: [待补充，Phase 5] 限流策略 — 开发阶段不设固定阈值，Phase 5 压测后根据 P50/P99 数据确定聊天/上传/登录接口的合理限流值。
-> TODO: [待补充，Phase 5] 监控与告警方案 — 基于结构化日志（§9.3）接入日志聚合系统，应用级指标（请求延迟、错误率）+ LLM 调用监控（Token 消耗、API 失败重试）。
+> 部署架构、限流策略、监控告警方案详见 [§13 部署与运维设计](#13-部署与运维设计-planned-phase-5)。
 
 ---
 
@@ -1332,6 +1621,218 @@ backend/app/main.py           ← 中间件注入 request_id
 - 如无法修改全局配置，连接串 `init_command` 已确保会话级 UTC
 - 开发和测试环境共用相同约定
 
+
+## 13. 部署与运维设计 [Planned: Phase 5]
+
+> Phase 5 需要完成三项运维基础设施：部署架构（Docker Compose + Nginx）、限流策略（滑动窗口 + Redis）、监控告警（结构化日志接入）。
+
+### 13.1 部署架构
+
+#### 13.1.1 Docker Compose 服务编排
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Nginx (port 80/443)                     │
+│  SSL 终结 + 反向代理 + 静态资源托管                            │
+│  /api/*  → backend:8000     /  → frontend dist/              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────────────┐
+│                   FastAPI (uvicorn, port 8000)               │
+│  api/ + services/ + rag/ + core/                            │
+│  依赖: MySQL + Redis + ChromaDB                              │
+└──────────┬──────────┬──────────┬────────────────────────────┘
+           │          │          │
+┌──────────▼──┐ ┌─────▼──────┐ ┌▼────────────────────────────┐
+│   MySQL 8.0 │ │  Redis 7   │ │  ChromaDB (PersistentClient) │
+│   port 3306 │ │  port 6379 │ │  嵌入式运行，挂卷持久化        │
+│   volume 持久化│ │  volume 持久化│ │  ./chroma_data/               │
+└─────────────┘ └────────────┘ └─────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│              Celery Worker（独立进程，同镜像）                  │
+│  broker: Redis (db 2)    result_backend: Redis (db 1)        │
+│  Windows: --pool=solo                                        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### 13.1.2 服务清单
+
+| 服务 | 镜像 | 端口 | 环境变量 | 持久化 |
+|:---|:---|:---|:---|:---|
+| `mysql` | `mysql:8.0` | 3306 | `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` | `mysql_data:/var/lib/mysql` |
+| `redis` | `redis:7-alpine` | 6379 | — | `redis_data:/data` |
+| `backend` | 自建（`Dockerfile.backend`） | 8000 | `.env` 文件注入（DB/Redis/LLM API Key 等） | — |
+| `celery` | 同 backend 镜像，不同 `command` | — | 同 backend | — |
+| `frontend` | 自建（`Dockerfile.frontend`，Nginx + 静态资源） | 80/443 | — | — |
+
+#### 13.1.3 Nginx 配置要点
+
+```nginx
+# /api/* → FastAPI backend
+location /api/ {
+    proxy_pass http://backend:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # SSE 支持：禁用缓冲
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;  # SSE 长连接超时
+}
+
+# 静态资源（Vite 构建产物）
+location / {
+    root /usr/share/nginx/html;
+    try_files $uri $uri/ /index.html;  # SPA fallback
+}
+
+# 上传文件大小限制
+client_max_body_size 50M;
+```
+
+#### 13.1.4 部署约束
+
+| 约束 | 说明 |
+|:---|:---|
+| ChromaDB 嵌入式运行 | 无需独立服务，挂卷 `chroma_data/` 目录即可持久化向量数据 |
+| Celery Worker Windows | `--pool=solo`（Windows 不支持 fork），Linux 生产环境用默认 prefork |
+| 时区 | 所有服务容器 `TZ=Asia/Shanghai`，MySQL `time_zone='+00:00'`（对齐 §12） |
+| JWT 密钥 | 通过环境变量注入，禁止硬编码；生产环境须更换默认值 |
+| CORS | 生产环境 `CORS_ORIGINS` 设为实际域名，禁止 `*` |
+
+---
+
+### 13.2 限流策略
+
+#### 13.2.1 算法选型
+
+**选择：固定窗口计数器（Fixed Window Counter）+ Redis 原子操作。**
+
+| 候选方案 | 优点 | 缺点 | 结论 |
+|:---|:---|:---|:---|
+| 固定窗口 | 简单、Redis 原子操作（`INCR` + `EXPIRE`）、内存占用小 | 窗口边界突发（如 14:59:59 和 15:00:01 各发 N 次） | ✅ Phase 5 首选——上线初期够用，边界突发概率低 |
+| 滑动窗口日志 | 精确、无边界效应 | 每个请求写一条 Redis record、内存占用大 | ❌ 过度设计 |
+| 令牌桶 | 允许短时突发、平滑限流 | 需要后台 replenish 进程 | ❌ 过度设计 |
+
+#### 13.2.2 Redis Key 设计
+
+```
+Key 格式:  rate_limit:{ip}:{endpoint_group}:{window_ts}
+           例如: rate_limit:192.168.1.1:chat:1718006400
+
+TTL:       window_seconds + 1（自动过期清理）
+
+操作:
+  INCR key        ← 原子递增计数器
+  EXPIRE key TTL  ← 首次设置过期时间
+  TTL key          ← 查询剩余时间（用于 X-RateLimit-Reset header）
+```
+
+#### 13.2.3 限流维度
+
+| 接口组 | 包含端点 | 默认限制 | 说明 |
+|:---|:---|:---|:---|
+| `chat` | `POST /api/chat` | 30/min（压测后修正） | 核心功能，限制较宽松 |
+| `upload` | `POST /api/documents` / `POST /api/documents/batch-upload` | 20/min（压测后修正） | 入库消耗大（Embedding API + 磁盘 IO） |
+| `login` | `POST /api/auth/login` / `POST /api/auth/register` | 10/min | 防暴力破解，已有安全共识 |
+| `default` | 其他所有 API | 120/min | 通用限制 |
+
+> **阈值设定流程**：压测确定系统容量 → 取 P99 并发数的 70% 作为限流阈值 → 配置到 `.env` → 上线后根据监控数据迭代调整。开发阶段所有默认值设为极大（如 9999），防止干扰开发调试。
+
+#### 13.2.4 响应格式
+
+```http
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1718006460
+Content-Type: application/json
+
+{
+  "code": "E9004",
+  "message": "请求频率超限",
+  "detail": "聊天接口限制 30 次/分钟，请稍后重试"
+}
+```
+
+#### 13.2.5 配置项（config.py）
+
+```python
+# 限流
+RATE_LIMIT_ENABLED: bool = True          # 限流开关
+RATE_LIMIT_CHAT_PER_MINUTE: int = 30     # 聊天接口（压测后修正，当前占位 30）
+RATE_LIMIT_UPLOAD_PER_MINUTE: int = 20   # 上传接口
+RATE_LIMIT_LOGIN_PER_MINUTE: int = 10    # 登录接口
+RATE_LIMIT_DEFAULT_PER_MINUTE: int = 120 # 其他接口
+RATE_LIMIT_WINDOW_SECONDS: int = 60      # 窗口大小（秒）
+```
+
+#### 13.2.6 实现文件
+
+```
+backend/app/middleware/rate_limit.py   ← 新建：RateLimitMiddleware（纯 ASGI middleware）
+backend/app/config.py                  ← 新增 6 个配置项
+backend/app/main.py                    ← app.add_middleware(RateLimitMiddleware)
+```
+
+---
+
+### 13.3 监控与告警
+
+#### 13.3.1 设计原则
+
+Phase 4 已完成结构化日志框架（`logging_config.py` — JSONFormatter + RequestIDFilter），Phase 5 在此基础上补充：
+1. **关键埋点接入**（检索耗时、LLM 调用耗时）
+2. **日志聚合方案**（开发/测试环境直接看 JSON 日志，生产环境对接 ELK/Loki）
+3. **告警规则定义**（哪些指标异常时需要通知）
+
+#### 13.3.2 关键埋点
+
+| 阶段 | 记录内容 | 日志级别 | 用途 |
+|:---|:---|:---|:---|
+| 请求入口 | `request_id` + `method` + `path` + `user_id` + `client_ip` | INFO | 请求追踪起点 |
+| 意图识别 | `request_id` + `intent` + `latency_ms` + `fallback`（是否降级） | INFO | 分类准确率监控 |
+| Query Rewrite | `request_id` + `original_q` + `rewritten_q` + `latency_ms` | INFO | 改写覆盖率监控 |
+| 检索 | `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` | INFO | 慢检索定位 |
+| LLM 调用 | `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms`（首 token 延迟）+ `total_ms` | INFO | Token 消耗监控、慢 LLM 定位 |
+| 异常 | `request_id` + `user_id` + `exception_type` + `traceback` | ERROR | 错误追踪 |
+| 限流 | `client_ip` + `endpoint_group` + `current_count` + `limit` | WARNING | 限流触发监控 |
+
+#### 13.3.3 日志聚合方案
+
+| 环境 | 方案 | 说明 |
+|:---|:---|:---|
+| 开发/测试 | 控制台输出 JSON 日志 + `jq` 格式化查看 | 无需额外组件 |
+| 生产 | Filebeat → Elasticsearch + Kibana（ELK）/ Promtail → Loki + Grafana | 推荐 Loki——轻量、与 Prometheus 集成好、存储成本低 |
+
+> Phase 5 生产环境先部署 Loki + Grafana 方案（Docker Compose 增加 `loki` 和 `grafana` 服务），ELK 太重不适合小规模部署。
+
+#### 13.3.4 应用级指标
+
+| 指标 | 计算方式 | 告警阈值 | 仪表盘 |
+|:---|:---|:---|:---|
+| 请求延迟 P50/P99 | 从结构化日志 `latency_ms` 聚合 | P99 > 10s 告警 | Grafana 折线图（按 endpoint 分组） |
+| 错误率 | `level=ERROR` 的日志占比 | > 1% 告警 | Grafana 单值 + 折线图 |
+| LLM Token 消耗 | `prompt_tokens` + `completion_tokens` 按小时聚合 | 日消耗 > 预算 80% 告警 | Grafana 柱状图 |
+| LLM API 失败重试 | `exception_type=LLMException` 计数 | 连续 5 次告警 | Grafana 计数 |
+| 检索延迟 P99 | `vector_ms + bm25_ms + rrf_ms` 聚合 | P99 > 2s 告警 | Grafana 折线图 |
+| 限流触发次数 | `level=WARNING` + `rate_limit` 计数 | 频繁触发（>50/min）告警 | Grafana 计数 |
+
+#### 13.3.5 实现文件
+
+```
+backend/app/services/chat_service.py   ← 修改：检索阶段 + LLM 调用阶段埋点接入
+backend/app/core/llm.py                ← 修改：LLM 调用埋点（ttft + 总耗时 + token 数）
+docker-compose.yml                     ← 新增 loki + grafana 服务（可选）
+```
+
+> Phase 5 优先完成埋点接入。Loki + Grafana 部署作为可选增强——结构化日志已就绪，即使没有可视化仪表盘，`jq` 命令行也能做基本聚合分析。
+
+
+---
 
 ## 12. 相关文档
 

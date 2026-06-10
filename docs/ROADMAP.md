@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.38 |
+| 文档版本 | v0.39 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 4 全部完成，进入 Phase 5） |
+| 状态 | 进行中（Phase 5 设计阶段 — 任务细化完成） |
 
 ---
 
@@ -384,37 +384,99 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 **目标**：体验完善 + 简易管理后台 + 限流 + 部署就绪，可以上线。
 
+> **设计文档**：意图识别详见 ARCHITECTURE.md §5.1.6，Admin 接口详见 API.md §7，限流/部署/监控详见 ARCHITECTURE.md §13。
+
 ### 7.1 体验完善
+
+#### 7.1.1 意图识别（3 子任务）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 意图识别 | LLM 分类：知识查询 / 闲聊，闲聊直接回复不检索。替换当前 `_is_casual_chat()` 正则 stopgap |
-| ⬜ | sources 智能预览 | 利用 LLM 回答中 `[来源N]` 附近的文字在 chunk 内定位被引段落，截取围绕该位置的上下文窗口 |
+| ⬜ | `intent_classifier.py` 实现 | `backend/app/rag/intent_classifier.py` — LLM 分类器（3 分类：KNOWLEDGE/CASUAL/META）+ Prompt + 降级回退 `_is_casual_chat()` |
+| ⬜ | `chat_service.py` 集成 | `_validate_and_prepare()` 中（Rewrite 之前）插入分类→路由逻辑；META 直接返回固定响应；CASUAL 跳过检索 |
+| ⬜ | 移除 `_is_casual_chat()` 主逻辑 | 降级为 fallback 保留，分类正常时不再作为主分类逻辑 |
+
+#### 7.1.2 sources 智能预览（2 子任务）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 后端定位逻辑 | `chat_service.py` — `event: sources` 新增 `preview_range: {start, end}` 字段 |
+| ⬜ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染 |
 
 ### 7.2 管理后台（简易版）
 
+#### 7.2.1 Admin 后端接口（3 子任务）
+
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | Admin 后端接口 | `GET /api/admin/knowledge-bases` + `GET /api/admin/documents` + `GET /api/admin/stats` |
-| ⬜ | Admin 前端联调 | `/admin/knowledge`、`/admin/documents`、`/admin/stats` 三个占位页面对接后端接口 |
-| ⬜ | Admin 访问 KB 详情页权限 | `isOwner \|\| isAdmin` 扩展，admin 可在详情页查看文档列表/删除违规内容 |
+| ⬜ | Admin Pydantic Schema | `backend/app/schemas/admin.py` — `AdminStatsResponse` / `AdminKBListResponse` / `AdminDocListResponse` |
+| ⬜ | Admin Service | `backend/app/services/admin_service.py` — `get_stats()` / `list_all_kbs()` / `list_all_documents()` |
+| ⬜ | Admin API 端点 | `backend/app/api/admin.py` — 3 个 GET 端点 + `require_admin` 依赖注入；`main.py` 注册 router |
+
+#### 7.2.2 Admin 前端联调（4 子任务）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | Admin API 封装 | `frontend/src/api/admin.js` — 3 个接口函数 |
+| ⬜ | KnowledgeList 对接 | `AdminKnowledgeList.vue` — 表格 + 筛选（visibility/status/search）+ 分页 |
+| ⬜ | DocumentList 对接 | `AdminDocumentList.vue` — 表格 + 筛选（status/kb_id/filename）+ 分页 |
+| ⬜ | StatsPage 对接 | `AdminStatsPage.vue` — 统计卡片真实数据 + 存储量格式化 |
+
+#### 7.2.3 Admin 访问 KB 详情页权限（2 子任务）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | KnowledgeDetail 权限扩展 | `isOwner \|\| isAdmin` 判断；admin 可查看文档列表 |
+| ⬜ | Admin 删除违规内容 | 详情页内 admin 可删除文档（复用已有 DELETE 接口，admin 已有权限） |
 
 ### 7.3 基础设施（Phase 5 剩余项）
 
+#### 7.3.1 限流（3 子任务）
+
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 限流 | IP/用户级频率限制。**阈值在压测后确定**（聊天/上传/登录接口分别设限，开发阶段不预设固定值） |
-| ⬜ | README + 部署文档 | 项目说明 + Docker Compose 部署方案 |
+| ⬜ | `rate_limit.py` 中间件 | `backend/app/middleware/rate_limit.py` — 固定窗口计数器 + Redis 原子操作（`INCR` + `EXPIRE`） |
+| ⬜ | 配置项 | `config.py` 新增 6 个限流配置字段（含启用开关 + 各接口默认阈值） |
+| ⬜ | 中间件注册 | `main.py` 注册 `RateLimitMiddleware`（放在 `RequestIDMiddleware` 之后） |
 
-### 7.4 Phase 5 测试
+#### 7.3.2 README + 部署文档（4 子任务）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | README.md 部署章节 | 项目简介 + 快速开始（Docker Compose）+ 文档索引 |
+| ⬜ | Dockerfile × 2 | `Dockerfile.backend`（FastAPI + Celery Worker）+ `Dockerfile.frontend`（Nginx + 静态资源） |
+| ⬜ | docker-compose.yml | 5 服务编排（MySQL + Redis + Backend + Celery + Nginx）+ ChromaDB 挂卷 |
+| ⬜ | nginx.conf | 反向代理 + SSL 终结 + SSE buffering 关闭 + 静态资源 SPA fallback |
+
+### 7.4 性能埋点接入（2 子任务）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 检索耗时埋点 (U9.6) | `chat_service.py` 检索阶段：记录 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` |
+| ⬜ | LLM 调用埋点 (U9.7) | `core/llm.py` 流式调用：记录 `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms` + `total_ms` |
+
+### 7.5 Phase 5 测试
 
 | 状态 | 任务 | 测试类型 | 说明 |
-|:---|:---|:---|
-| ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` 遍历完整测试集，检查召回/非空/来源/SSE/错误率 |
+|:---|:---|:---|:---|
+| ⬜ | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 = 10 用例 |
+| ⬜ | sources 智能预览测试 | 单元+组件 | 定位正确性 3 + SSE 格式 2 + 前端渲染 1 = 6 用例 |
+| ⬜ | Admin 接口测试 | 接口测试 | Admin 端点权限校验 + 数据聚合正确性 + 分页筛选（6 用例，A7.1-A7.6） |
+| ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
+| ⬜ | 性能埋点验证 | 单元测试 | 检索耗时 1 + LLM 耗时 1 + 日志格式校验 2 = 4 用例 |
+| ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |
+| ⬜ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 两池子均超预算时各自独立截断互不侵蚀。**P0 Bug 防御** |
+| ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
 | ⬜ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** |
 | ⬜ | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 |
-| ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（阈值来自压测结果） |
-| ⬜ | Admin 接口测试 | 接口测试 | Admin 端点权限校验 + 数据聚合正确性 |
+
+### 7.6 本阶段不做的
+
+| 推迟项 | 排期 | 原因 |
+|:---|:---|:---|
+| Retrieval-aware Rewrite | Phase 6 | 当前 v2 信号词策略覆盖率 95.7%，盲区仅 1 个已知案例。方案 E 需要设计检索质量判据 + 实验调参闭环，Phase 5 目标是上线，不应引入新检索链路变量 |
+| 细粒度问题类型分类 | Phase 6 | 3 类粗分类已覆盖核心场景 |
+| Loki + Grafana 部署 | Phase 6（可选） | 结构化日志已就绪，`jq` 命令行可做基本聚合分析。生产环境可视需要部署 |
 
 ---
 

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.54 |
+| 文档版本 | v0.56 |
 | 最后更新 | 2026-06-09 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 4 全部完成 + 第 2 轮人工评分完成，进入 Phase 5） |
+| 状态 | 进行中（Phase 5 设计阶段 — 用例细化完成：Admin 4→6 / 限流 3→5 / 新增意图识别 10 + sources 预览 6 + 性能埋点 4） |
 
 ---
 
@@ -764,6 +764,8 @@
 | A7.2 | Admin 文档列表 | GET `/api/admin/documents` | admin 用户 | 返回全量文档 + 筛选 | ⬜ | — | Phase 5 |
 | A7.3 | Admin 统计 | GET `/api/admin/stats` | admin 用户 | 返回用户数/KB数/文档数/存储量 | ⬜ | — | Phase 5 |
 | A7.4 | 非 Admin 拒绝 | 全部 Admin 端点 | 普通用户 | 403 | ⬜ | — | Phase 5 |
+| A7.5 | Admin KB 列表-按 visibility 筛选 | GET `/api/admin/knowledge-bases?visibility=private` | 混合 public/private KB | 仅返回 private KB，total 正确 | ⬜ | — | Phase 5 |
+| A7.6 | Admin 文档列表-按 status 筛选 | GET `/api/admin/documents?status=completed` | 混合状态文档 | 仅返回状态为 completed 的文档，分页正确 | ⬜ | — | Phase 5 |
 
 ### 6.9 Phase 5 限流测试用例
 
@@ -772,6 +774,43 @@
 | A8.1 | IP 限流生效 | 限流中间件 | 单 IP 超阈值请求 | 429 Too Many Requests | ⬜ | — | 阈值来自压测结果 |
 | A8.2 | 用户级限流生效 | 限流中间件 | 单用户超阈值请求 | 429 + 不同用户不受影响 | ⬜ | — | — |
 | A8.3 | 限流窗口重置 | 限流中间件 | 等待窗口过期后 | 请求恢复正常 | ⬜ | — | — |
+| A8.4 | 不同接口独立计数 | 限流中间件 | chat 接口耗尽后调用 upload 接口 | chat 被限流，upload 仍可正常请求（各自独立窗口） | ⬜ | — | 验证维度隔离 |
+| A8.5 | 限流响应头正确性 | 限流中间件 | 正常请求 | 响应含 `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` 头，值正确递减 | ⬜ | — | — |
+
+### 6.10 Phase 5 意图识别测试用例
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U10.1 | 意图-明确知识查询 | `intent_classifier` | question="报销制度是什么？" | 返回 `KNOWLEDGE` | ⬜ | — | Mock LLM |
+| U10.2 | 意图-闲谈问候 | `intent_classifier` | question="你好" | 返回 `CASUAL` | ⬜ | — | — |
+| U10.3 | 意图-闲谈致谢 | `intent_classifier` | question="谢谢" | 返回 `CASUAL` | ⬜ | — | — |
+| U10.4 | 意图-短闲谈 | `intent_classifier` | question="好的" | 返回 `CASUAL` | ⬜ | — | — |
+| U10.5 | 意图-元问题 | `intent_classifier` | question="你能做什么？" | 返回 `META` | ⬜ | — | — |
+| U10.6 | 意图-含代词查询 | `intent_classifier` | question="它需要几个人参加？" | 返回 `KNOWLEDGE` | ⬜ | — | 含代词但不改变分类 |
+| U10.7 | 路由-KNOWLEDGE | `chat_service` | intent = KNOWLEDGE | 触发检索 + RAG 链路（search_results 非空） | ⬜ | — | 集成测试 |
+| U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（search_results=[]），使用 CASUAL_SYSTEM_PROMPT | ⬜ | — | 集成测试 |
+| U10.9 | 降级-LLM 异常 | `intent_classifier` | LLM API 返回 500 | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ⬜ | — | — |
+| U10.10 | 降级-LLM 超时 | `intent_classifier` | LLM 调用超时 | 回退 `_is_casual_chat()` + 日志记录 WARNING | ⬜ | — | — |
+
+### 6.11 Phase 5 sources 智能预览测试用例
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U11.1 | 定位-精确匹配 | `_build_sources()` | LLM 回答含「新员工入职流程包括以下步骤」片段，chunk 中精确存在 | `preview_text` 定位到正确位置，`preview_range` 窗口中心在引用文字 | ⬜ | — | 正常路径 |
+| U11.2 | 定位-子串匹配失败降级 | `_build_sources()` | LLM 用自己的话概括，chunk 中不存在该片段 | `preview_text = content[:200]`，`preview_range = {0, 200}` | ⬜ | — | 降级路径 |
+| U11.3 | 定位-短 chunk（<200字符） | `_build_sources()` | chunk.content 仅 80 字符 | `preview_text = content`（完整），`preview_range = {0, len(content)}` | ⬜ | — | 边界 |
+| U11.4 | SSE-sources 含 preview_text | `chat_service` SSE 输出 | 正常问答流程 | `event: sources` 中每条 chunk 含 `preview_text` + `preview_range` 字段 | ⬜ | — | 格式校验 |
+| U11.5 | SSE-sources 向前兼容 | `chat_service` SSE 输出 | 前端仅解析 content 字段 | `content` 字段仍在，旧前端不受影响 | ⬜ | — | 兼容性 |
+| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹 preview_range 范围内的引用片段，黄色背景高亮 | ⬜ | — | 组件测试 |
+
+### 6.12 Phase 5 性能埋点验证
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|
+| U12.1 | 检索耗时日志 | `chat_service` 检索阶段 | 正常检索流程 | 日志 JSON 包含 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` | ⬜ | — | U9.6 实现验证 |
+| U12.2 | LLM 调用日志 | `core/llm` 流式调用 | 正常 LLM 流式调用 | 日志 JSON 包含 `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms` + `total_ms` | ⬜ | — | U9.7 实现验证 |
+| U12.3 | 日志-request_id 贯穿 | `chat_service` 全链路 | 单次问答 | meta/sources/finish 事件中的 request_id 与检索/LLM 日志的 request_id 一致 | ⬜ | — | 链路追踪 |
+| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ⬜ | — | 结构化校验 |
 
 ---
 
@@ -856,8 +895,12 @@
 | `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（12 用例） |
 | `services/auth_service.py` (refresh) | ≥ 80% | ✅ | Phase 4.2：Refresh Token 机制（20 用例） |
 | `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
-| `api/admin.py` (接口测试) | ≥ 90% | ⬜ | Phase 5：Admin 端点（4 用例，A7.1-A7.4） |
-| `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（3 用例，A8.1-A8.3） |
+| `api/admin.py` (接口测试) | ≥ 90% | ⬜ | Phase 5：Admin 端点（6 用例，A7.1-A7.6） |
+| `services/admin_service.py` | ≥ 80% | ⬜ | Phase 5：Admin 业务逻辑（A7.1-A7.6 接口测试间接覆盖） |
+| `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
+| `rag/intent_classifier.py` | ≥ 80% | ⬜ | Phase 5：意图分类器（10 用例，U10.1-U10.10） |
+| `services/chat_service.py` (sources 预览) | ≥ 80% | ⬜ | Phase 5：sources 智能预览（6 用例，U11.1-U11.6） |
+| 性能埋点（检索+LLM） | ≥ 70% | ⬜ | Phase 5：U9.6/U9.7 埋点验证（4 用例，U12.1-U12.4） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |

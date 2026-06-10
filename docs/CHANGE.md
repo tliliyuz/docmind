@@ -1,5 +1,65 @@
 # DocMind 变更日志
 
+## 2026-06-09 — Phase 5 入场设计补齐（阶段 0）
+
+### 背景
+
+Phase 5 入场审查（见 `docs/phase5_precheck.md`）发现 14 项 P0 设计空白：ARCHITECTURE.md 3 个 TODO 空白、意图识别有 `[Planned]` 标记但无详细设计、Admin 接口 API 文档不完整、ROADMAP 任务粒度过粗。本次补齐全部 P0 阻塞项。
+
+### 新增（文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/phase5_precheck.md` | Phase 5 入场审查报告：27 项检查（14 P0 + 9 P1 + 4 P2），含设计策略速查、任务拆分建议、文件清单 |
+
+### 修改（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.32→v0.33。**新增 §5.1.6 意图识别设计**（分类体系 3 类 / LLM Prompt / 路由逻辑 / 延迟优化 <300ms / 降级回退正则 stopgap / 已知局限）。**新增 §13 部署与运维设计**：§13.1 Docker Compose 服务编排（5 服务 + Nginx 配置要点 + 部署约束）、§13.2 限流策略（固定窗口计数器 + Redis key 设计 + 4 维度 + 响应格式 + 配置项）、§13.3 监控与告警（关键埋点表 / 日志聚合方案 / 应用级指标 / 告警阈值）。**替换** §10 末尾 3 个 `TODO [待补充，Phase 5]` 为指向 §13 的引用。**更新** §1 技术选型表（新增限流/部署方案/监控告警 3 行）、§3.1 意图识别状态 `[Planned]→[Designed]`、§5 流程图意图识别标记更新 |
+| `backend/docs/API.md` | v0.23→v0.24。**重写 §7 管理后台接口**：新增 §7.1 通用约定（权限/分页/排序）、丰富 `GET /api/admin/stats`（新增 `conversation_count`/`message_count`/`storage_bytes` 字段 + 实现要点）、扩展 `GET /api/admin/knowledge-bases`（新增 `visibility` 筛选 + `visibility` 响应字段 + 前端标识约定）、扩展 `GET /api/admin/documents`（新增 `kb_visibility`/`owner_id`/`owner_username` 字段）、新增 §7.4 实现文件清单 |
+| `docs/ROADMAP.md` | v0.38→v0.39。**Phase 5 任务从 8 个展开为 32 个可执行子任务**：§7.1 体验完善（意图识别 5 + sources 预览 4）、§7.2 管理后台（后端 4 + 前端 4 + 权限 2）、§7.3 基础设施（限流 4 + 部署 5）、§7.4 Phase 4 推迟项补上（U8.2/U8.3 测试 2）、§7.5 性能埋点接入（2）、§7.6 Phase 5 测试（8）。新增 §7.7 本阶段不做的（Retrieval-aware Rewrite / 细粒度分类 / Loki 部署 → Phase 6），明确排期边界 |
+| `docs/CHANGE.md` | 新增本条目 |
+
+### 设计要点速查
+
+| 模块 | 设计文档 | 核心决策 |
+|:---|:---|:---|
+| 意图识别 | ARCHITECTURE.md §5.1.6 | 3 分类（KNOWLEDGE/CASUAL/META）；独立 LLM 调用 <300ms；失败回退正则 stopgap |
+| Admin 接口 | API.md §7 | 3 端点（stats/kbs/docs）；`require_admin` 依赖注入；非 admin 返回 403 E5005 |
+| 限流 | ARCHITECTURE.md §13.2 | 固定窗口计数器 + Redis `INCR`+`EXPIRE`；4 维度（chat/upload/login/default）；阈值压测后定 |
+| 部署 | ARCHITECTURE.md §13.1 | Docker Compose 5 服务；Nginx SSE buffering 关闭；ChromaDB 嵌入式挂卷 |
+| 监控 | ARCHITECTURE.md §13.3 | 关键埋点 8 处；开发环境 `jq` 查看；生产环境可选 Loki + Grafana |
+
+## 2026-06-09 — Phase 5 设计补齐（第 2 轮）：P1/P2 剩余项
+
+### 背景
+
+第 1 轮补齐了全部 14 项 P0 阻塞项（ARCHITECTURE.md §5.1.6 + §13、API.md §7、ROADMAP 任务展开）。本轮补齐 9 项 P1/P2 剩余缺口（见 `docs/phase5_precheck.md` §3-§4）。
+
+### 修改（设计文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.33→v0.34。**新增 §5.1.7 sources 智能预览设计**（定位算法：子串匹配 + ±100 字符上下文窗口 / SSE `preview_text`+`preview_range` 字段 / 前端 `<mark>` 高亮渲染 / 降级策略 4 场景 / 已知局限 3 项） |
+| `frontend/docs/FRONTEND.md` | v0.19→v0.20。**补充 sources 智能预览交互规范**：§9.4 sources 事件处理更新为优先使用 `preview_text`、§9.5 渲染策略新增 `<mark>` 高亮、§11 TODO 表 MessageItem 行新增 Phase 5 智能预览备注 |
+| `docs/TEST_CASES.md` | v0.55→v0.56。**Admin 用例 4→6**（A7.5 visibility 筛选 / A7.6 status 筛选）。**限流用例 3→5**（A8.4 独立计数 / A8.5 响应头）。**新增 §6.10 意图识别测试**（10 用例 U10.1-U10.10：分类正确性 6 + 路由 2 + 降级 2）。**新增 §6.11 sources 智能预览测试**（6 用例 U11.1-U11.6：定位算法 3 + SSE 格式 2 + 前端渲染 1）。**新增 §6.12 性能埋点验证**（4 用例 U12.1-U12.4）。覆盖率表更新（新增 intent_classifier / admin_service / sources 预览 / 性能埋点行） |
+| `docs/TESTING.md` | v0.15→v0.16。Phase 5 测试计划扩充（新增意图识别 / sources 预览 / 性能埋点行）。§8.3 Locust TODO 移除，替换为 Phase 5 实现计划 |
+| `docs/PRD.md` | v0.4→v0.5。版本同步：状态更新为「Phase 1-4 已完成」、§6 验收标准补充 Phase 3/4 实际值（Recall@5=1.000 / 人工评分 4.38+4.76 / 回归测试 100% 通过）、Persona TODO 标记为 Phase 6 |
+| `backend/docs/DATABASE.md` | v0.11→v0.12。**新增 §3.1 Admin 统计接口查询优化**（直接 SQL / Redis 缓存 / 汇总表 3 级方案 + 各表 COUNT(*) 代价评估 + 实施建议） |
+| `docs/DEVELOPMENT.md` | v0.14→v0.15。**新增 §9 Docker 部署**（§9.1 前置条件 / §9.2 快速启动 7 步 / §9.3 服务访问表 / §9.4 运维命令 7 条 / §9.5 环境变量注入 6 项必改 / §9.6 Windows 注意事项）。原 §9→§10（编码约定）、§10→§11（相关文档） |
+
+### 审查结论更新
+
+| 类型 | 第 1 轮 | 第 2 轮 | 合计 |
+|:---|:---|:---|:---|
+| P0 设计补齐 | 14/14 ✅ | — | 14/14 ✅ |
+| P1 重要项 | 2/9 | 7/9 | 9/9 ✅ |
+| P2 同步更新 | 1/4 | 3/4 | 4/4 ✅ |
+| **总计** | **17/27** | **10/27** | **27/27 ✅** |
+
+> Phase 5 设计文档全部补齐，可以进入编码阶段。
+
 ## 2026-06-09 — 修复：Phase 4 文档审查问题
 
 ### 修复
