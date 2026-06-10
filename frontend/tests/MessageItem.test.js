@@ -316,4 +316,102 @@ describe('MessageItem', () => {
     expect(wrapper.find('.sources-box').exists()).toBe(true)
     expect(wrapper.find('.sources-title').text()).toContain('引用 1 个文档')
   })
+
+  // ==================== U11.6 getSourcePreviewHtml <mark> 高亮 ====================
+
+  it('preview_text 含匹配片段时渲染 <mark> 高亮', () => {
+    const wrapper = getComponent({
+      role: 'assistant',
+      content: '根据文档记载，[来源1]广告投放的主要平台是抖音。建议优先选择该渠道进行推广。',
+      sources: [
+        {
+          doc_id: 1,
+          doc_name: '手册.pdf',
+          chunk_index: 1,
+          preview_text: '根据公司政策，广告投放的主要平台是抖音。建议优先选择该渠道进行推广。这是当前最优的营销策略。',
+          content: '完整内容……',
+          page: 5,
+        },
+      ],
+      status: 'complete',
+    })
+    // 来源面板存在
+    expect(wrapper.find('.sources-box').exists()).toBe(true)
+    // 渲染的 HTML 含 <mark> 标签
+    const sourceContent = wrapper.find('.source-content')
+    expect(sourceContent.exists()).toBe(true)
+    // <mark> 带有内联 style 属性，检查 <mark 即可
+    expect(sourceContent.html()).toContain('<mark')
+  })
+
+  it('preview_text 无匹配片段时纯文本展示（无 <mark>）', () => {
+    const wrapper = getComponent({
+      role: 'assistant',
+      content: '根据文档记载，[来源1]完全不同的内容描述。',
+      sources: [
+        {
+          doc_id: 1,
+          doc_name: '手册.pdf',
+          chunk_index: 1,
+          preview_text: '广告投放的主要平台是抖音，这是公司政策的明确规定。',
+          content: '完整内容……',
+          page: 5,
+        },
+      ],
+      status: 'complete',
+    })
+    expect(wrapper.find('.sources-box').exists()).toBe(true)
+    const sourceContent = wrapper.find('.source-content')
+    expect(sourceContent.exists()).toBe(true)
+    // preview_text 仍显示但无 <mark>
+    expect(sourceContent.html()).not.toContain('<mark')
+    expect(sourceContent.text()).toContain('广告投放的主要平台是抖音')
+  })
+
+  it('无 preview_text 时降级使用 content 前 200 字符', () => {
+    const wrapper = getComponent({
+      role: 'assistant',
+      content: '根据文档记载，[来源1]关键信息。',
+      sources: [
+        {
+          doc_id: 1,
+          doc_name: '手册.pdf',
+          chunk_index: 1,
+          // 无 preview_text
+          content: '这是一段很长的内容文本作为来源展示。'.repeat(20),
+          page: 3,
+        },
+      ],
+      status: 'complete',
+    })
+    expect(wrapper.find('.sources-box').exists()).toBe(true)
+    const sourceContent = wrapper.find('.source-content')
+    expect(sourceContent.exists()).toBe(true)
+    // content 被截断到 200 字符以内
+    const text = sourceContent.text()
+    expect(text.length).toBeLessThanOrEqual(220) // 允许少量 HTML 开销
+  })
+
+  it('preview_text HTML 特殊字符被转义', () => {
+    const wrapper = getComponent({
+      role: 'assistant',
+      content: '根据文档记载，[来源1]<script>alert("xss")</script>。',
+      sources: [
+        {
+          doc_id: 1,
+          doc_name: '手册.pdf',
+          chunk_index: 1,
+          preview_text: '文本含 <script>alert("xss")</script> 特殊字符需要转义处理。',
+          content: '完整内容……',
+          page: 1,
+        },
+      ],
+      status: 'complete',
+    })
+    expect(wrapper.find('.sources-box').exists()).toBe(true)
+    const html = wrapper.find('.source-content').html()
+    // 原始 <script> 不应出现在 HTML 中（应被转义为 &lt;script&gt;）
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).not.toContain('<script>')
+  })
 })

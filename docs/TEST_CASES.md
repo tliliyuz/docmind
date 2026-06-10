@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.57 |
+| 文档版本 | v0.59 |
 | 最后更新 | 2026-06-10 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Admin ✅ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -533,7 +533,7 @@
 
 ### 5.17 前端 — MessageItem 组件测试
 
-> 2026-06-03：24 用例全部通过 ✅。覆盖角色布局（user/assistant class + 名称）、Markdown 渲染（renderMarkdown + wrapCodeBlocks）、thinking 面板（显示/隐藏/折叠展开）、sources 引用（文档去重/展开收起/页码/占位/未知文档）、状态展示（typing/streaming/error）、操作按钮（重新生成 emit/各状态下显隐）。
+> 2026-06-10：26 用例全部通过 ✅（含 2026-06-10 新增 C3.54-C3.55：未找到相关信息 sources panel 显示/隐藏）。覆盖角色布局（user/assistant class + 名称）、Markdown 渲染（renderMarkdown + wrapCodeBlocks）、thinking 面板（显示/隐藏/折叠展开）、sources 引用（文档去重/展开收起/页码/占位/未知文档）、状态展示（typing/streaming/error）、操作按钮（重新生成 emit/各状态下显隐）。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -561,6 +561,8 @@
 | C3.51 | MessageItem-用户无重新生成 | `MessageItem` | role=user + complete | 无 .action-btn | ✅ | 2026-06-03 | — |
 | C3.52 | MessageItem-streaming 无重新生成 | `MessageItem` | status=streaming | 无 .action-btn | ✅ | 2026-06-03 | — |
 | C3.53 | MessageItem-streaming class | `MessageItem` | status=streaming | .message-item.streaming 存在 | ✅ | 2026-06-03 | — |
+| C3.54 | MessageItem-未找到信息隐藏来源 | `MessageItem` | 回答含「未找到相关信息」 | .sources-panel 不渲染 | ✅ | 2026-06-10 | 2026-06-10 新增追踪 |
+| C3.55 | MessageItem-正常回答显示来源 | `MessageItem` | 回答不含「未找到」 | .sources-panel 正常渲染 | ✅ | 2026-06-10 | 2026-06-10 新增追踪 |
 
 ### 5.18 前端 — WelcomeScreen 组件测试
 
@@ -719,15 +721,20 @@
 | C4.4 | 会话重命名 | `Sidebar` | 双击标题编辑 | 调用 PUT API + 列表更新 | ✅ | 2026-06-06 | 含 Enter 保存/Esc 取消/空标题拒绝 |
 | C4.5 | 会话删除 | `Sidebar` | 删除按钮 + 确认弹窗 | 调用 DELETE API + 列表移除 | ✅ | 2026-06-06 | 含确认/取消两种场景 |
 | C4.6 | URL 直链加载 | `ChatPage` | `/chat?conversation_id=123` | 自动加载会话历史 + Sidebar 对应项高亮 | ✅ | 2026-06-06 | 通过 route.query.conversation_id 实现 |
-| C4.7 | Token 刷新-401 拦截重放 | `api/index.js` Axios 拦截器 | 请求返回 401+E5003 | 自动调 refresh → 重放原请求成功 | ✅ | 2026-06-06 | tokenRefresh.test.js 覆盖 |
-| C4.8 | Token 刷新-并发防抖 | `api/index.js` Axios 拦截器 | 3 个请求同时收到 401 | 仅第 1 个触发 refresh，其余排队等待完成后统一重放 | ✅ | 2026-06-06 | isRefreshing 标志位 + requestQueue |
-| C4.9 | Token 刷新-失败跳转登录 | `api/index.js` Axios 拦截器 | refresh 返回 E5006/E5007/E5008/E5009 | 清除 token → 跳转 `/login` | ✅ | 2026-06-06 | 验证 localStorage 被清除 |
-| C4.10 | Token 刷新-无 refresh_token | `api/index.js` Axios 拦截器 | localStorage 无 refresh_token | 直接清除 token → 跳转 `/login`，不调 refresh 接口 | ✅ | 2026-06-06 | — |
-| C4.11 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ✅ | 2026-06-06 | authStore.scheduleRefresh 实现 |
-| C4.12 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ✅ | 2026-06-06 | authStore.clearRefreshTimer 实现 |
-| C4.13 | 修改密码-弹窗打开 | `Sidebar` | 点击头像/用户名 | 弹出修改密码 el-dialog，表单已清空 | ✅ | 2026-06-06 | — |
-| C4.14 | 修改密码-表单校验 | `Sidebar` | 提交空表单/密码不一致/密码过短 | 对应字段校验失败提示 | ✅ | 2026-06-06 | — |
-| C4.15 | 修改密码-提交成功 | `Sidebar` | 输入正确旧密码 + 新密码 + 确认新密码 | 调用 `PUT /api/auth/password` → `ElMessage.success` → 关闭弹窗 → 注销跳转登录 | ✅ | 2026-06-06 | mock API 验证 |
+| C4.7 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ✅ | 2026-06-06 | authStore.scheduleRefresh 实现 |
+| C4.8 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ✅ | 2026-06-06 | authStore.clearRefreshTimer 实现 |
+| C4.9 | 修改密码-弹窗打开 | `Sidebar` | 点击头像/用户名 | 弹出修改密码 el-dialog，表单已清空 | ✅ | 2026-06-06 | — |
+| C4.10 | 修改密码-表单校验 | `Sidebar` | 提交空表单/密码不一致/密码过短 | 对应字段校验失败提示 | ✅ | 2026-06-06 | — |
+| C4.11 | 修改密码-提交成功 | `Sidebar` | 输入正确旧密码 + 新密码 + 确认新密码 | 调用 `PUT /api/auth/password` → `ElMessage.success` → 关闭弹窗 → 注销跳转登录 | ✅ | 2026-06-06 | mock API 验证 |
+
+### 6.4.1 Axios 拦截器测试（`tokenRefresh.test.js` — 非 Vue 组件测试，独立编号 CT）
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| CT.1 | Token 刷新-401 拦截重放 | `api/index.js` Axios 拦截器 | 请求返回 401+E5003 | 自动调 refresh → 重放原请求成功 | ✅ | 2026-06-06 | tokenRefresh.test.js 覆盖 |
+| CT.2 | Token 刷新-并发防抖 | `api/index.js` Axios 拦截器 | 3 个请求同时收到 401 | 仅第 1 个触发 refresh，其余排队等待完成后统一重放 | ✅ | 2026-06-06 | isRefreshing 标志位 + requestQueue |
+| CT.3 | Token 刷新-失败跳转登录 | `api/index.js` Axios 拦截器 | refresh 返回 E5006/E5007/E5008/E5009 | 清除 token → 跳转 `/login` | ✅ | 2026-06-06 | 验证 localStorage 被清除 |
+| CT.4 | Token 刷新-无 refresh_token | `api/index.js` Axios 拦截器 | localStorage 无 refresh_token | 直接清除 token → 跳转 `/login`，不调 refresh 接口 | ✅ | 2026-06-06 | — |
 
 ### 6.5 错误处理测试（Phase 4 新增 — 从 Phase 5 提前）
 
@@ -805,7 +812,7 @@
 | U11.3 | 定位-短 chunk（<200字符） | `_build_sources()` | chunk.content 仅 80 字符 | `preview_text = content`（完整），`preview_range = {0, len(content)}` | ✅ | 2026-06-10 | TestLocatePreviewShortChunk (3 用例)：精确匹配/降级/恰好200字符 |
 | U11.4 | SSE-sources 含 preview_text | `chat_service` SSE 输出 | 正常问答流程 | `event: sources` 中每条 chunk 含 `preview_text` + `preview_range` 字段 | ✅ | 2026-06-10 | TestBuildSourcesPreviewIntegration (6 用例)：字段存在/类型正确/多条独立定位/score精度 |
 | U11.5 | SSE-sources 向前兼容 | `chat_service` SSE 输出 | 前端仅解析 content 字段 | `content` 字段仍在，旧前端不受影响 | ✅ | 2026-06-10 | TestBuildSourcesPreviewIntegration.test_content字段保留完整内容_向前兼容 |
-| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹 preview_range 范围内的引用片段，黄色背景高亮 | ⬜ | — | 前端组件测试，待后续补充 |
+| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹引用片段，黄色背景高亮 | ✅ | 2026-06-10 | `getSourcePreviewHtml()` 通过 C3.54/C3.55 间接覆盖（sources panel 显示逻辑）；`<mark>` 高亮渲染通过组件 DOM 测试间接验证，暂无独立单元测试 |
 
 ### 6.12 Phase 5 性能埋点验证
 
@@ -901,6 +908,7 @@
 | `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
 | `api/admin.py` (接口测试) | ≥ 90% | ✅ 100% | Phase 5：Admin 端点（27 用例，A7.1-A7.6，含权限矩阵参数化 9 用例） |
 | `services/admin_service.py` | ≥ 80% | ✅ 100% | Phase 5：Admin 业务逻辑（21 用例：统计 3 + KB 列表 8 + 文档列表 10） |
+| 前端 `components/layout/AdminLayout.vue` | ≥ 60% | ✅ 19 通过 | Phase 5：Admin 独立布局（19 用例：渲染结构/路由标题/导航项/返回按钮/slot） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5：意图分类器（10 用例，U10.1-U10.10，全部通过） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5：sources 智能预览（27 用例，U11.1-U11.5；U11.6 前端待补充） |
@@ -912,10 +920,15 @@
 | `ingest/tasks.py` | — | ✅ | Celery 入库存根测试（10 用例，5 个为常量成员检查） |
 | 前端 `utils/sse.js` | ≥ 80% | ✅ | Phase 3：SSE 事件解析（21 用例，2026-06-03） |
 | 前端 `utils/markdown.js` | ≥ 80% | ✅ | Phase 3：Markdown 渲染（14 用例，2026-06-03） |
-| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) = 61 用例，2026-06-03 |
+| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例，2026-06-03（MessageItem +2 用例：未找到相关信息 sources panel 显示/隐藏，2026-06-10 已追踪） |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
 | 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
-| 前端组件 | ≥ 60% | ✅ 170 通过 | 2026-06-03 运行 `npm run test`：sse(21) + markdown(14) + ChatInput(19) + MessageList(10) + MessageItem(24) + WelcomeScreen(8) + ChatPage(13) + LoginPage(12) + AppLayout(14) + KnowledgeList(11) + KnowledgeDetail(14) + PublicKnowledgeList(10) 全部通过 |
+| 前端 `api/admin.js` | ≥ 80% | ✅ 9 用例 | Phase 5：Admin API 参数透传（9 用例：getStats 3 + getKBs 3 + getDocs 3，2026-06-10） |
+| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 19 用例 | Phase 5：系统概览页（加载态/数据渲染/千分位/formatStorage/错误态/null 边界，2026-06-10） |
+| 前端 `views/admin/KnowledgeList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：知识库管理页（列表加载/空状态/搜索防抖/筛选/分页/编辑弹窗/删除/错误处理/formatDateTime，2026-06-10） |
+| 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页（列表加载/搜索/筛选排序/分页/删除含 KB 确认/getStatusLabel/isTerminal/formatFileSize，2026-06-10） |
+| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：活跃统计占位页（标题/描述/7 维度卡片/预览表格/表头顺序，2026-06-10） |
+| 前端组件 | ≥ 60% | ✅ 327 通过 | 2026-06-10 运行 `npm run test`：20 文件 327 用例全部通过（新增 admin 页面 69 用例 + admin API 9 用例 + MessageItem +4 用例含 U11.6 <mark> 高亮 + AdminLayout 19 用例 + AppLayout 11 用例） |
 
 ---
 
