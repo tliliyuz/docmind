@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.20 |
-| 最后更新 | 2026-06-09 |
+| 文档版本 | v0.22 |
+| 最后更新 | 2026-06-10 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 4 前端已实现，Phase 5 sources 智能预览设计补充完成） |
+| 状态 | 进行中（Phase 5 Admin 布局重构 — Admin 独立侧边栏 ✅ / 文档删除 ✅ / 活跃统计 ✅） |
 
 ---
 
@@ -98,14 +98,17 @@
 | `/knowledge-bases/public` | PublicKnowledgeList | 需登录 | 公开知识库列表，浏览所有 public KB（Phase 2.5 新增） |
 | `/knowledge-bases/:id` | KnowledgeDetail | 需登录（owner/admin/public KB 可查看） | 知识库详情：KB 信息 + 文档上传/管理。public KB 非 owner 只读查看 |
 
-**管理员视角路由**（仅 admin 可访问，后端接口 Phase 5 实现）：
+**管理员视角路由**（仅 admin 可访问，使用独立 AdminLayout 布局）：
 
 | 路径 | 页面 | 权限 | 说明 |
 |:---|:---|:---|:---|
-| `/admin/knowledge` | AdminKnowledgeList | 需管理员 | 全部知识库（跨用户），后端接口 Phase 5 |
-| `/admin/documents` | AdminDocumentList | 需管理员 | 全部文档（跨库），后端接口 Phase 5 |
-| `/admin/conversations` | AdminConversationList | 需管理员 | 全部会话（跨用户），后端接口 Phase 4-5 |
-| `/admin/stats` | AdminStats | 需管理员 | 系统概览统计，后端接口 Phase 5 |
+| `/admin` | 重定向到 `/admin/stats` | 需管理员 | 管理后台默认页 |
+| `/admin/stats` | AdminStats | 需管理员 | 系统概览统计 |
+| `/admin/knowledge` | AdminKnowledgeList | 需管理员 | 全部知识库（跨用户），可编辑/删除 |
+| `/admin/documents` | AdminDocumentList | 需管理员 | 全部文档（跨库），可查看/筛选/删除 |
+| `/admin/activity` | AdminActivity | 需管理员 | 用户活跃统计（后端 API 后续 Phase 实现） |
+
+> **布局说明**：Admin 路由使用独立的 `AdminLayout.vue` 布局，拥有专用的 Admin 侧边栏，与用户主侧边栏完全分离。Admin 通过用户菜单 →「管理后台」入口进入。
 
 **兜底**：
 
@@ -317,16 +320,24 @@ ChatPage 支持两种进入方式：
 | 点击「公共知识库」| 跳转 `/knowledge-bases/public`，浏览所有 `visibility=public` 的知识库 |
 | 高亮状态 | 当路由在 `/knowledge-bases`（不含 `/public`）或 `/knowledge-bases/:id` 时，「我的知识库」高亮；当路由在 `/knowledge-bases/public` 时，「公共知识库」高亮 |
 
-#### 4.5.3 管理后台导航（仅 admin 可见）
+#### 4.5.3 管理后台入口（仅 admin 可见）
 
-> **注意**：管理后台的后端接口排期至 Phase 5。Phase 2.3.3 仅完成前端页面，接口联调待 Phase 5。
+> **设计原则**：管理后台使用独立的 `AdminLayout` 布局，不与用户侧边栏混用。入口位于用户菜单卡片中（头像 → 用户菜单 → 「管理后台」）。
 
 | 操作 | 行为 |
 |:---|:---|
-| 点击「知识库管理」| 跳转 `/admin/knowledge`（全部知识库，跨用户） |
-| 点击「文档管理」| 跳转 `/admin/documents`（全部文档，跨库） |
-| 点击「会话管理」| 跳转 `/admin/conversations`（Phase 4 实现） |
-| 点击「系统概览」| 跳转 `/admin/stats`（Phase 5 实现） |
+| 点击用户头像/用户名 | 弹出用户菜单卡片 |
+| 菜单中出现「管理后台」选项（仅 `isAdmin` 可见）| 位于「修改密码」和「退出登录」之间，图标 `fa-shield-alt` |
+| 点击「管理后台」| 关闭卡片 → 跳转 `/admin`（默认 `/admin/stats`），进入独立 Admin 布局 |
+| Admin 侧边栏点击「← 返回对话」| 返回 `/chat`，恢复用户侧边栏 |
+
+**Admin 侧边栏（AdminLayout 内）**：
+- Logo `fa-shield-alt` + 标题「管理后台」+ 副标题「DocMind Admin」
+- 系统概览 → `/admin/stats`（图标 `fa-chart-bar`）
+- 知识库管理 → `/admin/knowledge`（图标 `fa-database`）
+- 文档管理 → `/admin/documents`（图标 `fa-file-alt`）
+- 活跃统计 → `/admin/activity`（图标 `fa-users`）
+- 底部「← 返回对话」→ `/chat`
 
 #### 4.5.4 用户栏行为
 
@@ -742,42 +753,69 @@ POST /api/knowledge-bases/{kb_id}/documents/{id}/reprocess
 
 ## 7. 管理后台交互（admin 专属）
 
-> **实现状态**：管理后台后端接口均排期至 Phase 5。Phase 2.3.3 仅完成前端页面开发，使用 mock 数据或空状态展示。
+> **实现状态**：Phase 5 已完成后端接口和前端联调。Admin 使用独立 `AdminLayout.vue` 布局，通过用户菜单 →「管理后台」进入。
 
-### 7.1 管理员导航
+### 7.1 管理员入口
 
-Sidebar「管理后台」分组，仅 `role === 'admin'` 可见：
-- 知识库管理 → `/admin/knowledge`（全部知识库，跨用户）
-- 文档管理 → `/admin/documents`（全部文档，跨库）
-- 会话管理 → `/admin/conversations`（Phase 4-5 实现）
-- 系统概览 → `/admin/stats`（统计卡片）
+Admin 通过主侧边栏用户菜单卡片中的「管理后台」选项进入（仅 `role === 'admin'` 可见）。点击后跳转 `/admin`，页面切换为 AdminLayout（独立侧边栏 + 内容区）。
 
-### 7.2 Admin 文档管理页（`/admin/documents`）
+**与用户侧边栏的关系**：
+- 用户侧边栏仅包含：会话历史 + 知识库导航 + 用户菜单（含管理后台入口）
+- Admin 侧边栏包含：系统概览 + 知识库管理 + 文档管理 + 活跃统计 + 返回对话
+- 两者完全独立，不混用
 
-> **后端接口**：`GET /api/admin/documents`（Phase 5 实现）
+### 7.2 Admin 知识库管理页（`/admin/knowledge`）
 
-与 KB 内文档表格的区别：
-- 数据源为全部文档（跨库跨用户）
-- 额外显示 `kb_name` 列和 `username` 列（或通过 `kb_id` 关联）
-- 可按 `kb_id` 筛选
-- 不可上传（上传入口在 KB 详情页内），仅查看/筛选
-
-### 7.3 Admin 知识库管理页（`/admin/knowledge`）
-
-> **后端接口**：`GET /api/admin/knowledge-bases`（Phase 5 实现）
+> **后端接口**：`GET /api/admin/knowledge-bases`（Phase 5 ✅）
 
 与用户 KB 列表（§5）的区别：
 - 可查看全部用户的知识库（含 private KB），含 `username` 列
-- 可按 `user_id` 筛选
+- 可按 `user_id`、`visibility`、`status` 筛选
 - 可编辑 KB 元数据（名称/描述/visibility 修正，如离职员工 KB 转 public）
-- 可删除 KB（违规清理），展示原 owner
+- 可删除 KB（违规清理），确认弹窗 + 按钮 loading 反馈
 - 不可创建新 KB 或上传文档
+
+### 7.3 Admin 文档管理页（`/admin/documents`）
+
+> **后端接口**：`GET /api/admin/documents`（Phase 5 ✅）
+
+与 KB 内文档表格的区别：
+- 数据源为全部文档（跨库跨用户）
+- 额外显示 `kb_name`、`kb_visibility`、`owner_username` 列
+- 可按 `kb_id`、`status`、`filename` 筛选 + `sort_by`/`order` 排序
+- 可删除文档（违规清理），确认弹窗显示文件名和所属 KB
+- 不可上传（上传入口在 KB 详情页内，仅 owner 可上传）
 
 ### 7.4 系统概览页（`/admin/stats`）
 
-> **后端接口**：`GET /api/admin/stats`（Phase 5 实现）
+> **后端接口**：`GET /api/admin/stats`（Phase 5 ✅）
 
-顶部四张统计卡片：用户总数、知识库数、文档总数、总问答数。点击卡片可下钻到对应管理页。
+7 张统计卡片：用户总数、知识库数、文档总数、总会话数、分块总数、消息总数、存储空间。含快捷管理入口卡片。
+
+### 7.5 活跃统计页（`/admin/activity`）
+
+> **后端接口**：待后续 Phase 实现。当前展示统计维度和预期表格预览。
+
+计划展示维度：用户、会话数、提问数、Token 消耗、最近访问时间、错误率、KB 使用情况。
+
+### 7.6 Admin 布局设计（AdminLayout.vue）
+
+```
+┌──────────────────────────────────────────────┐
+│ Admin 侧边栏 (220px)    │ 主内容区            │
+│ ┌──────────────────────┐ │ ┌────────────────┐ │
+│ │ 🛡 管理后台          │ │ │ Header: 页标题 │ │
+│ │ DocMind Admin        │ │ ├────────────────┤ │
+│ ├──────────────────────┤ │ │                │ │
+│ │ 📊 系统概览          │ │ │                │ │
+│ │ 🗄 知识库管理        │ │ │ <slot />       │ │
+│ │ 📄 文档管理          │ │ │                │ │
+│ │ 👥 活跃统计          │ │ │                │ │
+│ ├──────────────────────┤ │ │                │ │
+│ │ ← 返回对话           │ │ │                │ │
+│ └──────────────────────┘ │ └────────────────┘ │
+└──────────────────────────────────────────────┘
+```
 
 ---
 
@@ -935,14 +973,16 @@ function parseSSEEvent(raw) {
 | ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮 + 历史会话列表（按时间分组）、重命名（双击编辑）、删除（确认弹窗）、高亮当前会话 | — |
 | ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 | — |
 | MessageList | ✅ 已实现 | 自动滚动底部 + 手动上滚「新消息」浮动按钮 + MessageItem 渲染 | — |
-| MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片 + typing 动画 + 重新生成按钮 | Phase 5：sources 智能预览（`preview_text` + `<mark>` 高亮） |
+| MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片（含智能预览 `preview_text` + `<mark>` 高亮）+ typing 动画 + 重新生成按钮 | — |
 | WelcomeScreen | ✅ 已实现 | 欢迎语 + 4 个快捷问题卡片 → emit 触发发送 | — |
 | KnowledgeList (`/knowledge-bases`) | ✅ 已实现 | — | — |
 | PublicKnowledgeList (`/knowledge-bases/public`) | ✅ 已实现 | — | — |
-| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | Phase 5：Admin 权限扩展 |
-| AdminKnowledgeList (`/admin/knowledge`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/knowledge-bases` |
-| AdminDocumentList (`/admin/documents`) | 占位页面 | — | Phase 5：联调 `GET /api/admin/documents` |
-| Admin Stats (`/admin/stats`) | 占位页面 | — | Phase 5：统计卡片、数据下钻 |
+| KnowledgeDetail (`/knowledge-bases/:id`) | ✅ 已实现 | — | — |
+| AdminLayout (`/admin`) | ✅ 已实现 | 独立管理后台布局（Admin 侧边栏 + 主内容区）+ 用户菜单「管理后台」入口 | — |
+| AdminKnowledgeList (`/admin/knowledge`) | ✅ 已实现 | 表格 + visibility/status/search 筛选 + 分页 + 编辑 + 删除（loading 反馈） | — |
+| AdminDocumentList (`/admin/documents`) | ✅ 已实现 | 表格 + status/filename 筛选 + 排序 + 分页 + KB/上传者信息 + 删除操作 | — |
+| Admin Stats (`/admin/stats`) | ✅ 已实现 | 7 项统计卡片 + 千分位/存储格式化 + 快捷管理入口 | — |
+| Admin Activity (`/admin/activity`) | ✅ 已实现 | 活跃统计占位页 + 统计维度预览 + 数据表格预览 | 后端 API 待排期 |
 | 状态轮询 | ✅ 已实现 | — | Phase 6：可选升级 WebSocket |
 | SSE 流式输出 | ✅ 已实现 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
 | 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 ID，自动同步到会话列表 Store | — |

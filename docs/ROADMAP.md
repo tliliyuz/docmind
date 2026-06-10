@@ -5,7 +5,7 @@
 | 文档版本 | v0.40 |
 | 最后更新 | 2026-06-10 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览后端 ✅ / Admin 后端 ✅ / 前端联调 ⬜ / 限流 ⬜ / 部署 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Admin 后端 ✅ / 前端联调 ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 部署 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -401,7 +401,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
 | ✅ | 后端定位逻辑 | `chat_service.py` — `_locate_preview()` / `_fallback_preview()` 实现；`_build_sources()` 新增 `assistant_content` 参数 + `preview_text` / `preview_range` 字段；`ChatSourceChunk` / `PreviewRange` Schema |
-| ⬜ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染（`<mark>` 标签包裹 `preview_range` 范围） |
+| ✅ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染（`<mark>` 标签包裹 `preview_range` 范围） |
 
 ### 7.2 管理后台（简易版）
 
@@ -413,21 +413,24 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Admin Service | `backend/app/services/admin_service.py` — `get_stats()`（7 统计维度）/ `list_all_kbs()`（5 筛选维度 + 分页）/ `list_all_documents()`（5 筛选维度 + 5 排序字段 + 分页） |
 | ✅ | Admin API 端点 | `backend/app/api/admin.py` — GET `/stats` / `/knowledge-bases` / `/documents` + `require_admin` 依赖注入；`main.py` 注册 router |
 
-#### 7.2.2 Admin 前端联调（4 子任务）
+#### 7.2.2 Admin 前端联调（7 子任务）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | Admin API 封装 | `frontend/src/api/admin.js` — 3 个接口函数 |
-| ⬜ | KnowledgeList 对接 | `AdminKnowledgeList.vue` — 表格 + 筛选（visibility/status/search）+ 分页 |
-| ⬜ | DocumentList 对接 | `AdminDocumentList.vue` — 表格 + 筛选（status/kb_id/filename）+ 分页 |
-| ⬜ | StatsPage 对接 | `AdminStatsPage.vue` — 统计卡片真实数据 + 存储量格式化 |
+| ✅ | Admin API 封装 | `frontend/src/api/admin.js` — 3 个接口函数 |
+| ✅ | KnowledgeList 对接 | `AdminKnowledgeList.vue` — 表格 + 筛选（visibility/status/search）+ 分页 + 删除 loading 反馈 |
+| ✅ | DocumentList 对接 | `AdminDocumentList.vue` — 表格 + 筛选（status/kb_id/filename）+ 分页 + 删除操作 |
+| ✅ | StatsPage 对接 | `AdminStatsPage.vue` — 统计卡片真实数据 + 存储量格式化 |
+| ✅ | Admin 独立布局 | `AdminLayout.vue` — 独立侧边栏 + 主内容区；Admin 路由嵌套；用户菜单「管理后台」入口 |
+| ✅ | Sidebar 重构 | 移除 admin 导航区，用户菜单新增「管理后台」选项（仅 isAdmin 可见） |
+| ✅ | 活跃统计页 | `ConversationList.vue` → 活跃统计占位（统计维度预览 + 数据表格预览） |
 
 #### 7.2.3 Admin 访问 KB 详情页权限（2 子任务）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | KnowledgeDetail 权限扩展 | `isOwner \|\| isAdmin` 判断；admin 可查看文档列表 |
-| ⬜ | Admin 删除违规内容 | 详情页内 admin 可删除文档（复用已有 DELETE 接口，admin 已有权限） |
+| ✅ | KnowledgeDetail 权限扩展 | `isOwner \|\| isAdmin` 判断；admin 可查看文档列表 |
+| ✅ | Admin 删除违规内容 | 详情页内 admin 可删除文档（复用已有 DELETE 接口，admin 已有权限） |
 
 ### 7.3 基础设施（Phase 5 剩余项）
 

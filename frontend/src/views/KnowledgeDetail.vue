@@ -11,8 +11,8 @@
           <p class="detail-desc">{{ store.currentKb?.description || '暂无描述' }}</p>
         </div>
       </div>
-      <div class="detail-header-actions" v-if="isOwner">
-        <button class="ghost-btn" @click="openEditDialog">
+      <div class="detail-header-actions" v-if="canManage">
+        <button v-if="isOwner" class="ghost-btn" @click="openEditDialog">
           <i class="fas fa-pen" style="margin-right: 4px;"></i> 编辑
         </button>
         <button class="ghost-btn danger" @click="confirmDeleteKb">
@@ -93,8 +93,8 @@
       </div>
     </div>
 
-    <!-- 文档表格区域（仅 owner 可见） -->
-    <div class="doc-table-section" v-if="isOwner">
+    <!-- 文档表格区域（owner 或 admin 可见；admin 可查看/删除，不可上传） -->
+    <div class="doc-table-section" v-if="canManage">
       <div class="doc-table-toolbar">
         <h2 class="section-title">文档列表</h2>
         <div class="doc-table-filters">
@@ -351,6 +351,14 @@ const isOwner = computed(() => {
   return store.currentKb?.user_id === authStore.user?.id
 })
 
+/** 当前用户是否可管理此 KB（owner 或 admin）
+ *  - isOwner: 可上传/编辑/删除 KB + 管理文档
+ *  - isAdmin: 可编辑/删除 KB + 查看/删除文档（不可上传）
+ *  对齐 PRD.md §5.4 权限分离原则 */
+const canManage = computed(() => {
+  return isOwner.value || authStore.isAdmin
+})
+
 // ==================== 页面加载 ====================
 const pageLoading = ref(false)
 
@@ -358,8 +366,8 @@ async function loadPage() {
   pageLoading.value = true
   try {
     await store.fetchKbDetail(kbId.value)
-    // 仅 owner 加载文档列表；非 owner 访问公开 KB 时无文档查看权限（PRD §5.4）
-    if (isOwner.value) {
+    // owner 或 admin 加载文档列表；非 owner 访问公开 KB 时无文档查看权限（PRD §5.4）
+    if (canManage.value) {
       await reloadDocList()
       // 对非终态文档启动轮询
       store.docList.forEach(doc => {

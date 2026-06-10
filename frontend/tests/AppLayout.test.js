@@ -59,21 +59,6 @@ describe('AppLayout', () => {
     expect(wrapper.find('.page-title').text()).toBe('DocMind')
   })
 
-  it('AdminKnowledge 路由显示"知识库管理"', () => {
-    const wrapper = getComponent('AdminKnowledge')
-    expect(wrapper.find('.page-title').text()).toBe('知识库管理')
-  })
-
-  it('AdminDocuments 路由显示"文档管理"', () => {
-    const wrapper = getComponent('AdminDocuments')
-    expect(wrapper.find('.page-title').text()).toBe('文档管理')
-  })
-
-  it('AdminConversations 路由显示"会话管理"', () => {
-    const wrapper = getComponent('AdminConversations')
-    expect(wrapper.find('.page-title').text()).toBe('会话管理')
-  })
-
   it('KnowledgeList 路由显示"我的知识库"', () => {
     const wrapper = getComponent('KnowledgeList')
     expect(wrapper.find('.page-title').text()).toBe('我的知识库')
@@ -84,9 +69,10 @@ describe('AppLayout', () => {
     expect(wrapper.find('.page-title').text()).toBe('知识库详情')
   })
 
-  it('AdminStats 路由显示"系统概览"', () => {
+  it('Admin 路由不再由 AppLayout 渲染，退化为默认标题"DocMind"', () => {
+    // Admin 路由现在使用独立的 AdminLayout，AppLayout 不再识别这些路由名称
     const wrapper = getComponent('AdminStats')
-    expect(wrapper.find('.page-title').text()).toBe('系统概览')
+    expect(wrapper.find('.page-title').text()).toBe('DocMind')
   })
 
   it('未知路由显示默认标题"DocMind"', () => {

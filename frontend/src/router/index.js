@@ -15,18 +15,6 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
-    path: '/admin/documents',
-    name: 'AdminDocuments',
-    component: () => import('@/views/admin/DocumentList.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true }
-  },
-  {
-    path: '/admin/conversations',
-    name: 'AdminConversations',
-    component: () => import('@/views/admin/ConversationList.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true }
-  },
-  {
     path: '/knowledge-bases',
     name: 'KnowledgeList',
     component: () => import('@/views/KnowledgeList.vue'),
@@ -44,17 +32,37 @@ const routes = [
     component: () => import('@/views/KnowledgeDetail.vue'),
     meta: { requiresAuth: true }
   },
+  // Admin 独立布局（嵌套路由）
   {
-    path: '/admin/knowledge',
-    name: 'AdminKnowledge',
-    component: () => import('@/views/admin/KnowledgeList.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true }
-  },
-  {
-    path: '/admin/stats',
-    name: 'AdminStats',
-    component: () => import('@/views/admin/StatsPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true }
+    path: '/admin',
+    component: () => import('@/components/layout/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        redirect: '/admin/stats',
+      },
+      {
+        path: 'stats',
+        name: 'AdminStats',
+        component: () => import('@/views/admin/StatsPage.vue'),
+      },
+      {
+        path: 'knowledge',
+        name: 'AdminKnowledge',
+        component: () => import('@/views/admin/KnowledgeList.vue'),
+      },
+      {
+        path: 'documents',
+        name: 'AdminDocuments',
+        component: () => import('@/views/admin/DocumentList.vue'),
+      },
+      {
+        path: 'activity',
+        name: 'AdminActivity',
+        component: () => import('@/views/admin/ConversationList.vue'),
+      },
+    ],
   },
   {
     path: '/',

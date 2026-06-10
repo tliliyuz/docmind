@@ -263,37 +263,6 @@
         </router-link>
       </nav>
 
-      <!-- 管理后台导航（仅 admin 可见） -->
-      <nav v-if="authStore.isAdmin" class="admin-nav">
-        <div class="section-label" v-show="!collapsed">管理后台</div>
-        <router-link
-          to="/admin/knowledge"
-          class="nav-item"
-          active-class="active"
-          :title="collapsed ? '知识库管理' : ''"
-        >
-          <i class="fas fa-database"></i>
-          <span v-show="!collapsed">知识库管理</span>
-        </router-link>
-        <router-link
-          to="/admin/documents"
-          class="nav-item"
-          active-class="active"
-          :title="collapsed ? '文档管理' : ''"
-        >
-          <i class="fas fa-file-alt"></i>
-          <span v-show="!collapsed">文档管理</span>
-        </router-link>
-        <router-link
-          to="/admin/conversations"
-          class="nav-item"
-          active-class="active"
-          :title="collapsed ? '会话管理' : ''"
-        >
-          <i class="fas fa-comments"></i>
-          <span v-show="!collapsed">会话管理</span>
-        </router-link>
-      </nav>
     </div>
 
     <!-- 底部：用户信息 -->
@@ -327,6 +296,14 @@
           <button class="user-menu-item" @click="handleMenuChangePassword">
             <i class="fas fa-lock"></i>
             <span>修改密码</span>
+          </button>
+          <button
+            v-if="authStore.isAdmin"
+            class="user-menu-item"
+            @click="handleMenuAdmin"
+          >
+            <i class="fas fa-shield-alt"></i>
+            <span>管理后台</span>
           </button>
           <button class="user-menu-item danger" @click="handleMenuLogout">
             <i class="fas fa-sign-out-alt"></i>
@@ -425,6 +402,12 @@ function closeUserMenu() {
 function handleMenuChangePassword() {
   closeUserMenu()
   openChangePasswordDialog()
+}
+
+/** 点击菜单「管理后台」→ 关闭卡片 → 跳转管理后台 */
+function handleMenuAdmin() {
+  closeUserMenu()
+  router.push('/admin')
 }
 
 /** 点击菜单「退出登录」→ 关闭卡片 → 执行退出 */
@@ -979,14 +962,6 @@ async function handleChangePassword() {
 
 /* ===== 知识库导航 ===== */
 .kb-nav {
-  flex-shrink: 0;
-  border-top: 1px solid var(--dm-border-light);
-  margin-top: var(--dm-space-3);
-  padding-top: var(--dm-space-1);
-}
-
-/* ===== 管理导航 ===== */
-.admin-nav {
   flex-shrink: 0;
   border-top: 1px solid var(--dm-border-light);
   margin-top: var(--dm-space-3);

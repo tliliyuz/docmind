@@ -1,5 +1,140 @@
 # DocMind 变更日志
 
+## 2026-06-10 — Sources <mark> 高亮渲染修复（第二轮）
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/chat/MessageItem.vue` | ① **内联样式**：`<mark>` 改用 `style="background:#FFE082;...""` 内联样式，彻底绕过 Vue scoped CSS `:deep()` 对 `v-html` 注入内容的穿透不确定性 ② **双向引用提取**：新增 `extractSnippetAfter()` 回退提取「文字[来源N]」模式（LLM 常将引用标在句末而非句首）③ **空格容错匹配**：`indexOf` → `\s+` 正则搜索，对齐后端 `re.sub(r'\s+', ' ', ...)` ④ CSS `:deep(mark)` 背景色 `#FFFBEB`→`#FFF3B0` 并在内联中覆盖为 `#FFE082`（可见黄色） |
+| `frontend/tests/MessageItem.test.js` | `<mark>` 断言适配内联 style 属性：`toContain('<mark>')` → `toContain('<mark')` |
+
+### 根因分析（追加）
+
+1. **Vue scoped `:deep()` + `v-html` 穿透不可靠**：scoped 样式通过 `data-v-xxx` 属性选择器作用，`v-html` 注入的 DOM 节点不携带该属性。虽然 `:deep()` 理论上将选择器编译为 `.source-content[data-v-xxx] mark`（仅要求父级带属性），但 Vue 3.5 + 特定构建配置下可能不生效 → 改用内联样式彻底消除依赖
+2. **LLM 引用位置多样性**：原代码仅处理 `[来源N]引用文字` 模式，但 DeepSeek/Qwen 经常输出 `引用文字[来源N]` → 新增 `extractSnippetAfter` 回退提取
+3. **空格规范化差异**（首轮已修复，保留）
+
+---
+
+## 2026-06-10 — 测试覆盖审计修复（P0-P2）
+
+### 新增（测试文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/tests/admin.test.js` | Admin API 测试（9 用例：getStats/getKBs/getDocs 参数透传） |
+| `frontend/tests/StatsPage.test.js` | 系统概览页测试（19 用例：加载态/数据渲染/formatNumber/formatStorage/错误态/null 边界） |
+| `frontend/tests/KnowledgeListAdmin.test.js` | 知识库管理页测试（16 用例：列表/空状态/搜索防抖/筛选/分页/编辑弹窗/删除/错误处理） |
+| `frontend/tests/DocumentListAdmin.test.js` | 文档管理页测试（17 用例：列表/搜索/筛选排序/分页/删除含 KB 确认/工具函数） |
+| `frontend/tests/ConversationList.test.js` | 活跃统计占位页测试（17 用例：标题/描述/7 维度卡片/预览表格/表头顺序） |
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/tests/MessageItem.test.js` | 新增 4 用例：U11.6 `<mark>` 高亮渲染（匹配/无匹配/降级 content/HTML 转义）+ 2 用例已追踪（未找到相关信息 sources 显示/隐藏 → C3.54-C3.55） |
+| `docs/TEST_CASES.md` | ① 新增 admin 5 文件 + MessageItem 4 用例追踪条目 ② C4.7-C4.10（Axios 拦截器）→ §6.4.1 独立编号 CT.1-CT.4，修复与 WelcomeScreen C4.7-C4.8 冲突 ③ C3.54-C3.55 追踪未找到相关信息 tests ④ U11.6 标注通过间接覆盖 ⑤ 版本→v0.59，总数→327 |
+| `docs/CHANGE.md` | 本条目 |
+
+### 测试运行
+
+- **20 文件 327 用例全部通过**（+90 用例：admin 页面 69 + admin API 9 + MessageItem 4 新增 + 已追 2 + 原有附加 = 90 净增）
+- 覆盖审计闭环：P0（4 页面）→ P1（API）→ P2（文档追踪）→ P4（U11.6 高亮）
+
+---
+
+## 2026-06-10 — Admin 布局双栏嵌套修复
+
+### 修复
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/App.vue` | Admin 路由不再包裹 `AppLayout`：新增 `isAdminRoute` 计算属性（`route.path.startsWith('/admin')`），`<router-view />` 独立渲染 admin 页面，避免用户侧边栏叠加 |
+| `frontend/src/components/layout/AdminLayout.vue` | `<slot />` → `<router-view />`（Vue Router 子路由渲染必须使用 `router-view`，`slot` 无法接收子组件） |
+| `frontend/tests/AdminLayout.test.js` | 「slot 内容正确渲染」用例改为「内容区包含 router-view 用于渲染子路由」 |
+
+### 根因
+
+`App.vue` 判断 `!$route.meta.public` 对 admin 路由为 `true`，导致 admin 页面被 `AppLayout`（含用户 `Sidebar`）包裹；内部 `AdminLayout` 再渲染 admin 侧边栏，形成**用户侧边栏 + Admin 侧边栏 + 内容**三列布局。同时 `AdminLayout` 用 `<slot />` 而非 `<router-view />` 导致子路由组件无法渲染。
+
+---
+
+## 2026-06-10 — Admin 布局重构（独立布局 + 文档删除 + 活跃统计）
+
+### 新增（文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/components/layout/AdminLayout.vue` | Admin 独立管理后台布局：左侧 220px Admin 专用侧边栏（系统概览/知识库管理/文档管理/活跃统计/返回对话）+ 右侧 header + `<slot />` 渲染子页面 |
+
+### 修改（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/layout/Sidebar.vue` | **移除** admin 导航区块（`admin-nav`）及样式；用户菜单卡片**新增**「管理后台」选项（仅 `isAdmin` 可见，图标 `fa-shield-alt`，位于修改密码和退出登录之间）；新增 `handleMenuAdmin()` 函数跳转 `/admin` |
+| `frontend/src/components/layout/AppLayout.vue` | `pageTitle` 移除 Admin 路由名称（Admin 使用独立 AdminLayout 不再经此渲染） |
+| `frontend/src/router/index.js` | Admin 路由重构为嵌套结构：父路由 `/admin` → `AdminLayout.vue`，子路由 `stats`/`knowledge`/`documents`/`activity`，空路径重定向 `/admin/stats`；移除旧 `/admin/conversations` 路由 |
+| `frontend/src/views/admin/KnowledgeList.vue` | 删除操作新增 `deletingId` loading 状态：按钮 disabled + spinner 图标旋转；`confirmDelete` 中 set/clear `deletingId` |
+| `frontend/src/views/admin/DocumentList.vue` | **新增**「操作」列（fixed right）：删除按钮（`deleteDocument(kb_id, doc_id)`）+ 确认弹窗（显示文件名和所属 KB）+ `deletingId` loading 反馈；新增 `ElMessageBox`/`deleteDocument` 导入 |
+| `frontend/src/views/admin/ConversationList.vue` | 从「会话管理」占位改为「活跃统计」占位：新增统计维度预览（7 维度卡片）+ 数据表格预览（用户/会话数/提问数/Token消耗/最近访问/错误率/KB使用）；图标从 `fa-tools` 改为 `fa-chart-line` |
+
+### 设计决策
+
+| 决策 | 选择 | 原因 |
+|:---|:---|:---|
+| Admin 布局分离 | 独立 `AdminLayout.vue`（220px 侧边栏 + 内容区），用户菜单进入 | 解决 admin 侧边栏与用户会话历史混用问题（问题2/4）；admin 作为普通用户时也能正常查看会话历史 |
+| Admin 文档删除 | Admin 可从管理页直接删除任意用户文档 | 对齐 PRD.md §5.4：admin 拥有管理级 WRITE（违规清理），后端 `_check_kb_ownership` 已放行 |
+| 会话管理 → 活跃统计 | 将 `ConversationList.vue` 改为活跃统计占位页 | 用户反馈：会话管理原始列表对 admin 意义不大，按用户维度统计（会话数/提问数/Token消耗/错误率/KB使用）更有管理价值 |
+| 用户活跃度后端 API | 未实现，仅占位 | 需要新建 `GET /api/admin/users/activity` 端点 + service + schema，建议后续 Phase 单独排期 |
+
+### 文档同步
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/docs/FRONTEND.md` | v0.21→v0.22；§2.1 路由表更新（Admin 嵌套路由 + 新布局说明）；§4.5.3 重写为管理后台入口设计；§7 全部更新（§7.1 入口 → §7.6 布局设计）；TODO 表新增 AdminLayout/Admin Activity 行 + 更新文档删除描述 |
+| `docs/ROADMAP.md` | §7.2.2 子任务从 4 项扩展为 7 项（新增 Admin 独立布局/Sidebar 重构/活跃统计页） |
+| `docs/CHANGE.md` | 本文 |
+
+### 测试结果
+
+- **前端全量测试**：见下方测试执行结果
+
+---
+
+## 2026-06-10 — Phase 5 sources 智能预览前端 + Admin 前端联调
+
+### 新增（文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/api/admin.js` | Admin API 封装：`getAdminStats()` / `getAdminKnowledgeBases()` / `getAdminDocuments()` |
+
+### 修改（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/chat/MessageItem.vue` | Sources 智能预览渲染：优先展示 `preview_text`（后端定位的 ±100 字符上下文窗口），提取 LLM 回答中 `[来源N]` 后的引用片段并在预览文本中 `<mark>` 高亮；降级回退 `content` 前 200 字符。新增 `getSourcePreviewHtml()` / `extractSnippet()` / `escapeHtml()` 辅助函数 |
+| `frontend/src/views/admin/StatsPage.vue` | 对接 `GET /api/admin/stats`：7 项统计卡真实数据 + `formatNumber()` 千分位 / `formatStorage()` 存储格式化 + 快捷管理入口卡片 |
+| `frontend/src/views/admin/KnowledgeList.vue` | 对接 `GET /api/admin/knowledge-bases`：表格 + visibility/status/search 筛选 + 分页 + 编辑 KB 元数据弹窗（名称/描述/visibility）+ 删除确认 |
+| `frontend/src/views/admin/DocumentList.vue` | 对接 `GET /api/admin/documents`：表格 + status/filename/sort_by/order 筛选 + 分页 + KB 名称列 + 上传者列 + 状态标签 |
+| `frontend/src/views/admin/ConversationList.vue` | 占位页面美化（后端接口待后续 Phase 实现） |
+| `frontend/src/views/KnowledgeDetail.vue` | Admin 权限扩展：新增 `canManage` computed（`isOwner \|\| isAdmin`），admin 可查看文档列表 + 删除文档/知识库。编辑 KB 按钮仅 owner 可见。上传区域保持仅 owner 可见（admin 不上传文档）。对齐 PRD.md §5.4 权限分离原则 |
+
+### 设计决策
+
+| 决策 | 选择 | 原因 |
+|:---|:---|:---|
+| 前端高亮算法 | 从 LLM 回答提取 `[来源N]` 后 ≤50 字符 → 在 `preview_text` 中大小写不敏感匹配 → `<mark>` 包裹 | 与后端 `_locate_preview` 提取逻辑一致，零额外 API 调用 |
+| Admin 编辑 KB 按钮 | 仅 `isOwner` 可见（非 `canManage`） | admin 可删除违规 KB + 修正元数据，但编辑按钮隐含「修改归属」语义，保留给 owner |
+| Admin 上传文档 | 禁止 | PRD.md §5.4：admin 拥有管理级 WRITE（删除/修正元数据），但不上传文档 |
+
+### 测试结果
+
+- **前端全量测试**：14 files, 221 passed, 0 failed
+
+---
+
 ## 2026-06-10 — Phase 5 测试用例编写（sources 智能预览 + Admin）
 
 ### 新增（文件）
