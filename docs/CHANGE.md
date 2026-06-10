@@ -1,5 +1,39 @@
 # DocMind 变更日志
 
+## 2026-06-10 — Phase 5 意图识别实现
+
+### 新增（文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/rag/intent.py` | 意图识别模块：Intent 枚举（KNOWLEDGE/CASUAL/META）+ classify_intent() LLM 分类器 + _fallback_classify() 正则降级 |
+
+### 修改（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/core/llm.py` | chat_completion() 新增 `max_tokens: int \| None = None` 参数，条件性透传 OpenAI API |
+| `backend/app/core/exceptions.py` | 新增 MetaQuestionException（E4006），携带 conv/is_first_turn 供 META 路径构建 SSE 响应 |
+| `backend/app/services/chat_service.py` | _validate_and_prepare() 集成意图分类（Rewrite 之前）；doc_count 检查移至 KNOWLEDGE 路径内；CASUAL 路径跳过检索；chat() 捕获 MetaQuestionException 返回固定 SSE；新增 _generate_meta_response()；_is_casual_chat() 降级为 fallback |
+
+### 修改（文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/docs/API.md` | 新增 E4006 错误码（元问题，HTTP 200） |
+| `docs/ARCHITECTURE.md` | §5.1.6 实现文件名从 `intent_classifier.py` 更新为 `intent.py` |
+
+### 设计决策
+
+| 决策 | 选择 | 原因 |
+|:---|:---|:---|
+| 文件名 | `intent.py`（复用已有占位文件） | 与已有项目结构对齐 |
+| max_tokens | chat_completion 新增参数 | 通用性强，后续其他场景也可用 |
+| META 路由 | MetaQuestionException 异常中断 | 与 ARCHITECTURE.md 设计一致 |
+| MetaQuestionException 携带 conv | 异常携带业务数据 | 避免对 _validate_and_prepare() 大重构 |
+| META 消息持久化 | 用户消息 + assistant 消息均保存 | 保持消息成对，_load_history() 返回完整对话上下文 |
+| doc_count 检查位置 | 移至 KNOWLEDGE 路径内 | META/CASUAL 问题不需要文档，空 KB 不应阻断 |
+
 ## 2026-06-09 — Phase 5 入场设计补齐（阶段 0）
 
 ### 背景

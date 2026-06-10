@@ -392,9 +392,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `intent_classifier.py` 实现 | `backend/app/rag/intent_classifier.py` — LLM 分类器（3 分类：KNOWLEDGE/CASUAL/META）+ Prompt + 降级回退 `_is_casual_chat()` |
-| ⬜ | `chat_service.py` 集成 | `_validate_and_prepare()` 中（Rewrite 之前）插入分类→路由逻辑；META 直接返回固定响应；CASUAL 跳过检索 |
-| ⬜ | 移除 `_is_casual_chat()` 主逻辑 | 降级为 fallback 保留，分类正常时不再作为主分类逻辑 |
+| ✅ | `intent.py` 实现 | `backend/app/rag/intent.py` — LLM 分类器（3 分类：KNOWLEDGE/CASUAL/META）+ Prompt + 降级回退 `_is_casual_chat()` |
+| ✅ | `chat_service.py` 集成 | `_validate_and_prepare()` 中（Rewrite 之前）插入分类→路由逻辑；META 直接返回固定响应；CASUAL 跳过检索 |
+| ✅ | 移除 `_is_casual_chat()` 主逻辑 | 降级为 fallback 保留，分类正常时不再作为主分类逻辑 |
 
 #### 7.1.2 sources 智能预览（2 子任务）
 

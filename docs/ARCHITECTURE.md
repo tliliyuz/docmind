@@ -809,7 +809,7 @@ LLM 调用（deep_thinking=False, max_tokens=10）
 **实现文件**
 
 ```
-backend/app/rag/intent_classifier.py   ← 新建：classify_intent() + Intent 枚举 + Prompt 常量
+backend/app/rag/intent.py              ← 实现：classify_intent() + Intent 枚举 + Prompt 常量（复用已有占位文件）
 backend/app/services/chat_service.py   ← 修改：_validate_and_prepare() 集成（Rewrite 之前）
 ```
 

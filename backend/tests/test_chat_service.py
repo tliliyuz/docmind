@@ -24,9 +24,11 @@ from app.core.exceptions import (
     ConversationNotFoundException,
     KnowledgeBaseEmptyException,
     KnowledgeBaseNotFoundException,
+    MetaQuestionException,
     PermissionDeniedException,
     RetrievalServiceException,
 )
+from app.rag.intent import Intent
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
 
@@ -180,6 +182,9 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
         mocks['heartbeat'] = stack.enter_context(
             patch("app.services.chat_service.stream_with_heartbeat",
                   side_effect=lambda g, **kw: g))
+        mocks['intent'] = stack.enter_context(
+            patch("app.services.chat_service.classify_intent", new_callable=AsyncMock))
+        mocks['intent'].return_value = Intent.KNOWLEDGE
 
         # 默认行为配置
         mocks['vec'].search = AsyncMock(return_value=retrieval_output)
@@ -423,10 +428,15 @@ class TestChatKBEmpty:
         conv = MagicMock()
         conv.id = 50
         conv.user_id = 1
+        conv.message_count = 0
 
         kb, _, _ = _mock_db_with_conversation(db, conv, doc_count=0)
 
-        with patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g):
+        with patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g), \
+             patch("app.services.chat_service.classify_intent", new_callable=AsyncMock,
+                   return_value=Intent.KNOWLEDGE), \
+             patch("app.services.chat_service.Conversation", return_value=conv), \
+             patch("app.services.chat_service.Message", return_value=MagicMock(id=10, role="user", content="测试问题")):
             with pytest.raises(KnowledgeBaseEmptyException):
                 await chat(
                     db=db, user_id=1, role="user",

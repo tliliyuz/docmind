@@ -26,6 +26,7 @@ from app.core.exceptions import (
     ConversationNotFoundException,
     KnowledgeBaseEmptyException,
     KnowledgeBaseNotFoundException,
+    MetaQuestionException,
     PermissionDeniedException,
     QuestionEmptyException,
     RetrievalServiceException,
@@ -41,6 +42,7 @@ from app.models.user import User
 from app.rag.bm25 import BM25Retriever
 from app.rag.chunker import estimate_tokens
 from app.rag.fusion import rrf_fusion
+from app.rag.intent import Intent, classify_intent
 from app.rag.prompt_builder import build_prompt, PromptBuildResult
 from app.rag.query_rewriter import _needs_rewrite, rewrite_query
 from app.rag.reranker import NoopReranker
@@ -412,6 +414,69 @@ async def _generate_sse_stream(
         })
 
 
+# META 固定回复模板（对齐 ARCHITECTURE.md §5.1.6）
+_META_RESPONSE = (
+    "我是 DocMind，一个企业知识库智能问答助手。\n\n"
+    "我可以帮你：\n"
+    "1. 查询知识库中的文档信息\n"
+    "2. 回答关于公司制度、流程、规范等问题\n"
+    "3. 检索相关文档并提供引用来源\n\n"
+    "请直接向我提问，或选择一个知识库开始问答。"
+)
+
+
+async def _generate_meta_response(
+    db: AsyncSession,
+    conv: Conversation,
+    is_first_turn: bool,
+    question: str,
+) -> AsyncIterator[str]:
+    """META 意图的固定 SSE 响应：不调 LLM，直接返回模板。
+
+    与 _generate_sse_stream 一致：保存 assistant 消息到数据库，
+    保证对话历史完整性（用户消息已在 _validate_and_prepare 中保存）。
+    """
+    yield format_sse_event("meta", {"conversation_id": conv.id, "task_id": str(uuid4())})
+    yield format_sse_event("message", {"delta": _META_RESPONSE})
+
+    # 保存 assistant 消息（对齐主流程，保持消息成对）
+    try:
+        assistant_msg = Message(
+            conversation_id=conv.id,
+            role="assistant",
+            content=_META_RESPONSE,
+            thinking_content=None,
+            token_count=0,
+        )
+        db.add(assistant_msg)
+        conv.message_count += 1
+        conv.updated_at = datetime.now(timezone.utc)
+
+        title = None
+        if is_first_turn:
+            title = _generate_title(question)
+            conv.title = title
+
+        await db.commit()
+        await db.refresh(assistant_msg)
+
+        yield format_sse_event("sources", {"chunks": []})
+        yield format_sse_event("finish", {
+            "message_id": assistant_msg.id,
+            "title": title,
+            "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+        })
+    except Exception:
+        logger.exception("META 响应保存失败")
+        await db.rollback()
+        yield format_sse_event("sources", {"chunks": []})
+        yield format_sse_event("finish", {
+            "message_id": 0,
+            "title": None,
+            "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+        })
+
+
 async def _validate_and_prepare(
     db: AsyncSession,
     user_id: int,
@@ -439,17 +504,6 @@ async def _validate_and_prepare(
         raise PermissionDeniedException()
 
     # 检查 KB 是否有可检索文档（含 partial_failed：部分分块可用）
-    doc_count_q = (
-        select(func.count())
-        .select_from(Document)
-        .where(
-            Document.kb_id == kb_id,
-            Document.status.in_(RETRIEVABLE_STATUSES),
-        )
-    )
-    doc_count = (await db.execute(doc_count_q)).scalar()
-    if doc_count == 0:
-        raise KnowledgeBaseEmptyException(kb_id)
 
     # 会话处理 + 历史消息加载
     if conversation_id:
@@ -480,9 +534,18 @@ async def _validate_and_prepare(
     conv.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # 问题重写：仅在检测到歧义时调用 LLM（对齐 ARCHITECTURE.md §5.1.5）
+    # 意图识别（Phase 5，对齐 ARCHITECTURE.md §5.1.6）
+    intent = await classify_intent(question)
+    logger.info("INTENT question=%s intent=%s", question[:50], intent.value)
+
+    if intent == Intent.META:
+        raise MetaQuestionException(question, conv, is_first_turn)
+
+    skip_retrieval = (intent == Intent.CASUAL)
+
+    # 问题重写：仅 KNOWLEDGE 路径触发（对齐 ARCHITECTURE.md §5.1.5）
     _original_question = question
-    if _needs_rewrite(question, history_messages):
+    if not skip_retrieval and _needs_rewrite(question, history_messages):
         question = await rewrite_query(question, history_messages)
         logger.info(
             "QUERY_REWRITE original=%s rewritten=%s triggered=True",
@@ -494,9 +557,9 @@ async def _validate_and_prepare(
             _original_question[:100],
         )
 
-    # 闲谈检测：跳过检索，直接使用无上下文 Prompt（仍注入历史，对齐设计决策）
-    if _is_casual_chat(question):
-        logger.info("检测到闲谈输入，跳过检索: %s", question[:30])
+    if skip_retrieval:
+        # CASUAL 路径：跳过检索，直接使用无上下文 Prompt（仍注入历史，对齐设计决策）
+        logger.info("检测到闲谈意图，跳过检索: %s", question[:30])
         reranked_output = RetrievalOutput()
         prompt_result = PromptBuildResult(
             system_prompt=CASUAL_SYSTEM_PROMPT,
@@ -507,6 +570,19 @@ async def _validate_and_prepare(
             history_messages=history_messages,
         )
     else:
+        # KNOWLEDGE 路径：检查 KB 是否有可检索文档
+        doc_count_q = (
+            select(func.count())
+            .select_from(Document)
+            .where(
+                Document.kb_id == kb_id,
+                Document.status.in_(RETRIEVABLE_STATUSES),
+            )
+        )
+        doc_count = (await db.execute(doc_count_q)).scalar()
+        if doc_count == 0:
+            raise KnowledgeBaseEmptyException(kb_id)
+
         # 多路检索（失败包装为 E4003）
         try:
             vector_output = await _vector_retriever.search(question, kb_id)
@@ -547,10 +623,24 @@ async def chat(
     - LLM 流式输出通过 SSE 事件推送
     - LLM 失败时先发 sources 再发 error
     """
-    conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
-        db=db, user_id=user_id, role=role,
-        conversation_id=conversation_id, kb_id=kb_id, question=question,
-    )
+    try:
+        conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
+            db=db, user_id=user_id, role=role,
+            conversation_id=conversation_id, kb_id=kb_id, question=question,
+        )
+    except MetaQuestionException as e:
+        # 元问题：不调 LLM，直接返回固定模板 SSE 响应
+        # 用户消息已保存，_generate_meta_response 会保存 assistant 消息保持成对
+        return StreamingResponse(
+            stream_with_heartbeat(_generate_meta_response(
+                db=db, conv=e.conv, is_first_turn=e.is_first_turn, question=question,
+            )),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
 
     task_id = str(uuid4())
 

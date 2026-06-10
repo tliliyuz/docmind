@@ -138,6 +138,22 @@ class QuestionEmptyException(AppException):
         super().__init__("E4005", "问题内容为空", 400, "question 字段不能为空")
 
 
+class MetaQuestionException(AppException):
+    """元问题异常：用户询问助手能力等 META 类问题，无需检索。
+
+    携带 conv 和 is_first_turn 供 chat() 构建 META SSE 响应。
+    """
+
+    def __init__(self, question: str, conv: object, is_first_turn: bool):
+        super().__init__(
+            "E4006", "元问题，无需检索",
+            200,  # 非错误，是正常业务分流
+            question[:100],
+        )
+        self.conv = conv
+        self.is_first_turn = is_first_turn
+
+
 # ==================== 认证错误 E5xxx ====================
 
 class UsernameExistsException(AppException):

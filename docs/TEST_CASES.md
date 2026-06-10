@@ -781,16 +781,16 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U10.1 | 意图-明确知识查询 | `intent_classifier` | question="报销制度是什么？" | 返回 `KNOWLEDGE` | ⬜ | — | Mock LLM |
-| U10.2 | 意图-闲谈问候 | `intent_classifier` | question="你好" | 返回 `CASUAL` | ⬜ | — | — |
-| U10.3 | 意图-闲谈致谢 | `intent_classifier` | question="谢谢" | 返回 `CASUAL` | ⬜ | — | — |
-| U10.4 | 意图-短闲谈 | `intent_classifier` | question="好的" | 返回 `CASUAL` | ⬜ | — | — |
-| U10.5 | 意图-元问题 | `intent_classifier` | question="你能做什么？" | 返回 `META` | ⬜ | — | — |
-| U10.6 | 意图-含代词查询 | `intent_classifier` | question="它需要几个人参加？" | 返回 `KNOWLEDGE` | ⬜ | — | 含代词但不改变分类 |
-| U10.7 | 路由-KNOWLEDGE | `chat_service` | intent = KNOWLEDGE | 触发检索 + RAG 链路（search_results 非空） | ⬜ | — | 集成测试 |
-| U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（search_results=[]），使用 CASUAL_SYSTEM_PROMPT | ⬜ | — | 集成测试 |
-| U10.9 | 降级-LLM 异常 | `intent_classifier` | LLM API 返回 500 | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ⬜ | — | — |
-| U10.10 | 降级-LLM 超时 | `intent_classifier` | LLM 调用超时 | 回退 `_is_casual_chat()` + 日志记录 WARNING | ⬜ | — | — |
+| U10.1 | 意图-明确知识查询 | `intent` | question="报销需要提交哪些材料？" | 返回 `KNOWLEDGE`，验证 deep_thinking=False + max_tokens=10 | ✅ | 2026-06-10 | test_classify_knowledge_policy_question |
+| U10.2 | 意图-闲谈问候 | `intent` | question="你好" | 返回 `CASUAL` | ✅ | 2026-06-10 | test_classify_casual_greeting |
+| U10.3 | 意图-闲谈致谢 | `intent` | question="谢谢你的帮助" | 返回 `CASUAL` | ✅ | 2026-06-10 | test_classify_casual_thanks |
+| U10.4 | 意图-技术规范查询 | `intent` | question="VPN 密码忘了怎么办？" | 返回 `KNOWLEDGE` | ✅ | 2026-06-10 | test_classify_knowledge_technical_question |
+| U10.5 | 意图-元问题 | `intent` | question="你能做什么？" | 返回 `META` | ✅ | 2026-06-10 | test_classify_meta_capability |
+| U10.6 | 意图-支持格式询问 | `intent` | question="支持什么文件格式？" | 返回 `META` | ✅ | 2026-06-10 | test_classify_meta_format_support |
+| U10.7 | 路由-META | `chat_service` | intent = META | 抛出 MetaQuestionException，携带 conv + is_first_turn | ✅ | 2026-06-10 | test_meta_routing_returns_fixed_response |
+| U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（vec/bm25 未调用），使用 CASUAL_SYSTEM_PROMPT | ✅ | 2026-06-10 | test_casual_routing_skips_retrieval |
+| U10.9 | 降级-LLM 异常 | `intent` | LLM API 抛 Exception | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ✅ | 2026-06-10 | test_fallback_on_llm_failure |
+| U10.10 | 降级-无效标签 | `intent` | LLM 返回 "UNKNOWN" | 回退 `_is_casual_chat()` → CASUAL（"你好"命中正则） | ✅ | 2026-06-10 | test_fallback_on_invalid_label |
 
 ### 6.11 Phase 5 sources 智能预览测试用例
 
@@ -898,7 +898,7 @@
 | `api/admin.py` (接口测试) | ≥ 90% | ⬜ | Phase 5：Admin 端点（6 用例，A7.1-A7.6） |
 | `services/admin_service.py` | ≥ 80% | ⬜ | Phase 5：Admin 业务逻辑（A7.1-A7.6 接口测试间接覆盖） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
-| `rag/intent_classifier.py` | ≥ 80% | ⬜ | Phase 5：意图分类器（10 用例，U10.1-U10.10） |
+| `rag/intent.py` | ≥ 80% | ✅ | Phase 5：意图分类器（10 用例，U10.1-U10.10，全部通过） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ⬜ | Phase 5：sources 智能预览（6 用例，U11.1-U11.6） |
 | 性能埋点（检索+LLM） | ≥ 70% | ⬜ | Phase 5：U9.6/U9.7 埋点验证（4 用例，U12.1-U12.4） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |

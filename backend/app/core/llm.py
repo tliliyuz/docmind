@@ -132,6 +132,7 @@ async def chat_completion(
     messages: list[dict[str, str]],
     deep_thinking: bool = False,
     reasoning_effort: str = "high",
+    max_tokens: int | None = None,
 ) -> LLMResult:
     """非流式调用 LLM chat/completions（用于标题生成等场景）。
 
@@ -139,6 +140,7 @@ async def chat_completion(
         messages: OpenAI 格式的消息列表
         deep_thinking: 是否启用深度思考
         reasoning_effort: 推理强度
+        max_tokens: 最大输出 token 数（None 时使用模型默认值）
 
     Returns:
         LLMResult: 包含 content、reasoning_content、token 使用量
@@ -161,6 +163,8 @@ async def chat_completion(
     }
     if deep_thinking:
         request_kwargs["reasoning_effort"] = reasoning_effort
+    if max_tokens is not None:
+        request_kwargs["max_tokens"] = max_tokens
 
     try:
         logger.info(f"调用 LLM (非流式): model={settings.LLM_MODEL}")
