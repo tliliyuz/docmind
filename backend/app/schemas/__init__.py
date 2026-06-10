@@ -1,5 +1,12 @@
 """Pydantic 请求/响应模型"""
 
+from .admin import (  # noqa: F401
+    AdminStatsResponse,
+    AdminKBItem,
+    AdminKBListResponse,
+    AdminDocItem,
+    AdminDocListResponse,
+)
 from .auth import RegisterRequest, LoginRequest, TokenResponse  # noqa: F401
 from .knowledge_base import (  # noqa: F401
     KnowledgeBaseCreate,
@@ -29,4 +36,5 @@ from .chat import (  # noqa: F401
     TokenUsage,
     SelectableKBItem,
     SelectableKBResponse,
+    PreviewRange,
 )

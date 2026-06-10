@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.34 |
-| 最后更新 | 2026-06-09 |
+| 文档版本 | v0.35 |
+| 最后更新 | 2026-06-10 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 设计阶段 — 设计补齐完成，含 sources 智能预览） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览后端 ✅ / Admin 后端 ✅） |
 
 ---
 
@@ -698,7 +698,7 @@ Question → Retrieval → 结果好 → 直接回答
 
 计划 Phase 5 或后续 Phase 实施。
 
-#### 5.1.6 意图识别（Intent Classification）[Planned: Phase 5]
+#### 5.1.6 意图识别（Intent Classification）[Implemented]
 
 **背景**：Phase 3 使用 `_is_casual_chat()` 正则 stopgap（6 类模式：问候/致谢/告别/极短输入等）覆盖高频闲谈场景，跳过检索直接回复。但正则无法区分「知识查询」与「真正的闲聊」——「你能做什么」被误判为知识查询走完整 RAG 链路浪费 token，「最近有什么新政策」被正则误判为闲谈跳过检索。Phase 5 用 LLM 分类替换正则，提升分类准确率。
 
@@ -751,7 +751,7 @@ Q: VPN 密码忘了怎么办？ → KNOWLEDGE
 ```python
 # chat_service._validate_and_prepare() 中，Rewrite 之前插入
 
-from app.rag.intent_classifier import classify_intent, Intent
+from app.rag.intent import classify_intent, Intent
 
 intent = await classify_intent(question)
 
@@ -838,7 +838,7 @@ if not skip_retrieval and _needs_rewrite(question, history_messages):
 | 正则回退的覆盖盲区 | 正则仅覆盖 6 类高频闲谈，新型闲谈模式可能漏判 | 分类 LLM 正常时正则仅作降级兜底；线上观察分类失败率 |
 
 
-#### 5.1.7 sources 智能预览（Chunk Preview）[Planned: Phase 5]
+#### 5.1.7 sources 智能预览（Chunk Preview）[Implemented]
 
 **背景**：当前 `event: sources` 返回完整的 chunk 内容（最长 ~1000 字符）。前端展示时截断为 200 字符摘要——但这 200 字符是从 chunk 开头取的，与 LLM 回答中被引用的具体段落无关。用户点击 [来源N] 看到的可能是 chunk 的前 200 字符，而非 LLM 实际引用位置。Phase 5 实现**精确定位**：在 chunk 内找到 LLM 引用文字的位置，截取该位置前后各 100 字符作为预览窗口，前端高亮渲染。
 

@@ -47,7 +47,7 @@ from app.rag.prompt_builder import build_prompt, PromptBuildResult
 from app.rag.query_rewriter import _needs_rewrite, rewrite_query
 from app.rag.reranker import NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
-from app.schemas.chat import ChatSourceChunk
+from app.schemas.chat import ChatSourceChunk, PreviewRange
 
 logger = logging.getLogger(__name__)
 
@@ -215,23 +215,91 @@ def _extract_citation_indices(text: str) -> set[str]:
     return set(_CITATION_PATTERN.findall(text))
 
 
-def _build_sources(chunks: list, doc_map: dict[int, str]) -> list[ChatSourceChunk]:
+def _fallback_preview(content: str) -> tuple[str, PreviewRange]:
+    """降级预览：返回 chunk 前 200 字符（当前行为）。"""
+    end = min(len(content), 200)
+    return content[:end], PreviewRange(start=0, end=end)
+
+
+def _locate_preview(
+    chunk_content: str, assistant_content: str, chunk_index: int
+) -> tuple[str, PreviewRange]:
+    """在 chunk 内定位 LLM 引用段落，返回预览文本和位置范围。
+
+    对齐 ARCHITECTURE.md §5.1.7 定位算法：
+    1. 从 assistant_content 中提取 [来源N] 后 50 字符作为 snippet
+    2. 在 chunk_content 中做不区分大小写子串匹配
+    3. 匹配成功：窗口中心 ±100 字符
+    4. 匹配失败：降级到 chunk 前 200 字符
+    """
+    try:
+        # 1. 提取 [来源N] 后紧跟的文本片段（最多 50 字符）
+        pattern = re.compile(rf'\[来源{chunk_index}\](.{{1,50}})', re.DOTALL)
+        match = pattern.search(assistant_content)
+        if not match:
+            return _fallback_preview(chunk_content)
+
+        snippet = match.group(1).strip()
+        # 去除可能混入的其他 [来源M] 标记
+        snippet = re.sub(r'\[来源\d+\]', '', snippet).strip()
+        if len(snippet) < 4:
+            return _fallback_preview(chunk_content)
+
+        # 2. 规范化空格后在 chunk 中查找（不区分大小写）
+        norm_content = re.sub(r'\s+', ' ', chunk_content)
+        norm_snippet = re.sub(r'\s+', ' ', snippet)
+        idx = norm_content.lower().find(norm_snippet.lower())
+
+        if idx < 0:
+            return _fallback_preview(chunk_content)
+
+        # 3. 计算 ±100 字符窗口（在原始 content 上操作）
+        center = idx + len(norm_snippet) // 2
+        start = max(0, center - 100)
+        end = min(len(chunk_content), center + 100)
+        preview_text = chunk_content[start:end]
+        return preview_text, PreviewRange(start=start, end=end)
+
+    except Exception:
+        logger.debug("sources 预览定位异常，降级到 chunk 前 200 字符", exc_info=True)
+        return _fallback_preview(chunk_content)
+
+
+def _build_sources(
+    chunks: list,
+    doc_map: dict[int, str],
+    assistant_content: str | None = None,
+) -> list[ChatSourceChunk]:
     """构建 sources 事件的 chunks 列表。
 
-    对齐 API.md §6.1 event: sources：
+    对齐 API.md §6.1 event: sources + ARCHITECTURE.md §5.1.7 sources 智能预览：
     - chunk_index 与 LLM 回答中的 [来源N] 编号一一对应
-    - content 截断至 200 字符
+    - content 保留完整 chunk 内容（向前兼容）
+    - preview_text / preview_range：精确定位 LLM 引用段落（可选）
     - doc_name 从 doc_map 查询
     """
     sources = []
     for i, chunk in enumerate(chunks):
+        chunk_index = i + 1  # 与 LLM Prompt 中 [来源N] 编号一致
+        content = chunk.content if chunk.content else ""
+
+        # 智能预览：仅在有 assistant_content 时执行定位
+        preview_text = None
+        preview_range = None
+        if assistant_content and content:
+            preview_text, preview_range = _locate_preview(
+                content, assistant_content, chunk_index
+            )
+
         sources.append(ChatSourceChunk(
-            chunk_index=i + 1,  # 与 LLM Prompt 中 [来源N] 编号一致
+            chunk_index=chunk_index,
             doc_id=chunk.doc_id,
             doc_name=doc_map.get(chunk.doc_id, ""),
-            content=chunk.content[:200] if chunk.content else "",
+            content=content,
             score=round(chunk.score, 4),
             page=chunk.page,
+            preview_text=preview_text,
+            preview_range=preview_range,
         ))
     return sources
 
@@ -303,7 +371,8 @@ async def _generate_sse_stream(
         # 优先使用 prompt_result.used_chunks（与 [来源N] 编号一致），为空时回退
         _error_chunks = prompt_result.used_chunks or reranked_output.results
         if _error_chunks:
-            sources = _build_sources(_error_chunks, doc_map)
+            # LLM 失败时无 assistant_content，preview 降级为 None
+            sources = _build_sources(_error_chunks, doc_map, assistant_content=None)
             yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
         error_code = "E4002"
@@ -350,6 +419,7 @@ async def _generate_sse_stream(
                 sources = _build_sources(
                     [c for _, c in _cited_with_orig_index],
                     doc_map,
+                    assistant_content=assistant_content,
                 )
                 for j, (orig_idx, _) in enumerate(_cited_with_orig_index):
                     sources[j].chunk_index = orig_idx
@@ -361,7 +431,7 @@ async def _generate_sse_stream(
                 "SOURCES_FALLBACK: LLM 未引用 [来源N]，回退发送全部 used_chunks (%d 个)",
                 len(_send_chunks),
             )
-            sources = _build_sources(_send_chunks, doc_map)
+            sources = _build_sources(_send_chunks, doc_map, assistant_content=assistant_content)
             yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
     # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）

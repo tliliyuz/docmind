@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.56 |
-| 最后更新 | 2026-06-09 |
+| 文档版本 | v0.57 |
+| 最后更新 | 2026-06-10 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 设计阶段 — 用例细化完成：Admin 4→6 / 限流 3→5 / 新增意图识别 10 + sources 预览 6 + 性能埋点 4） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Admin ✅ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -758,14 +758,16 @@
 
 ### 6.8 Phase 5 Admin 测试用例
 
+> 测试文件：`tests/test_admin_service.py`（21 用例）+ `tests/test_admin_api.py`（27 用例），全部通过 ✅。覆盖 service 层统计/KB列表 CRUD/文档列表筛选排序 + API 层权限校验/参数传递/分页校验。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A7.1 | Admin KB 列表 | GET `/api/admin/knowledge-bases` | admin 用户 | 返回全量 KB（含跨用户）+ 分页 + 筛选 | ⬜ | — | Phase 5 |
-| A7.2 | Admin 文档列表 | GET `/api/admin/documents` | admin 用户 | 返回全量文档 + 筛选 | ⬜ | — | Phase 5 |
-| A7.3 | Admin 统计 | GET `/api/admin/stats` | admin 用户 | 返回用户数/KB数/文档数/存储量 | ⬜ | — | Phase 5 |
-| A7.4 | 非 Admin 拒绝 | 全部 Admin 端点 | 普通用户 | 403 | ⬜ | — | Phase 5 |
-| A7.5 | Admin KB 列表-按 visibility 筛选 | GET `/api/admin/knowledge-bases?visibility=private` | 混合 public/private KB | 仅返回 private KB，total 正确 | ⬜ | — | Phase 5 |
-| A7.6 | Admin 文档列表-按 status 筛选 | GET `/api/admin/documents?status=completed` | 混合状态文档 | 仅返回状态为 completed 的文档，分页正确 | ⬜ | — | Phase 5 |
+| A7.1 | Admin KB 列表 | GET `/api/admin/knowledge-bases` | admin 用户 | 返回全量 KB（含跨用户）+ 分页 + 筛选 | ✅ | 2026-06-10 | test_admin_service.py (8 用例) + test_admin_api.py (8 用例) |
+| A7.2 | Admin 文档列表 | GET `/api/admin/documents` | admin 用户 | 返回全量文档 + 筛选 | ✅ | 2026-06-10 | test_admin_service.py (10 用例) + test_admin_api.py (7 用例) |
+| A7.3 | Admin 统计 | GET `/api/admin/stats` | admin 用户 | 返回用户数/KB数/文档数/存储量 | ✅ | 2026-06-10 | test_admin_service.py (3 用例) + test_admin_api.py (3 用例) |
+| A7.4 | 非 Admin 拒绝 | 全部 Admin 端点 | 普通用户 | 403 | ✅ | 2026-06-10 | test_admin_api.py 权限矩阵：3 端点 × 3 角色 = 9 用例（含参数化） |
+| A7.5 | Admin KB 列表-按 visibility 筛选 | GET `/api/admin/knowledge-bases?visibility=private` | 混合 public/private KB | 仅返回 private KB，total 正确 | ✅ | 2026-06-10 | service 层验证 visibility 参数传递 + API 层验证响应正确 |
+| A7.6 | Admin 文档列表-按 status 筛选 | GET `/api/admin/documents?status=completed` | 混合状态文档 | 仅返回状态为 completed 的文档，分页正确 | ✅ | 2026-06-10 | service 层验证 status 参数传递 + API 层验证响应正确 |
 
 ### 6.9 Phase 5 限流测试用例
 
@@ -794,14 +796,16 @@
 
 ### 6.11 Phase 5 sources 智能预览测试用例
 
+> 测试文件：`tests/test_sources_preview.py`（27 用例，全部通过 ✅）+ `tests/test_sse_helpers.py` TestBuildSources（4 用例）。覆盖 `_locate_preview` 精确匹配/降级/短 chunk 边界、`_fallback_preview` 降级、`_build_sources` 集成、ChatSourceChunk/PreviewRange Schema 校验。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U11.1 | 定位-精确匹配 | `_build_sources()` | LLM 回答含「新员工入职流程包括以下步骤」片段，chunk 中精确存在 | `preview_text` 定位到正确位置，`preview_range` 窗口中心在引用文字 | ⬜ | — | 正常路径 |
-| U11.2 | 定位-子串匹配失败降级 | `_build_sources()` | LLM 用自己的话概括，chunk 中不存在该片段 | `preview_text = content[:200]`，`preview_range = {0, 200}` | ⬜ | — | 降级路径 |
-| U11.3 | 定位-短 chunk（<200字符） | `_build_sources()` | chunk.content 仅 80 字符 | `preview_text = content`（完整），`preview_range = {0, len(content)}` | ⬜ | — | 边界 |
-| U11.4 | SSE-sources 含 preview_text | `chat_service` SSE 输出 | 正常问答流程 | `event: sources` 中每条 chunk 含 `preview_text` + `preview_range` 字段 | ⬜ | — | 格式校验 |
-| U11.5 | SSE-sources 向前兼容 | `chat_service` SSE 输出 | 前端仅解析 content 字段 | `content` 字段仍在，旧前端不受影响 | ⬜ | — | 兼容性 |
-| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹 preview_range 范围内的引用片段，黄色背景高亮 | ⬜ | — | 组件测试 |
+| U11.1 | 定位-精确匹配 | `_build_sources()` | LLM 回答含「新员工入职流程包括以下步骤」片段，chunk 中精确存在 | `preview_text` 定位到正确位置，`preview_range` 窗口中心在引用文字 | ✅ | 2026-06-10 | test_sources_preview.py TestLocatePreviewExactMatch (3 用例)：强断言验证窗口中心在 snippet 附近 ±100 字符 |
+| U11.2 | 定位-子串匹配失败降级 | `_build_sources()` | LLM 用自己的话概括，chunk 中不存在该片段 | `preview_text = content[:200]`，`preview_range = {0, 200}` | ✅ | 2026-06-10 | TestLocatePreviewFallback (5 用例)：snippet 不存在/无[来源N]标记/snippet过短/异常降级 |
+| U11.3 | 定位-短 chunk（<200字符） | `_build_sources()` | chunk.content 仅 80 字符 | `preview_text = content`（完整），`preview_range = {0, len(content)}` | ✅ | 2026-06-10 | TestLocatePreviewShortChunk (3 用例)：精确匹配/降级/恰好200字符 |
+| U11.4 | SSE-sources 含 preview_text | `chat_service` SSE 输出 | 正常问答流程 | `event: sources` 中每条 chunk 含 `preview_text` + `preview_range` 字段 | ✅ | 2026-06-10 | TestBuildSourcesPreviewIntegration (6 用例)：字段存在/类型正确/多条独立定位/score精度 |
+| U11.5 | SSE-sources 向前兼容 | `chat_service` SSE 输出 | 前端仅解析 content 字段 | `content` 字段仍在，旧前端不受影响 | ✅ | 2026-06-10 | TestBuildSourcesPreviewIntegration.test_content字段保留完整内容_向前兼容 |
+| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹 preview_range 范围内的引用片段，黄色背景高亮 | ⬜ | — | 前端组件测试，待后续补充 |
 
 ### 6.12 Phase 5 性能埋点验证
 
@@ -895,11 +899,11 @@
 | `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（12 用例） |
 | `services/auth_service.py` (refresh) | ≥ 80% | ✅ | Phase 4.2：Refresh Token 机制（20 用例） |
 | `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
-| `api/admin.py` (接口测试) | ≥ 90% | ⬜ | Phase 5：Admin 端点（6 用例，A7.1-A7.6） |
-| `services/admin_service.py` | ≥ 80% | ⬜ | Phase 5：Admin 业务逻辑（A7.1-A7.6 接口测试间接覆盖） |
+| `api/admin.py` (接口测试) | ≥ 90% | ✅ 100% | Phase 5：Admin 端点（27 用例，A7.1-A7.6，含权限矩阵参数化 9 用例） |
+| `services/admin_service.py` | ≥ 80% | ✅ 100% | Phase 5：Admin 业务逻辑（21 用例：统计 3 + KB 列表 8 + 文档列表 10） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5：意图分类器（10 用例，U10.1-U10.10，全部通过） |
-| `services/chat_service.py` (sources 预览) | ≥ 80% | ⬜ | Phase 5：sources 智能预览（6 用例，U11.1-U11.6） |
+| `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5：sources 智能预览（27 用例，U11.1-U11.5；U11.6 前端待补充） |
 | 性能埋点（检索+LLM） | ≥ 70% | ⬜ | Phase 5：U9.6/U9.7 埋点验证（4 用例，U12.1-U12.4） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |

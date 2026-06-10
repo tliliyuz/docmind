@@ -1,5 +1,59 @@
 # DocMind 变更日志
 
+## 2026-06-10 — Phase 5 测试用例编写（sources 智能预览 + Admin）
+
+### 新增（文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_sources_preview.py` | Sources 智能预览单元测试（27 用例）：`_locate_preview` 精确匹配/降级/短 chunk 边界、`_fallback_preview` 降级、`_build_sources` 集成、ChatSourceChunk/PreviewRange Schema 校验 |
+| `backend/tests/test_admin_service.py` | Admin Service 单元测试（21 用例）：`get_stats`(3) / `list_all_kbs`(8) / `list_all_documents`(10) — 覆盖分页/筛选/排序/组合条件/边界 |
+| `backend/tests/test_admin_api.py` | Admin API 接口测试（27 用例）：统计(3) / KB 列表(8) / 文档列表(7) / 权限矩阵参数化(9) — 覆盖 admin/普通/未认证三种角色 × 3 端点 |
+
+### 修改（文档）
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.56→v0.57；§6.8 Admin 6 用例标记 ✅；§6.11 sources 预览 5 用例标记 ✅（U11.6 前端待补充）；§8 覆盖率表更新 admin/sources_preview 模块状态 |
+
+### 测试结果
+
+- **全量测试**：763 passed, 0 failed
+- **新增用例**：27 (sources_preview) + 21 (admin_service) + 27 (admin_api) = 75 用例
+
+---
+
+## 2026-06-10 — Phase 5 sources 智能预览 + Admin 后端接口
+
+### 新增（文件）
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/schemas/admin.py` | Admin 响应模型：AdminStatsResponse / AdminKBItem / AdminKBListResponse / AdminDocItem / AdminDocListResponse |
+| `backend/app/services/admin_service.py` | Admin 业务逻辑：get_stats() / list_all_kbs() / list_all_documents() |
+
+### 修改（代码）
+
+| 文件 | 变更 |
+|:---|:---|
+| `backend/app/schemas/chat.py` | 新增 PreviewRange 模型；ChatSourceChunk 新增 preview_text / preview_range 字段（ARCHITECTURE.md §5.1.7） |
+| `backend/app/services/chat_service.py` | 新增 _locate_preview() / _fallback_preview() 辅助函数；_build_sources() 新增 assistant_content 参数支持智能预览定位；_generate_sse_stream 中 3 处调用点更新 |
+| `backend/app/dependencies.py` | 新增 require_admin() 依赖注入（检查 role=admin，否则 403 E5005） |
+| `backend/app/api/admin.py` | 填充 3 个 GET 端点：/stats、/knowledge-bases、/documents（对齐 API.md §7） |
+| `backend/app/main.py` | 注册 admin_router |
+| `backend/app/schemas/__init__.py` | 导出 admin schemas + PreviewRange |
+
+### 设计决策
+
+| 决策 | 选择 | 原因 |
+|:---|:---|:---|
+| sources 预览定位算法 | 子串匹配（str.find）+ ±100 字符窗口 | 零额外成本、毫秒级完成；embedding 相似度需额外 API 调用 |
+| content 字段保留完整内容 | content 不再截断，新增 preview_text | 向前兼容旧前端；新前端用 preview_text 展示 |
+| storage_bytes 计算 | SUM(documents.file_size) | 数据库字段即文件大小，无需扫描磁盘目录 |
+| require_admin 独立依赖 | Depends(require_admin) | 统一 admin 校验逻辑，避免每个端点内联 role 检查 |
+
+---
+
 ## 2026-06-10 — Phase 5 意图识别实现
 
 ### 新增（文件）

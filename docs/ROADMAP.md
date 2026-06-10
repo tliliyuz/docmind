@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.39 |
-| 最后更新 | 2026-06-09 |
+| 文档版本 | v0.40 |
+| 最后更新 | 2026-06-10 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 设计阶段 — 任务细化完成） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览后端 ✅ / Admin 后端 ✅ / 前端联调 ⬜ / 限流 ⬜ / 部署 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -400,8 +400,8 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 后端定位逻辑 | `chat_service.py` — `event: sources` 新增 `preview_range: {start, end}` 字段 |
-| ⬜ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染 |
+| ✅ | 后端定位逻辑 | `chat_service.py` — `_locate_preview()` / `_fallback_preview()` 实现；`_build_sources()` 新增 `assistant_content` 参数 + `preview_text` / `preview_range` 字段；`ChatSourceChunk` / `PreviewRange` Schema |
+| ⬜ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染（`<mark>` 标签包裹 `preview_range` 范围） |
 
 ### 7.2 管理后台（简易版）
 
@@ -409,9 +409,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | Admin Pydantic Schema | `backend/app/schemas/admin.py` — `AdminStatsResponse` / `AdminKBListResponse` / `AdminDocListResponse` |
-| ⬜ | Admin Service | `backend/app/services/admin_service.py` — `get_stats()` / `list_all_kbs()` / `list_all_documents()` |
-| ⬜ | Admin API 端点 | `backend/app/api/admin.py` — 3 个 GET 端点 + `require_admin` 依赖注入；`main.py` 注册 router |
+| ✅ | Admin Pydantic Schema | `backend/app/schemas/admin.py` — `AdminStatsResponse` / `AdminKBItem` / `AdminKBListResponse` / `AdminDocItem` / `AdminDocListResponse` |
+| ✅ | Admin Service | `backend/app/services/admin_service.py` — `get_stats()`（7 统计维度）/ `list_all_kbs()`（5 筛选维度 + 分页）/ `list_all_documents()`（5 筛选维度 + 5 排序字段 + 分页） |
+| ✅ | Admin API 端点 | `backend/app/api/admin.py` — GET `/stats` / `/knowledge-bases` / `/documents` + `require_admin` 依赖注入；`main.py` 注册 router |
 
 #### 7.2.2 Admin 前端联调（4 子任务）
 
@@ -459,9 +459,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 测试类型 | 说明 |
 |:---|:---|:---|:---|
-| ⬜ | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 = 10 用例 |
-| ⬜ | sources 智能预览测试 | 单元+组件 | 定位正确性 3 + SSE 格式 2 + 前端渲染 1 = 6 用例 |
-| ⬜ | Admin 接口测试 | 接口测试 | Admin 端点权限校验 + 数据聚合正确性 + 分页筛选（6 用例，A7.1-A7.6） |
+| ✅ | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 = 10 用例（`test_intent.py`），全部通过 |
+| ✅ | sources 智能预览测试 | 单元测试 | 定位正确性 3 + 降级 5 + 短 chunk 边界 3 + SSE 格式 6 + Schema 校验 6 + 集成 4 = 27 用例（`test_sources_preview.py`），全部通过；U11.6 前端渲染待补充 |
+| ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
 | ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
 | ⬜ | 性能埋点验证 | 单元测试 | 检索耗时 1 + LLM 耗时 1 + 日志格式校验 2 = 4 用例 |
 | ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |

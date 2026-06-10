@@ -20,17 +20,28 @@ class ChatRequest(BaseModel):
     deep_thinking: bool = Field(False, description="是否启用深度思考模式")
 
 
+class PreviewRange(BaseModel):
+    """预览窗口在 chunk.content 中的位置范围
+
+    对齐 ARCHITECTURE.md §5.1.7：前端根据此范围在完整 content 中高亮引用片段
+    """
+    start: int = Field(description="预览窗口起始位置（含）")
+    end: int = Field(description="预览窗口结束位置（不含）")
+
+
 class ChatSourceChunk(BaseModel):
     """SSE sources 事件中的单条引用来源
 
-    对齐 API.md §6.1 event: sources
+    对齐 API.md §6.1 event: sources + ARCHITECTURE.md §5.1.7 sources 智能预览
     """
     chunk_index: int = Field(description="来源编号，与 LLM 回答中的 [来源N] 一一对应")
     doc_id: int
     doc_name: str
-    content: str = Field(description="分块文本（截断至 200 字符）")
+    content: str = Field(description="分块文本（完整内容）")
     score: float
     page: int | None = None
+    preview_text: str | None = Field(None, description="定位后的预览文本（200 字符上下文窗口）")
+    preview_range: PreviewRange | None = Field(None, description="预览窗口在 content 中的起止位置")
 
 
 class TokenUsage(BaseModel):
