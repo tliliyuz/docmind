@@ -140,14 +140,16 @@ async def chat_completion(
     deep_thinking: bool = False,
     reasoning_effort: str = "high",
     max_tokens: int | None = None,
+    model: str | None = None,
 ) -> LLMResult:
-    """非流式调用 LLM chat/completions（用于标题生成等场景）。
+    """非流式调用 LLM chat/completions（用于标题生成、意图分类等场景）。
 
     Args:
         messages: OpenAI 格式的消息列表
         deep_thinking: 是否启用深度思考
         reasoning_effort: 推理强度
         max_tokens: 最大输出 token 数（None 时使用模型默认值）
+        model: 模型名称（None 时使用 settings.LLM_FLASH_MODEL，适合轻量任务）
 
     Returns:
         LLMResult: 包含 content、reasoning_content、token 使用量
@@ -157,13 +159,14 @@ async def chat_completion(
         LLMRateLimitExceededException: 限流
     """
     client = _get_llm_client()
+    llm_model = model or settings.LLM_FLASH_MODEL
 
     thinking_type = "enabled" if deep_thinking else "disabled"
     extra_body = {
         "thinking": {"type": thinking_type},
     }
     request_kwargs = {
-        "model": settings.LLM_MODEL,
+        "model": llm_model,
         "messages": messages,
         "stream": False,
         "extra_body": extra_body,
@@ -174,7 +177,7 @@ async def chat_completion(
         request_kwargs["max_tokens"] = max_tokens
 
     try:
-        logger.info(f"调用 LLM (非流式): model={settings.LLM_MODEL}")
+        logger.info(f"调用 LLM (非流式): model={llm_model}")
         t0 = time.perf_counter()
 
         response = await client.chat.completions.create(**request_kwargs)

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.42 |
+| 文档版本 | v0.43 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ⬜ / 限流 ⬜ / 部署 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -406,29 +406,28 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 #### 7.1.3 P0 性能优化（2 子任务）
 
-> **设计文档**：详见 `.claude/plans/001-intent-optimization.md`。
-
 **P0-1：意图识别 — 规则快速通道 + Flash 模型兜底**
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `_is_meta_question()` regex | META 意图规则分类（「你能做什么」「支持什么」等模式） |
-| ⬜ | CASUAL regex 迁入 intent.py | `_CASUAL_PATTERNS` + `_is_casual_chat()` 从 `chat_service.py` 搬到 `intent.py` |
-| ⬜ | `classify_intent()` 重构 | 规则优先 → `_llm_classify()` 兜底（`deepseek-v4-flash`） |
-| ⬜ | `config.py` 新增 `LLM_FLASH_MODEL` | 默认 `deepseek-v4-flash`，同 base_url/api_key |
-| ⬜ | `llm.py` 新增 `model` 参数 | `chat_completion()` 支持指定模型，默认改为 `settings.LLM_FLASH_MODEL`（非流式场景统一用 Flash） |
-| ⬜ | `chat_service.py` 适配 | 删除 `_is_casual_chat`，改为 `from app.rag.intent import _is_casual_chat`；`_generate_title_llm()` 自动受益 |
-| ⬜ | `query_rewriter.py` 验证 | `rewrite_query()` 自动受益于 `chat_completion()` 默认值改为 Flash（无需改代码） |
+| ✅ | `_is_meta_question()` regex | META 意图规则分类（「你能做什么」「支持什么」等模式） |
+| ✅ | CASUAL regex 迁入 intent.py | `_CASUAL_PATTERNS` + `_is_casual_chat()` 从 `chat_service.py` 搬到 `intent.py` |
+| ✅ | `classify_intent()` 重构 | 规则优先 → `_llm_classify()` 兜底（`deepseek-v4-flash`） |
+| ✅ | `config.py` 新增 `LLM_FLASH_MODEL` | 默认 `deepseek-v4-flash`，同 base_url/api_key |
+| ✅ | `llm.py` 新增 `model` 参数 | `chat_completion()` 支持指定模型，默认改为 `settings.LLM_FLASH_MODEL`（非流式场景统一用 Flash） |
+| ✅ | `chat_service.py` 适配 | 删除 `_is_casual_chat`，改为 `from app.rag.intent import _is_casual_chat`；`_generate_title_llm()` 自动受益 |
+| ✅ | `query_rewriter.py` 验证 | `rewrite_query()` 自动受益于 `chat_completion()` 默认值改为 Flash（无需改代码） |
 
 **P0-2：BM25 优化 — async Redis + 进程内缓存**
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `redis_client.py` 新增 `get_async_redis()` | 保留同步客户端（Celery）+ 新增 `redis.asyncio` 异步客户端（FastAPI） |
-| ⬜ | `bm25.py` async Redis | `self._redis.get()` → `await self._async_redis.get()`，修复事件循环阻塞 |
-| ⬜ | `bm25.py` 进程内缓存 | `dict[kb_id] → (BM25Okapi, doc_ids, contents, expire_at)`，TTL=60s |
-| ⬜ | `bm25.py` async `invalidate_bm25_cache()` | 清除 Redis + 进程内缓存，提供同步/异步两个版本 |
-| ⬜ | 调用方适配 | `chat_service.py` async 初始化 / `document_service.py` await 调用 / `tasks.py` 保持同步 |
+| ✅ | `redis_client.py` 新增 `get_async_redis()` | 保留同步客户端（Celery）+ 新增 `ThreadedRedisClient`（Windows 兼容：同步 Redis + `asyncio.to_thread()` 包装） |
+| ✅ | `bm25.py` async Redis | `self._redis.get()` → `await self._async_redis.get()`，修复事件循环阻塞 |
+| ✅ | `bm25.py` 进程内缓存 | `dict[kb_id] → (BM25Okapi, doc_ids, contents, expire_at)`，TTL=60s |
+| ✅ | `bm25.py` async `invalidate_bm25_cache()` | 清除 Redis + 进程内缓存，提供同步/异步两个版本 |
+| ✅ | 调用方适配 | `chat_service.py` async 初始化 / `document_service.py` await 调用 / `tasks.py` 保持同步 |
+| ✅ | Windows 兼容性优化 | `redis.asyncio` 在 Windows 下有超时问题，改用 `ThreadedRedisClient` 包装，代码中保留生产环境原生 `redis.asyncio` 参考实现 |
 
 **预期效果**：
 

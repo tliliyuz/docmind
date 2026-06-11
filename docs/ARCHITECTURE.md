@@ -439,7 +439,9 @@ get_bm25_index(kb_id):
 **设计要点**：
 - **三级缓存**：进程内 dict（TTL=60s）→ Redis（TTL=300s）→ MySQL 懒加载
 - **进程内缓存**：避免 Redis 网络 IO，cache hit 从 ~50ms 降至 <1ms
-- **async Redis**：`redis.asyncio` 替换同步 `redis.Redis`，修复事件循环阻塞（原同步调用导致 ~2.8s 阻塞）
+- **async Redis**：FastAPI 异步接口避免阻塞事件循环（原同步调用导致 ~2.8s 阻塞）
+  - **开发环境（Windows）**：`redis.Redis` 同步客户端 + `asyncio.to_thread()` 线程池包装（`redis.asyncio` 在 Windows 下存在连接超时和稳定性问题）
+  - **生产环境（Linux）**：建议使用原生 `redis.asyncio.Redis` + `ConnectionPool`（连接池复用、预热、健康检查）
 - **Celery 保持同步**：Celery Worker 继续使用同步 `get_redis()`，`invalidate_bm25_cache` 提供同步/异步两个版本
 - **缓存 `tokenized_corpus` 而非 pickle BM25Okapi 实例**：JSON 格式跨版本安全、Redis 友好、可人工排查
 - **BM25Okapi 构造极轻量**（纯 NumPy 计算），真正昂贵的是 IO + jieba 分词

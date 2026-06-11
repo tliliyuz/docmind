@@ -1,6 +1,14 @@
-"""BM25 关键词检索器单元测试 — Mock Redis + DB + jieba 覆盖核心检索逻辑"""
+"""BM25 关键词检索器单元测试 — Mock Redis + DB + jieba 覆盖核心检索逻辑
+
+对齐 .claude/plans/001-intent-optimization.md P0-2 接口变更：
+- invalidate_bm25_cache(kb_id) 同步版本（Celery 使用）
+- invalidate_bm25_cache_async(kb_id) 异步版本（FastAPI 使用）
+- BM25Retriever 接收 async_redis 参数
+- 进程内缓存（TTL=60s）
+"""
 
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import jieba
@@ -12,6 +20,10 @@ from app.rag.bm25 import (
     _build_cache_key,
     _tokenize,
     invalidate_bm25_cache,
+    invalidate_bm25_cache_async,
+    _local_cache,
+    _set_local_cache,
+    _get_local_cache,
 )
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 from app.core.exceptions import RetrievalServiceException
@@ -33,16 +45,16 @@ def _mock_db_rows(chunks=None):
     return mock_result
 
 
-def _mock_redis_client(get_return=None):
-    """构造 mock Redis 客户端"""
-    mock = MagicMock()
-    mock.get.return_value = get_return
-    mock.setex.return_value = True
-    mock.delete.return_value = 1
+def _mock_async_redis(get_return=None):
+    """构造 mock 异步 Redis 客户端"""
+    mock = AsyncMock()
+    mock.get = AsyncMock(return_value=get_return)
+    mock.setex = AsyncMock(return_value=True)
+    mock.delete = AsyncMock(return_value=1)
     return mock
 
 
-def _make_session_context(mock_result):
+def _mock_session_context(mock_result):
     """构造 mock async session context manager（async with self._session_factory() as db）"""
     mock_session = AsyncMock()
     mock_session.execute = AsyncMock(return_value=mock_result)
@@ -54,10 +66,18 @@ def _make_session_context(mock_result):
 
 def _mock_session_factory(mock_result):
     """构造 mock async_sessionmaker：调用后返回 async context manager"""
-    cm = _make_session_context(mock_result)
+    cm = _mock_session_context(mock_result)
     factory = MagicMock()
     factory.return_value = cm
     return factory
+
+
+@pytest.fixture(autouse=True)
+def clear_local_cache():
+    """每个测试前清空进程内缓存"""
+    _local_cache.clear()
+    yield
+    _local_cache.clear()
 
 
 # ==================== 辅助函数测试 ====================
@@ -87,22 +107,71 @@ class TestTokenize:
         assert _tokenize("") == []
 
 
+class TestLocalCache:
+    """进程内缓存测试"""
+
+    def test_设置和获取缓存(self):
+        _set_local_cache(1, None, [(1, 0)], ["内容"])
+        result = _get_local_cache(1)
+        assert result is not None
+        bm25, doc_ids, contents = result
+        assert bm25 is None
+        assert doc_ids == [(1, 0)]
+        assert contents == ["内容"]
+
+    def test_缓存过期(self):
+        _local_cache[1] = (None, [], [], time.time() - 1)  # 已过期
+        result = _get_local_cache(1)
+        assert result is None
+        assert 1 not in _local_cache
+
+    def test_不存在的key返回None(self):
+        assert _get_local_cache(999) is None
+
+
 # ==================== invalidate_bm25_cache ====================
 
 
 class TestInvalidateBM25Cache:
     """缓存失效测试"""
 
-    def test_正常清除(self):
-        redis_client = _mock_redis_client()
-        invalidate_bm25_cache(redis_client, 1)
-        redis_client.delete.assert_called_once_with("bm25_tokens:1")
+    @patch("app.rag.bm25.get_redis")
+    def test_正常清除(self, mock_get_redis):
+        mock_redis = MagicMock()
+        mock_get_redis.return_value = mock_redis
+        invalidate_bm25_cache(1)
+        mock_redis.delete.assert_called_once_with("bm25_tokens:1")
 
-    def test_redis异常不影响调用方(self):
-        redis_client = MagicMock()
-        redis_client.delete.side_effect = Exception("Redis 连接失败")
+    @patch("app.rag.bm25.get_redis")
+    def test_redis异常不影响调用方(self, mock_get_redis):
+        mock_redis = MagicMock()
+        mock_redis.delete.side_effect = Exception("Redis 连接失败")
+        mock_get_redis.return_value = mock_redis
         # 不应抛出异常
-        invalidate_bm25_cache(redis_client, 1)
+        invalidate_bm25_cache(1)
+
+
+class TestInvalidateBM25CacheAsync:
+    """异步缓存失效测试"""
+
+    @pytest.mark.asyncio
+    @patch("app.core.redis_client.get_async_redis")
+    async def test_正常清除(self, mock_get_async_redis):
+        mock_redis = AsyncMock()
+        mock_get_async_redis.return_value = mock_redis
+        _set_local_cache(1, None, [], [])
+        await invalidate_bm25_cache_async(1)
+        mock_redis.delete.assert_called_once_with("bm25_tokens:1")
+        assert 1 not in _local_cache
+
+    @pytest.mark.asyncio
+    @patch("app.core.redis_client.get_async_redis")
+    async def test_redis异常不影响调用方(self, mock_get_async_redis):
+        mock_redis = AsyncMock()
+        mock_redis.delete.side_effect = Exception("Redis 连接失败")
+        mock_get_async_redis.return_value = mock_redis
+        # 不应抛出异常
+        await invalidate_bm25_cache_async(1)
 
 
 # ==================== BM25Retriever.search ====================
@@ -134,10 +203,10 @@ class TestBM25RetrieverSearch:
                 "VPN 配置远程访问",
             ],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("入职", kb_id=1, top_k=3)
 
         assert output.total == 3
@@ -155,22 +224,22 @@ class TestBM25RetrieverSearch:
     @pytest.mark.asyncio
     async def test_空查询返回空结果(self):
         """查询为空时直接返回空结果，不访问 Redis/DB"""
-        redis_client = _mock_redis_client()
+        async_redis = _mock_async_redis()
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("", kb_id=1)
 
         assert output.total == 0
-        redis_client.get.assert_not_called()
+        async_redis.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_空白查询返回空结果(self):
         """查询为纯空白时返回空结果"""
-        redis_client = _mock_redis_client()
+        async_redis = _mock_async_redis()
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("   ", kb_id=1)
 
         assert output.total == 0
@@ -181,19 +250,19 @@ class TestBM25RetrieverSearch:
         """Redis 缓存未命中 → 从 MySQL 加载 → jieba 分词 → 写入 Redis"""
         mock_jieba.side_effect = lambda t: list(t)
 
-        redis_client = _mock_redis_client(get_return=None)  # 缓存未命中
+        async_redis = _mock_async_redis(get_return=None)  # 缓存未命中
         db_rows = _mock_db_rows([
             (1, 0, "测试内容A"),
             (1, 1, "测试内容B"),
         ])
         session_factory = _mock_session_factory(db_rows)
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("测试", kb_id=1, top_k=5)
 
         # 验证 Redis SETEX 被调用（缓存写入）
-        redis_client.setex.assert_called_once()
-        call_args = redis_client.setex.call_args
+        async_redis.setex.assert_called_once()
+        call_args = async_redis.setex.call_args
         assert call_args[0][0] == "bm25_tokens:1"  # key
         assert call_args[0][1] == settings.BM25_CACHE_TTL    # TTL
         # 写入值是 JSON，包含 doc_ids 和 tokens
@@ -201,6 +270,8 @@ class TestBM25RetrieverSearch:
         assert "doc_ids" in cached
         assert "tokens" in cached
         assert "contents" in cached
+        # 验证进程内缓存已写入
+        assert 1 in _local_cache
 
     @pytest.mark.asyncio
     @patch("app.rag.bm25.jieba.lcut")
@@ -213,10 +284,10 @@ class TestBM25RetrieverSearch:
             "tokens": [["测", "试"]],
             "contents": ["测试"],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         await retriever.search("测试", kb_id=1)
 
         # session_factory 不应被调用（不查 MySQL）
@@ -228,17 +299,19 @@ class TestBM25RetrieverSearch:
         """KB 无文档时返回空结果，并缓存空数据"""
         mock_jieba.side_effect = lambda t: list(t)
 
-        redis_client = _mock_redis_client(get_return=None)
+        async_redis = _mock_async_redis(get_return=None)
         db_rows = _mock_db_rows([])  # 空 KB
         session_factory = _mock_session_factory(db_rows)
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("问题", kb_id=99)
 
         assert output.total == 0
         assert output.results == []
         # 验证缓存了空结果（短 TTL）
-        redis_client.setex.assert_called_once()
+        async_redis.setex.assert_called_once()
+        # 验证进程内缓存已写入
+        assert 99 in _local_cache
 
     @pytest.mark.asyncio
     @patch("app.rag.bm25.jieba.lcut")
@@ -246,14 +319,14 @@ class TestBM25RetrieverSearch:
         """Redis 读取失败时降级为直接从 MySQL 加载"""
         mock_jieba.side_effect = lambda t: list(t)
 
-        redis_client = MagicMock()
-        redis_client.get.side_effect = Exception("Redis 连接失败")
-        redis_client.setex.return_value = True
+        async_redis = AsyncMock()
+        async_redis.get = AsyncMock(side_effect=Exception("Redis 连接失败"))
+        async_redis.setex = AsyncMock(return_value=True)
 
         db_rows = _mock_db_rows([(1, 0, "降级测试内容")])
         session_factory = _mock_session_factory(db_rows)
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("降级", kb_id=1, top_k=5)
 
         # 应该仍然返回结果（从 MySQL 加载）
@@ -277,10 +350,10 @@ class TestBM25RetrieverSearch:
             ],
             "contents": ["文档内容一测试", "文档内容二测试", "文档内容三测试", "文档内容四测试", "文档内容五测试"],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("测试", kb_id=1, top_k=2)
 
         assert len(output.results) <= 2
@@ -300,10 +373,10 @@ class TestBM25RetrieverSearch:
             ],
             "contents": ["关键词出现关键词", "无关内容"],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("关键词", kb_id=1, top_k=5)
 
         assert output.total >= 2, f"期望至少 2 条结果，实际 {output.total}"
@@ -313,16 +386,16 @@ class TestBM25RetrieverSearch:
     @pytest.mark.asyncio
     async def test_未认证kb_id类型为int(self):
         """kb_id 应以 int 类型使用（对齐 Decision #21）"""
-        redis_client = _mock_redis_client()
+        async_redis = _mock_async_redis()
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
 
         with patch("app.rag.bm25.jieba.lcut", side_effect=lambda t: list(t)):
             await retriever.search("测试", kb_id=42)
 
         # 验证 Redis GET 使用了正确的 key
-        redis_client.get.assert_called_once_with("bm25_tokens:42")
+        async_redis.get.assert_called_once_with("bm25_tokens:42")
 
     @pytest.mark.asyncio
     @patch("app.rag.bm25.jieba.lcut")
@@ -330,7 +403,7 @@ class TestBM25RetrieverSearch:
         """MySQL 查询异常时应抛出 E4003 检索服务异常"""
         mock_jieba.side_effect = lambda t: list(t)
 
-        redis_client = _mock_redis_client(get_return=None)  # 缓存未命中
+        async_redis = _mock_async_redis(get_return=None)  # 缓存未命中
         # 构造 execute 抛出异常的 session
         cm = AsyncMock()
         mock_session = AsyncMock()
@@ -340,7 +413,7 @@ class TestBM25RetrieverSearch:
         session_factory = MagicMock()
         session_factory.return_value = cm
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         with pytest.raises(RetrievalServiceException):
             await retriever.search("问题", kb_id=1)
 
@@ -355,16 +428,38 @@ class TestBM25RetrieverSearch:
             "tokens": [["完全", "无关", "内容"]],
             "contents": ["完全无关内容"],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("xyz", kb_id=1, top_k=5)
 
         # 无匹配时分数为 0.0（非负），不受阈值过滤
         assert output.total == 1
         assert output.results[0].score == 0.0
         assert isinstance(output.results[0].doc_id, int)
+
+    @pytest.mark.asyncio
+    @patch("app.rag.bm25.jieba.lcut")
+    async def test_进程内缓存命中(self, mock_jieba):
+        """进程内缓存命中时直接返回，不访问 Redis"""
+        mock_jieba.side_effect = lambda t: list(t)
+
+        # 预先设置进程内缓存
+        from rank_bm25 import BM25Okapi
+        tokens = [list("测试内容")]
+        bm25 = BM25Okapi(tokens)
+        _set_local_cache(1, bm25, [(1, 0)], ["测试内容"])
+
+        async_redis = _mock_async_redis()
+        session_factory = _mock_session_factory(_mock_db_rows())
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        output = await retriever.search("测试", kb_id=1)
+
+        # 不应访问 Redis
+        async_redis.get.assert_not_called()
+        assert output.total == 1
 
 
 # ==================== 真实 jieba 分词集成测试 ====================
@@ -389,10 +484,10 @@ class TestBM25RetrieverWithRealJieba:
                 "VPN配置远程访问说明",
             ],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("入职", kb_id=1, top_k=3)
 
         assert output.total > 0
@@ -402,7 +497,7 @@ class TestBM25RetrieverWithRealJieba:
     @pytest.mark.asyncio
     async def test_中文分词检索_缓存未命中时用真实jieba构建索引(self):
         """当缓存未命中时，从 MySQL 加载后用真实 jieba 分词构建 BM25 索引"""
-        redis_client = _mock_redis_client(get_return=None)
+        async_redis = _mock_async_redis(get_return=None)
         db_rows = _mock_db_rows([
             (1, 0, "入职指南欢迎加入公司"),
             (1, 1, "报销制度差旅标准"),
@@ -410,7 +505,7 @@ class TestBM25RetrieverWithRealJieba:
         ])
         session_factory = _mock_session_factory(db_rows)
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("入职 指南", kb_id=1, top_k=3)
 
         assert output.total > 0
@@ -418,11 +513,13 @@ class TestBM25RetrieverWithRealJieba:
         assert output.results[0].score > 0
 
         # 验证缓存写入使用了真实 jieba 分词结果（非逐字拆分）
-        redis_client.setex.assert_called_once()
-        cached = json.loads(redis_client.setex.call_args[0][2])
+        async_redis.setex.assert_called_once()
+        cached = json.loads(async_redis.setex.call_args[0][2])
         # 真实 jieba 分词 "入职指南欢迎加入公司" → 应含多字词（如 "入职", "指南"），非逐字拆分
         first_tokens = cached["tokens"][0]
         assert len(first_tokens) < 10  # 逐字拆分会有 9 个字符，真实分词约 5-6 个词
+        # 验证进程内缓存已写入
+        assert 1 in _local_cache
 
     @pytest.mark.asyncio
     async def test_无关查询分数为零不被过滤(self):
@@ -438,10 +535,10 @@ class TestBM25RetrieverWithRealJieba:
                 "报销制度差旅标准",
             ],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         # 查询词与语料完全无关，分数为 0.0（非负），不被阈值过滤
         output = await retriever.search("量子力学相对论", kb_id=1, top_k=5)
 
@@ -465,10 +562,10 @@ class TestBM25RetrieverWithRealJieba:
                 "公司的报销制度",
             ],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         # "公司" 同时出现在两个文档中，idf 为负
         output = await retriever.search("公司的", kb_id=1, top_k=5)
 
@@ -486,10 +583,10 @@ class TestBM25RetrieverWithRealJieba:
             "tokens": [jieba.lcut("入职指南欢迎加入公司")],
             "contents": ["入职指南欢迎加入公司"],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
 
         # min_score=-999 不过滤
         output_low = await retriever.search("量子力学", kb_id=1, top_k=5, min_score=-999)
@@ -519,10 +616,10 @@ class TestBM25RetrieverWithRealJieba:
                 "绩效考核评估管理办法",
             ],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("制度", kb_id=1, top_k=2)
 
         assert len(output.results) <= 2
@@ -543,10 +640,10 @@ class TestBM25RetrieverWithRealJieba:
                 "VPN账号申请流程指南",
             ],
         }, ensure_ascii=False)
-        redis_client = _mock_redis_client(get_return=cached_data)
+        async_redis = _mock_async_redis(get_return=cached_data)
         session_factory = _mock_session_factory(_mock_db_rows())
 
-        retriever = BM25Retriever(redis_client, session_factory)
+        retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("VPN", kb_id=1, top_k=3)
 
         assert output.total == 3

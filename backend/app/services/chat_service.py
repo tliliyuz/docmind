@@ -33,7 +33,7 @@ from app.core.exceptions import (
     RetrievalServiceException,
 )
 from app.core.llm import chat_completion, stream_chat_completion
-from app.core.redis_client import get_redis
+from app.core.redis_client import get_async_redis
 from app.core.sse import format_sse_event, stream_with_heartbeat
 from app.models.conversation import Conversation
 from app.models.document import Document
@@ -43,7 +43,7 @@ from app.models.user import User
 from app.rag.bm25 import BM25Retriever
 from app.rag.chunker import estimate_tokens
 from app.rag.fusion import rrf_fusion
-from app.rag.intent import Intent, classify_intent
+from app.rag.intent import Intent, classify_intent, _is_casual_chat
 from app.rag.prompt_builder import build_prompt, PromptBuildResult
 from app.rag.query_rewriter import _needs_rewrite, rewrite_query
 from app.rag.reranker import NoopReranker
@@ -55,11 +55,22 @@ logger = logging.getLogger(__name__)
 
 # 模块级单例：检索器和 Reranker（无状态，线程安全）
 _vector_retriever = VectorRetriever()
-_bm25_retriever = BM25Retriever(
-    redis_client=get_redis(),
-    session_factory=async_session,
-)
 _reranker = NoopReranker()
+
+# BM25 检索器懒加载单例（需要异步 Redis 客户端）
+_bm25_retriever: BM25Retriever | None = None
+
+
+async def _get_bm25_retriever() -> BM25Retriever:
+    """获取 BM25 检索器（懒加载单例）"""
+    global _bm25_retriever
+    if _bm25_retriever is None:
+        async_redis = await get_async_redis()
+        _bm25_retriever = BM25Retriever(
+            async_redis=async_redis,
+            session_factory=async_session,
+        )
+    return _bm25_retriever
 
 # 可检索文档状态：文档已入库、分块已写入 ChromaDB、可用于检索
 RETRIEVABLE_STATUSES = ["completed", "success_with_warnings", "partial_failed"]
@@ -73,36 +84,6 @@ CASUAL_SYSTEM_PROMPT = "你是 DocMind，一个企业知识库助手。请友好
 #    有 [来源N] 标注 = LLM 认为自己有价值引用 → sources 应保留
 _NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]
 _CITATION_PATTERN = re.compile(r'\[来源(\d+)\]')
-
-# 闲谈检测模式：问候/致谢/告别等无需检索的输入
-_CASUAL_PATTERNS = [
-    re.compile(r, re.IGNORECASE)
-    for r in [
-        r"^(你好|您好|hi|hello|嗨|hey|halo)[\s！!。.,，~～-]*$",
-        r"^(谢谢|感谢|多谢|thanks|thank|thx)[\s！!。.,，~～-]*$",
-        r"^(在吗|在不在|有人在吗|有人吗)[\s？?！!。.,，]*$",
-        r"^(早上好|下午好|晚上好|早安|午安|晚安|good\s*morning|good\s*afternoon|good\s*evening|good\s*night)[\s！!。.,，]*$",
-        r"^(再见|拜拜|bye|goodbye|see\s*you|88)[\s！!。.,，]*$",
-        r"^(好的|ok|okay|嗯|哦|噢|知道了|了解了|明白了)[\s！!。.,，]*$",
-    ]
-]
-
-
-def _is_casual_chat(question: str) -> bool:
-    """轻量闲谈检测：问候/致谢/告别等无需检索的输入。
-
-    Phase 3 不含完整意图识别模块，此处以规则覆盖高频闲谈场景。
-    完整意图识别（含问题类型判别）排期 Phase 4/5。
-    """
-    cleaned = question.strip()
-    # 极短纯标点/空白（≤1 个非空白字符）
-    if len(cleaned.replace(" ", "")) <= 1:
-        return True
-    for pattern in _CASUAL_PATTERNS:
-        if pattern.match(cleaned):
-            return True
-    return False
-
 
 def _generate_title(question: str) -> str:
     """自动生成会话标题：截取用户问题前 12 字，去除标点。
@@ -662,7 +643,8 @@ async def _validate_and_prepare(
         try:
             vector_output = await _vector_retriever.search(question, kb_id)
             t_vector = time.perf_counter()
-            bm25_output = await _bm25_retriever.search(question, kb_id)
+            bm25_retriever = await _get_bm25_retriever()
+            bm25_output = await bm25_retriever.search(question, kb_id)
             t_bm25 = time.perf_counter()
             fused_output = rrf_fusion(vector_output, bm25_output)
             reranked_output = await _reranker.rerank(question, fused_output)

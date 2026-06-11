@@ -18,6 +18,18 @@
 | MySQL | 8.0+ | 业务数据库，**必须配置 `time_zone='+00:00'`**（连接串已通过 `init_command` 强制执行会话级 UTC），详见 §7 |
 | Redis | 7.0+ | 缓存 + Celery broker |
 
+### 1.1 Redis 客户端说明
+
+| 环境 | 实现方案 | 说明 |
+|:---|:---|:---|
+| **开发（Windows）** | `redis.Redis` 同步客户端 + `asyncio.to_thread()` 线程池包装 | `redis.asyncio` 在 Windows 下存在连接超时和稳定性问题，线程池包装保持异步接口同时避免阻塞事件循环 |
+| **生产（Linux）** | 原生 `redis.asyncio.Redis` + `ConnectionPool` | 连接池复用、预热、健康检查，性能最优 |
+
+| 模块 | 客户端 | 说明 |
+|:---|:---|:---|
+| FastAPI / BM25 | `get_async_redis()` | 异步接口（开发环境是线程池包装，生产环境是原生 async） |
+| Celery Worker | `get_redis()` | 同步接口（Celery 本身是同步多进程架构） |
+
 ---
 
 ## 2. 项目结构

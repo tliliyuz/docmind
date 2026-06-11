@@ -468,7 +468,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
             )
 
         # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
-        invalidate_bm25_cache(get_redis(), kb_id)
+        invalidate_bm25_cache(kb_id)
 
         return {
             "status": final_status.value,
@@ -558,7 +558,7 @@ async def _delete_document_async(doc_id: int) -> dict:
                 logger.info("文档 %d MySQL 记录已物理删除，KB %d 计数已更新", doc_id, kb_id)
 
         # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
-        invalidate_bm25_cache(get_redis(), kb_id)
+        invalidate_bm25_cache(kb_id)
 
         return {"status": "completed", "doc_id": doc_id}
 

@@ -18,6 +18,7 @@ from app.config import settings
 from app.core.chroma_client import init_chroma
 from app.core.exceptions import AppException
 from app.core.logging_config import get_request_id, setup_logging
+from app.core.redis_client import close_async_redis, get_async_redis
 from app.middleware.auth_middleware import AuthMiddleware
 from app.middleware.request_id_middleware import RequestIDMiddleware
 
@@ -28,9 +29,16 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时初始化日志 + ChromaDB + 配置安全检查"""
+    """应用生命周期：启动时初始化日志 + ChromaDB + Redis 预连接 + 配置安全检查"""
     setup_logging(settings.DEBUG)
     init_chroma()
+
+    # Redis 异步客户端预连接（避免首次请求时的 2 秒延迟）
+    try:
+        await get_async_redis()
+        logger.info("Redis 异步客户端预连接成功")
+    except Exception as e:
+        logger.warning("Redis 异步客户端预连接失败（非致命）: %s", e)
 
     # JWT 密钥默认值校验：生产环境使用默认值将拒绝启动
     if settings.JWT_SECRET_KEY == "change-me":
@@ -47,6 +55,13 @@ async def lifespan(app: FastAPI):
 
     logger.info("DocMind 应用启动完成 (DEBUG=%s)", settings.DEBUG)
     yield
+
+    # 优雅关闭 Redis 连接
+    try:
+        await close_async_redis()
+        logger.info("Redis 异步客户端已关闭")
+    except Exception as e:
+        logger.warning("Redis 异步客户端关闭失败: %s", e)
 
 
 app = FastAPI(

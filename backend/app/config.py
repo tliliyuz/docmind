@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # 应用
     APP_NAME: str = "DocMind"
     DEBUG: bool = True
+    ENV: str = "development"  # development / production
 
     # MySQL
     MYSQL_HOST: str = "localhost"
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "https://api.deepseek.com"
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "deepseek-v4-pro"
+    LLM_FLASH_MODEL: str = "deepseek-v4-flash"  # 轻量任务（意图分类/问题改写/标题生成）
 
     # Embedding
     EMBEDDING_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"

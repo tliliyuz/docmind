@@ -1,31 +1,112 @@
 # DocMind 变更日志
 
-## 2026-06-11 — P0 性能优化规划：意图识别 + BM25
+## 2026-06-11 — 开发环境兼容性优化（Redis 异步接口适配 Windows）
 
-### 设计
+### 背景
+在 Windows 开发环境下，发现 `redis.asyncio` 存在连接超时和稳定性问题。为保持代码跨平台一致性，采用「同步 Redis + `asyncio.to_thread()`」提供异步接口，避免阻塞事件循环，同时 FastAPI 调用方 API 完全不变。
 
-| 优化项 | 问题 | 方案 | 预期效果 |
-|:---|:---|:---|:---|
-| 意图识别 | `classify_intent` 每次走 LLM（deepseek-v4-pro），实测 ~5s | 规则优先（<1ms）+ Flash 模型兜底（deepseek-v4-flash，~10% 流量） | META/CASUAL <1ms，模糊问题 ~1-2s |
-| BM25 | `redis_client.py` 使用同步 `redis.Redis`，在 async 上下文中阻塞事件循环（~2.8s） | ① 新增 `get_async_redis()`（redis.asyncio）② 进程内 dict 缓存（TTL=60s） | cache hit ~5ms（进程内）/ ~50ms（Redis） |
+生产环境（Linux）建议使用原生 `redis.asyncio` + `ConnectionPool`，保留连接池复用、预热和优雅关闭机制。
 
-### Flash 模型适用范围
+### 优化方案
 
-`chat_completion()` 默认值从 `settings.LLM_MODEL`（pro）改为 `settings.LLM_FLASH_MODEL`（flash），所有非流式 LLM 调用统一用 Flash 模型：
+| 改动 | 文件 | 说明 |
+|:---|:---|:---|
+| **ThreadedRedisClient** | `backend/app/core/redis_client.py` | 新增包装类：用 `asyncio.to_thread()` 把同步 `redis.Redis` 调用包装为异步接口 |
+| 超时配置 | `backend/app/core/redis_client.py` | `socket_connect_timeout=5.0s` / `socket_timeout=10.0s` |
+| 连接验证 | `backend/app/core/redis_client.py` | 同步客户端创建时立即 `ping()` 验证可用性 |
+| 类型注解 | `backend/app/rag/bm25.py` | 移除硬依赖 `aioredis.Redis`，改为 `Any`（兼容两种实现） |
+| 文档更新 | `docs/ARCHITECTURE.md` / `docs/DEVELOPMENT.md` | 补充开发环境与生产环境的实现差异说明 |
 
-| 场景 | 文件 | 当前模型 | 优化后 |
-|:---|:---|:---|:---|
-| 意图分类 | `intent.py::classify_intent()` | pro | flash |
-| 问题改写 | `query_rewriter.py::rewrite_query()` | pro | flash |
-| 标题生成 | `chat_service.py::_generate_title_llm()` | pro | flash |
-| **RAG 主回复** | `stream_chat_completion()` | pro | **pro（不变）** |
+### 设计权衡
 
-### 文档同步
+| 维度 | 说明 |
+|:---|:---|
+| **Windows 兼容** | ✅ 同步客户端在 Windows 下稳定可靠 |
+| **事件循环** | ✅ 不阻塞（通过 `asyncio.to_thread` 在线程池中执行） |
+| **性能** | ✅ 进程内缓存（L1）依然在，Redis 网络 IO 开销不变 |
+| **API 兼容** | ✅ `get_async_redis()` 返回值签名不变，调用方无需修改 |
+| **并发扩展** | ⚠️ 极高 QPS 时线程池会有额外开销（DocMind 当前 10~50 QPS 完全够用） |
+
+### 新增日志
+```
+SYNC_REDIS: 创建新的同步客户端实例
+SYNC_REDIS: 连接验证成功
+ASYNC_REDIS: 创建新的异步客户端实例（线程池包装）
+ASYNC_REDIS: 客户端创建成功
+BM25_REDIS_GET key=bm25_tokens:95 time=0.002s cached=False
+```
+
+---
+
+## 2026-06-11 — Redis 性能问题诊断与修复（2s 延迟根因解决）
+
+### 问题现象
+- Redis GET 请求耗时 2.041s（从 `BM25_REDIS_GET` 埋点观察）
+- BM25 cache miss 总耗时 2.162s，其中 Redis GET 占 94%
+- 异步化改造已生效（client_type=Redis），但连接延迟过高
+
+### 根因分析
+1. **每次请求新建连接**：`redis.asyncio.from_url()` 每次调用创建新连接池
+2. **连接建立慢**：TCP 握手 + Redis AUTH 每次花费 2s
+3. **无预热**：首次请求时才建立连接
+
+### 修复方案
+
+| 改动 | 文件 | 说明 |
+|:---|:---|:---|
+| 连接池优化 | `backend/app/core/redis_client.py` | 显式创建 `ConnectionPool`，配置 `socket_connect_timeout=1.0s` / `socket_timeout=2.0s` / `health_check_interval=30s` / `max_connections=20` |
+| 连接预热 | `backend/app/core/redis_client.py` | `get_async_redis()` 首次创建时立即调用 `await client.ping()` 建立连接 |
+| 启动时预连接 | `backend/app/main.py` | lifespan 中调用 `await get_async_redis()` 提前建立连接 |
+| 优雅关闭 | `backend/app/core/redis_client.py` | 新增 `close_async_redis()`，lifespan 中调用 |
+| 诊断埋点 | `backend/app/rag/bm25.py` | 新增 `BM25_REDIS_GET` 日志，记录耗时/缓存命中/客户端类型 |
+
+### 新增诊断日志
+```
+BM25_REDIS_GET key=bm25_tokens:95 time=0.005s cached=True client_type=Redis
+ASYNC_REDIS: 创建新的异步客户端实例（含连接池优化）
+ASYNC_REDIS: 连接预热成功
+```
+
+---
+
+## 2026-06-11 — P0 性能优化实施：意图识别 + BM25
+
+### P0-1：意图识别 — 规则快速通道 + Flash 模型兜底
+
+| 改动 | 文件 | 说明 |
+|:---|:---|:---|
+| 新增 `LLM_FLASH_MODEL` | `backend/app/config.py` | 默认值 `deepseek-v4-flash` |
+| `chat_completion()` 新增 `model` 参数 | `backend/app/core/llm.py` | 默认值改为 `settings.LLM_FLASH_MODEL` |
+| 规则快速通道 + Flash 兜底 | `backend/app/rag/intent.py` | 新增 `_is_meta_question()` regex + `_is_casual_chat()` 迁入；`classify_intent()` 重构为规则优先 → LLM 兜底 |
+| 删除 CASUAL regex | `backend/app/services/chat_service.py` | 改为 `from app.rag.intent import _is_casual_chat` |
+| BM25Retriever 懒加载 | `backend/app/services/chat_service.py` | `_bm25_retriever` 改为异步懒加载（需 async redis client） |
+
+### P0-2：BM25 — 异步 Redis + 进程内缓存
+
+| 改动 | 文件 | 说明 |
+|:---|:---|:---|
+| 新增异步 Redis 客户端 | `backend/app/core/redis_client.py` | 新增 `get_async_redis()` (redis.asyncio)，保留同步 `get_redis()` 给 Celery |
+| 异步 Redis + 进程内缓存 | `backend/app/rag/bm25.py` | `BM25Retriever` 改用 `async_redis`；新增 `_local_cache` dict 缓存（TTL=60s）；新增 `invalidate_bm25_cache_async()` |
+| 调用方适配 | `backend/app/services/document_service.py` | `invalidate_bm25_cache` → `await invalidate_bm25_cache_async()` |
+| Celery 保持同步 | `backend/app/ingest/tasks.py` | 使用同步 `invalidate_bm25_cache(kb_id)`（签名不再需要 redis_client 参数） |
+
+### 测试更新
 
 | 文件 | 变更 |
 |:---|:---|
-| `docs/ARCHITECTURE.md` | §5.1.6 意图识别：新增两阶段分类架构；§5.1.1/§6.2/§7.2 BM25：三级缓存 + async Redis；新增 §7.5 LLM 模型选择策略 |
-| `docs/ROADMAP.md` | 新增 §7.1.3 P0 性能优化（P0-1 意图识别 7 项 + P0-2 BM25 5 项）+ 预期效果表补充问题改写/标题生成 |
+| `tests/test_bm25.py` | 全面适配 async Redis 接口 + 进程内缓存测试；新增 `TestLocalCache`、`TestInvalidateBM25CacheAsync` 类 |
+| `tests/test_document_service.py` | mock 路径 `invalidate_bm25_cache` → `invalidate_bm25_cache_async` |
+
+### 预期效果
+
+| 场景 | 优化前 | 优化后 |
+|:---|:---|:---|
+| META "你能做什么" | ~5s pro | <1ms regex |
+| CASUAL "你好" | ~5s pro | <1ms regex |
+| 模糊问题（意图分类） | ~5s pro | ~1-2s flash |
+| 问题改写 | ~3-5s pro | ~1-2s flash |
+| 标题生成 | ~3-5s pro | ~1-2s flash |
+| BM25 cache hit | ~2.8s（同步阻塞） | ~5ms（进程内缓存） |
 
 > 详见 `.claude/plans/001-intent-optimization.md`。
 

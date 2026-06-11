@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.61 |
+| 文档版本 | v0.63 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜ / P0 性能优化 ✅） |
 
 ---
 
@@ -301,27 +301,33 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.10 | BM25-基本检索 | `bm25_retriever.search()` | 中文查询 | `jieba.lcut` 分词 → `BM25Okapi.get_scores()` 返回排序结果 | ✅ | 2026-05-28 | Mock Redis + DB |
-| U7.11 | BM25-返回 doc_id 映射 | `bm25_retriever.search()` | 正常查询 | 通过 `doc_ids` 数组映射 chunk_id → 返回结果含 doc_id | ✅ | 2026-05-28 | — |
-| U7.12 | BM25-空语料 | `BM25Okapi([])` | 知识库无文档 | 初始化不抛异常，`get_scores()` 返回空数组 | ✅ | 2026-05-28 | 返回 None + 空列表 |
-| U7.13 | BM25-jieba 分词中文 | `jieba.lcut()` | 中文文本 | 正确切分中文词组（如 "入职需要开通哪些账号"） | ✅ | 2026-05-29 | Mock + 真实 jieba 双重覆盖 |
-| U7.14 | BM25-结果数量 | `bm25_retriever.search()` | 正常查询 | 返回 top_k=10 结果 | ✅ | 2026-05-28 | top_k 截取验证 |
-| U7.15 | BM25-相关性排序 | `bm25_retriever.search()` | 精确关键词查询 | 包含精确关键词的 chunk 排在前面 | ✅ | 2026-05-29 | 真实 jieba 验证 |
-| U7.16 | BM25-真实分词检索 | `bm25_retriever.search()` | 真实 jieba 分词 + 中文查询 | 相关文档得分更高，精确匹配排第一 | ✅ | 2026-05-29 | `TestBM25RetrieverWithRealJieba` (7 用例) |
-| U7.17 | BM25-min_score 阈值 | `bm25_retriever.search()` | 负分/零分/参数调整 | score < min_score 被过滤，score=0 保留，参数可调 | ✅ | 2026-05-29 | `MIN_BM25_SCORE=-5.0` |
-| U7.18 | BM25-真实分词缓存懒加载 | `bm25_retriever.search()` | 缓存未命中 + 真实 jieba | 从 MySQL 加载后用真实 jieba 分词构建索引并缓存 | ✅ | 2026-05-29 | 验证缓存 tokens 非逐字拆分 |
+| U7.10 | BM25-基本检索 | `bm25_retriever.search()` | 中文查询 | `jieba.lcut` 分词 → `BM25Okapi.get_scores()` 返回排序结果 | ✅ | 2026-06-11 | Mock async Redis + DB（P0-2 接口适配） |
+| U7.11 | BM25-返回 doc_id 映射 | `bm25_retriever.search()` | 正常查询 | 通过 `doc_ids` 数组映射 chunk_id → 返回结果含 doc_id | ✅ | 2026-06-11 | — |
+| U7.12 | BM25-空语料 | `BM25Okapi([])` | 知识库无文档 | 初始化不抛异常，`get_scores()` 返回空数组 | ✅ | 2026-06-11 | 返回 None + 空列表 |
+| U7.13 | BM25-jieba 分词中文 | `jieba.lcut()` | 中文文本 | 正确切分中文词组（如 "入职需要开通哪些账号"） | ✅ | 2026-06-11 | Mock + 真实 jieba 双重覆盖 |
+| U7.14 | BM25-结果数量 | `bm25_retriever.search()` | 正常查询 | 返回 top_k=10 结果 | ✅ | 2026-06-11 | top_k 截取验证 |
+| U7.15 | BM25-相关性排序 | `bm25_retriever.search()` | 精确关键词查询 | 包含精确关键词的 chunk 排在前面 | ✅ | 2026-06-11 | 真实 jieba 验证 |
+| U7.16 | BM25-真实分词检索 | `bm25_retriever.search()` | 真实 jieba 分词 + 中文查询 | 相关文档得分更高，精确匹配排第一 | ✅ | 2026-06-11 | `TestBM25RetrieverWithRealJieba` (7 用例) |
+| U7.17 | BM25-min_score 阈值 | `bm25_retriever.search()` | 负分/零分/参数调整 | score < min_score 被过滤，score=0 保留，参数可调 | ✅ | 2026-06-11 | `MIN_BM25_SCORE=-5.0` |
+| U7.18 | BM25-真实分词缓存懒加载 | `bm25_retriever.search()` | 缓存未命中 + 真实 jieba | 从 MySQL 加载后用真实 jieba 分词构建索引并缓存 | ✅ | 2026-06-11 | 验证缓存 tokens 非逐字拆分 |
+| U7.27 | BM25-进程内缓存命中 | `_get_local_cache()` | 进程内缓存未过期 | 直接返回，不访问 Redis | ✅ | 2026-06-11 | 新增 TestLocalCache + test_进程内缓存命中 |
+| U7.28 | BM25-进程内缓存过期 | `_get_local_cache()` | 进程内缓存已过期 | 返回 None，清空缓存条目 | ✅ | 2026-06-11 | — |
 
 ### 5.3 后端 — BM25 索引缓存测试
 
+> P0-2 优化补充说明：Windows 开发环境下 `redis.asyncio` 有连接超时问题，改用 `ThreadedRedisClient`（同步 Redis + `asyncio.to_thread()` 线程池包装），保持异步接口不变；生产环境（Linux）建议使用原生 `redis.asyncio` + 连接池（代码中保留参考实现）。
+
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U7.20 | 缓存-命中 | `get_bm25_index()` | Redis 有 `bm25_tokens:{kb_id}` | 直接返回 `BM25Okapi(data["tokens"]), data["doc_ids"]` | ✅ | 2026-05-28 | Mock Redis |
-| U7.21 | 缓存-未命中懒加载 | `get_bm25_index()` | Redis 无缓存 | 从 MySQL 读 chunks → jieba 分词 → 写 Redis → 返回 | ✅ | 2026-05-28 | — |
-| U7.22 | 缓存-写入格式正确 | `get_bm25_index()` | 懒加载后写缓存 | Redis 存 `{"doc_ids": [...], "tokens": [[...], ...], "contents": [...]}` JSON | ✅ | 2026-05-28 | — |
-| U7.23 | 缓存-TTL=300s | `get_bm25_index()` | 写缓存 | `SETEX` 带 300s 过期 | ✅ | 2026-05-28 | — |
-| U7.24 | 缓存-文档终态后重建 | Celery task | 文档入库完成 | 触发 `DEL bm25_tokens:{kb_id}` → 下次查询懒加载 | ✅ | 2026-05-28 | 在 ingest task 末尾 |
-| U7.25 | 缓存-文档删除后失效 | Celery task | 文档删除完成 | `DEL bm25_tokens:{kb_id}` | ✅ | 2026-05-28 | — |
+| U7.20 | 缓存-命中 | `_get_bm25_index()` | Redis 有 `bm25_tokens:{kb_id}` | 直接返回 `BM25Okapi(data["tokens"]), data["doc_ids"]` + 回填进程内缓存 | ✅ | 2026-06-11 | Mock async Redis（P0-2 接口适配） |
+| U7.21 | 缓存-未命中懒加载 | `_get_bm25_index()` | Redis 无缓存 | 从 MySQL 读 chunks → jieba 分词 → 写 Redis + 进程内缓存 → 返回 | ✅ | 2026-06-11 | — |
+| U7.22 | 缓存-写入格式正确 | `_get_bm25_index()` | 懒加载后写缓存 | Redis 存 `{"doc_ids": [...], "tokens": [[...], ...], "contents": [...]}` JSON | ✅ | 2026-06-11 | — |
+| U7.23 | 缓存-TTL=300s | `_get_bm25_index()` | 写缓存 | `SETEX` 带 300s 过期 | ✅ | 2026-06-11 | — |
+| U7.24 | 缓存-文档终态后重建 | Celery task | 文档入库完成 | 触发 `DEL bm25_tokens:{kb_id}` → 下次查询懒加载 | ✅ | 2026-06-11 | `invalidate_bm25_cache(kb_id)` 同步版 |
+| U7.25 | 缓存-文档删除后失效 | Celery task | 文档删除完成 | `DEL bm25_tokens:{kb_id}` | ✅ | 2026-06-11 | — |
 | U7.26 | BM25Okapi 实例化性能 | `BM25Okapi(corpus)` | 1000 chunk 语料 | 构造时间 < 50ms（仅 NumPy 计算，不含分词） | ⏭️ | — | 性能测试，可选 |
+| U7.29 | 缓存-异步清除 | `invalidate_bm25_cache_async()` | FastAPI 上下文 | 清除进程内缓存 + Redis 缓存 | ✅ | 2026-06-11 | 新增 TestInvalidateBM25CacheAsync |
+| U7.30 | 缓存-同步清除 | `invalidate_bm25_cache()` | Celery 上下文 | 仅清除 Redis 缓存（进程内缓存由 FastAPI 管理） | ✅ | 2026-06-11 | 新增 TestInvalidateBM25Cache |
 
 ### 5.4 后端 — RRF 融合算法测试
 
@@ -788,18 +794,23 @@
 
 ### 6.10 Phase 5 意图识别测试用例
 
+> P0-1 重构：`classify_intent()` 改为两阶段分类——Stage 1 规则快速通道（<1ms）+ Stage 2 Flash 模型兜底（~10% 流量）。`_is_casual_chat()` 从 `chat_service.py` 迁入 `intent.py`。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U10.1 | 意图-明确知识查询 | `intent` | question="报销需要提交哪些材料？" | 返回 `KNOWLEDGE`，验证 deep_thinking=False + max_tokens=10 | ✅ | 2026-06-10 | test_classify_knowledge_policy_question |
-| U10.2 | 意图-闲谈问候 | `intent` | question="你好" | 返回 `CASUAL` | ✅ | 2026-06-10 | test_classify_casual_greeting |
-| U10.3 | 意图-闲谈致谢 | `intent` | question="谢谢你的帮助" | 返回 `CASUAL` | ✅ | 2026-06-10 | test_classify_casual_thanks |
-| U10.4 | 意图-技术规范查询 | `intent` | question="VPN 密码忘了怎么办？" | 返回 `KNOWLEDGE` | ✅ | 2026-06-10 | test_classify_knowledge_technical_question |
-| U10.5 | 意图-元问题 | `intent` | question="你能做什么？" | 返回 `META` | ✅ | 2026-06-10 | test_classify_meta_capability |
-| U10.6 | 意图-支持格式询问 | `intent` | question="支持什么文件格式？" | 返回 `META` | ✅ | 2026-06-10 | test_classify_meta_format_support |
-| U10.7 | 路由-META | `chat_service` | intent = META | 抛出 MetaQuestionException，携带 conv + is_first_turn | ✅ | 2026-06-10 | test_meta_routing_returns_fixed_response |
-| U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（vec/bm25 未调用），使用 CASUAL_SYSTEM_PROMPT | ✅ | 2026-06-10 | test_casual_routing_skips_retrieval |
-| U10.9 | 降级-LLM 异常 | `intent` | LLM API 抛 Exception | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ✅ | 2026-06-10 | test_fallback_on_llm_failure |
-| U10.10 | 降级-无效标签 | `intent` | LLM 返回 "UNKNOWN" | 回退 `_is_casual_chat()` → CASUAL（"你好"命中正则） | ✅ | 2026-06-10 | test_fallback_on_invalid_label |
+| U10.1 | 意图-明确知识查询 | `intent` | question="报销需要提交哪些材料？" | 规则未命中 → LLM 返回 `KNOWLEDGE`（Flash 模型） | ✅ | 2026-06-11 | test_classify_knowledge_policy_question |
+| U10.2 | 意图-闲谈问候（规则命中） | `intent` | question="你好" | Stage 1 CASUAL regex 命中 → 直接返回 `CASUAL`（<1ms） | ✅ | 2026-06-11 | test_classify_casual_greeting |
+| U10.3 | 意图-闲谈致谢（规则命中） | `intent` | question="谢谢你的帮助" | Stage 1 CASUAL regex 命中 → 直接返回 `CASUAL`（<1ms） | ✅ | 2026-06-11 | test_classify_casual_thanks |
+| U10.4 | 意图-技术规范查询 | `intent` | question="VPN 密码忘了怎么办？" | 规则未命中 → LLM 返回 `KNOWLEDGE`（Flash 模型） | ✅ | 2026-06-11 | test_classify_knowledge_technical_question |
+| U10.5 | 意图-元问题（规则命中） | `intent` | question="你能做什么？" | Stage 1 META regex 命中 → 直接返回 `META`（<1ms） | ✅ | 2026-06-11 | test_classify_meta_capability |
+| U10.6 | 意图-支持格式询问（规则命中） | `intent` | question="支持什么文件格式？" | Stage 1 META regex 命中 → 直接返回 `META`（<1ms） | ✅ | 2026-06-11 | test_classify_meta_format_support |
+| U10.7 | 路由-META | `chat_service` | intent = META | 抛出 MetaQuestionException，携带 conv + is_first_turn | ✅ | 2026-06-11 | test_meta_routing_returns_fixed_response |
+| U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（vec/bm25 未调用），使用 CASUAL_SYSTEM_PROMPT | ✅ | 2026-06-11 | test_casual_routing_skips_retrieval |
+| U10.9 | 降级-LLM 异常 | `intent` | LLM API 抛 Exception | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ✅ | 2026-06-11 | test_fallback_on_llm_failure |
+| U10.10 | 降级-无效标签 | `intent` | LLM 返回 "UNKNOWN" | 回退 `_is_casual_chat()` → CASUAL（"你好"命中正则） | ✅ | 2026-06-11 | test_fallback_on_invalid_label |
+| U10.11 | META regex-能力询问 | `intent._is_meta_question()` | "你能做什么" | 返回 True | ✅ | 2026-06-11 | 新增，规则快速通道验证 |
+| U10.12 | META regex-使用方法 | `intent._is_meta_question()` | "怎么使用" | 返回 True | ✅ | 2026-06-11 | — |
+| U10.13 | CASUAL regex 迁入验证 | `intent._is_casual_chat()` | "你好"/"谢谢"/"再见" | 全部命中 CASUAL regex | ✅ | 2026-06-11 | 从 chat_service.py 迁入 |
 
 ### 6.11 Phase 5 sources Evidence 预览测试用例
 
@@ -907,7 +918,7 @@
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
 | `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`_validate_file`(7) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例） |
-| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3：BM25 检索 + 缓存已覆盖（24 用例，含 7 个真实 jieba 集成测试） |
+| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2：BM25 检索 + 三级缓存（进程内→Redis→MySQL）+ async Redis（31 用例，含 7 个真实 jieba 集成测试 + 进程内缓存 + 异步缓存清除） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
 | `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例） |
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例） |
@@ -925,7 +936,7 @@
 | `services/admin_service.py` | ≥ 80% | ✅ 100% | Phase 5：Admin 业务逻辑（21 用例：统计 3 + KB 列表 8 + 文档列表 10） |
 | 前端 `components/layout/AdminLayout.vue` | ≥ 60% | ✅ 19 通过 | Phase 5：Admin 独立布局（19 用例：渲染结构/路由标题/导航项/返回按钮/slot） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
-| `rag/intent.py` | ≥ 80% | ✅ | Phase 5：意图分类器（10 用例，U10.1-U10.10，全部通过） |
+| `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，U10.1-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；U11.1-U11.6） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，U11.10-U11.15） |
 | 性能埋点（检索+LLM） | ≥ 70% | ⬜ | Phase 5：U9.6/U9.7 埋点验证（4 用例，U12.1-U12.4） |
