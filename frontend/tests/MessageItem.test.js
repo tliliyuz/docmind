@@ -319,41 +319,46 @@ describe('MessageItem', () => {
 
   // ==================== U11.6 getSourcePreviewHtml <mark> 高亮 ====================
 
-  it('preview_text 含匹配片段时渲染 <mark> 高亮', () => {
+  it('highlight_start/end 存在时渲染 <mark> 高亮', () => {
+    const previewText = '根据公司政策，广告投放的主要平台是抖音。建议优先选择该渠道进行推广。'
     const wrapper = getComponent({
       role: 'assistant',
-      content: '根据文档记载，[来源1]广告投放的主要平台是抖音。建议优先选择该渠道进行推广。',
+      content: '根据文档记载，广告投放的主要平台是抖音。',
       sources: [
         {
           doc_id: 1,
           doc_name: '手册.pdf',
           chunk_index: 1,
-          preview_text: '根据公司政策，广告投放的主要平台是抖音。建议优先选择该渠道进行推广。这是当前最优的营销策略。',
+          preview_text: previewText,
+          highlight_start: 7,  // "广告投放的主要平台是抖音" 在 preview_text 中的起始
+          highlight_end: 20,
           content: '完整内容……',
           page: 5,
         },
       ],
       status: 'complete',
     })
-    // 来源面板存在
     expect(wrapper.find('.sources-box').exists()).toBe(true)
-    // 渲染的 HTML 含 <mark> 标签
     const sourceContent = wrapper.find('.source-content')
     expect(sourceContent.exists()).toBe(true)
-    // <mark> 带有内联 style 属性，检查 <mark 即可
+    // 渲染的 HTML 含 <mark> 标签
     expect(sourceContent.html()).toContain('<mark')
+    // 高亮内容精确匹配
+    const highlighted = previewText.slice(7, 20)
+    expect(sourceContent.html()).toContain(highlighted)
   })
 
-  it('preview_text 无匹配片段时纯文本展示（无 <mark>）', () => {
+  it('无 highlight_start/end 时纯文本展示（无 <mark>）', () => {
     const wrapper = getComponent({
       role: 'assistant',
-      content: '根据文档记载，[来源1]完全不同的内容描述。',
+      content: '根据文档记载的内容。',
       sources: [
         {
           doc_id: 1,
           doc_name: '手册.pdf',
           chunk_index: 1,
           preview_text: '广告投放的主要平台是抖音，这是公司政策的明确规定。',
+          // 无 highlight_start / highlight_end
           content: '完整内容……',
           page: 5,
         },
@@ -363,7 +368,6 @@ describe('MessageItem', () => {
     expect(wrapper.find('.sources-box').exists()).toBe(true)
     const sourceContent = wrapper.find('.source-content')
     expect(sourceContent.exists()).toBe(true)
-    // preview_text 仍显示但无 <mark>
     expect(sourceContent.html()).not.toContain('<mark')
     expect(sourceContent.text()).toContain('广告投放的主要平台是抖音')
   })
@@ -371,7 +375,7 @@ describe('MessageItem', () => {
   it('无 preview_text 时降级使用 content 前 200 字符', () => {
     const wrapper = getComponent({
       role: 'assistant',
-      content: '根据文档记载，[来源1]关键信息。',
+      content: '根据文档记载的内容。',
       sources: [
         {
           doc_id: 1,
@@ -387,15 +391,14 @@ describe('MessageItem', () => {
     expect(wrapper.find('.sources-box').exists()).toBe(true)
     const sourceContent = wrapper.find('.source-content')
     expect(sourceContent.exists()).toBe(true)
-    // content 被截断到 200 字符以内
     const text = sourceContent.text()
-    expect(text.length).toBeLessThanOrEqual(220) // 允许少量 HTML 开销
+    expect(text.length).toBeLessThanOrEqual(220)
   })
 
   it('preview_text HTML 特殊字符被转义', () => {
     const wrapper = getComponent({
       role: 'assistant',
-      content: '根据文档记载，[来源1]<script>alert("xss")</script>。',
+      content: '根据文档记载的内容。',
       sources: [
         {
           doc_id: 1,
@@ -410,7 +413,6 @@ describe('MessageItem', () => {
     })
     expect(wrapper.find('.sources-box').exists()).toBe(true)
     const html = wrapper.find('.source-content').html()
-    // 原始 <script> 不应出现在 HTML 中（应被转义为 &lt;script&gt;）
     expect(html).toContain('&lt;script&gt;')
     expect(html).not.toContain('<script>')
   })

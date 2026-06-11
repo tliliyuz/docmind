@@ -225,7 +225,8 @@ def _build_sources(
     对齐 API.md §6.1 event: sources + ARCHITECTURE.md §5.1.7 Evidence Highlight：
     - chunk_index 与 LLM 回答中的 [来源N] 编号一一对应
     - content 保留完整 chunk 内容（向前兼容）
-    - preview_text / preview_range：Evidence 定位（matched_sentence ±100 字符窗口）
+    - preview_text：Evidence 定位（matched_sentence ±100 字符窗口）
+    - highlight_start / highlight_end：证据句在 preview_text 内的偏移，前端纯渲染
     - doc_name 从 doc_map 查询
     """
     sources = []
@@ -237,6 +238,8 @@ def _build_sources(
         # 保证是 chunk 子串，find() 必然命中
         preview_text = None
         preview_range = None
+        highlight_start = None
+        highlight_end = None
         matched = getattr(chunk, 'matched_sentence', None)
         if matched and content:
             idx = content.find(matched)
@@ -245,6 +248,15 @@ def _build_sources(
             end = min(len(content), center + 100)
             preview_text = content[start:end]
             preview_range = PreviewRange(start=start, end=end)
+            # 高亮区间：matched_sentence 在 preview_text 内的偏移
+            hl_start = idx - start
+            hl_end = hl_start + len(matched)
+            # 边界裁剪（窗口未完全覆盖句子时）
+            hl_start = max(0, hl_start)
+            hl_end = min(len(preview_text), hl_end)
+            if hl_start < hl_end:
+                highlight_start = hl_start
+                highlight_end = hl_end
 
         sources.append(ChatSourceChunk(
             chunk_index=chunk_index,
@@ -255,6 +267,8 @@ def _build_sources(
             page=chunk.page,
             preview_text=preview_text,
             preview_range=preview_range,
+            highlight_start=highlight_start,
+            highlight_end=highlight_end,
         ))
     return sources
 

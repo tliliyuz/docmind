@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.60 |
+| 文档版本 | v0.61 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜） |
@@ -812,9 +812,9 @@
 | U11.1 | Evidence定位-精确匹配 | `match_sentences()` + `_build_sources()` | question「入职申请表提交」→ 句级 BM25 定位最佳句 | `matched_sentence` 含「入职申请表」，`preview_text` 以该句为中心 ±100 窗口 | ✅ | 2026-06-11 | TestEvidencePreviewIntegration (3 用例)：强断言验证窗口中心在证据句附近 |
 | U11.2 | Evidence定位-无匹配降级 | `_build_sources()` | chunk 无 `matched_sentence` | `preview_text = None`, `preview_range = None`（前端自行降级取 content 前 200 字符） | ✅ | 2026-06-11 | TestEvidencePreviewFallback (3 用例)：无 matched_sentence / 空 content / 两者皆空 |
 | U11.3 | Evidence定位-短 chunk（<200字符） | `match_sentences()` + `_build_sources()` | chunk.content 仅 ~20 字符 | `preview_text` 在 chunk 中，`preview_range` 范围有效 | ✅ | 2026-06-11 | TestEvidencePreviewShortChunk (2 用例)：短 chunk 证据句定位 + 恰好 200 字符 |
-| U11.4 | SSE-sources 含 preview_text | `_build_sources()` | 正常 Evidence 定位后构建 sources | `preview_text` / `preview_range` 字段存在且类型正确（str / PreviewRange int） | ✅ | 2026-06-11 | TestBuildSourcesFormat (3 用例)：字段类型/向前兼容/score 精度 |
+| U11.4 | SSE-sources 含 preview_text + highlight | `_build_sources()` | 正常 Evidence 定位后构建 sources | `preview_text` / `preview_range` / `highlight_start` / `highlight_end` 字段存在且类型正确（str / PreviewRange / int / int） | ✅ | 2026-06-11 | TestBuildSourcesFormat + TestHighlightRange（6 用例）：字段类型/向前兼容/score 精度/highlight 精确覆盖/boundary |
 | U11.5 | SSE-sources 向前兼容 | `_build_sources()` | content 字段保留完整 | `content` 字段仍在且完整，旧前端不受影响 | ✅ | 2026-06-11 | TestBuildSourcesFormat.test_content字段保留完整内容_向前兼容 |
-| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹引用片段，黄色背景高亮 | ✅ | 2026-06-10 | `getSourcePreviewHtml()` 通过 C3.54/C3.55 间接覆盖（sources panel 显示逻辑）；前端零改动 |
+| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 highlight_start/end 的 chunk | `getSourcePreviewHtml(src)` 纯 slice 渲染：`slice(0, s) + <mark> + slice(s, e) + </mark> + slice(e)` | ✅ | 2026-06-11 | `getSourcePreviewHtml()` 基于 `highlight_start/end` 纯切片渲染；旧 snippet 体系（extractSnippet 等 5 函数 ~80 行）已删除 |
 
 ### 6.12 Phase 5.5 句级 Evidence 定位（sentence_matcher）测试用例
 

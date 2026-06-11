@@ -73,7 +73,7 @@
             <div
               v-if="src.preview_text || src.content"
               class="source-content"
-              v-html="getSourcePreviewHtml(src, msg.content)"
+              v-html="getSourcePreviewHtml(src)"
             ></div>
             <div v-else class="source-content placeholder">（无法获取片段内容）</div>
           </div>
@@ -158,6 +158,7 @@ const isAnswerNotFound = computed(() => {
 
 // ==================== Sources 智能预览 ====================
 // 对齐 ARCHITECTURE.md §5.1.7 前端渲染规格
+// Evidence Highlight：后端计算 highlight_start/end，前端纯切片渲染
 
 /** HTML 转义（防 XSS，v-html 渲染前对用户可控文本转义） */
 function escapeHtml(text) {
@@ -166,138 +167,34 @@ function escapeHtml(text) {
 }
 
 /**
- * 从 LLM 回答中提取 [来源N] 后的引用片段（对齐后端 _locate_preview 逻辑）
- * @param {number} chunkIndex — 来源编号
- * @param {string} assistantContent — LLM 完整回答
- * @returns {string|null} — 提取到的搜索片段（≤50 字符），失败返回 null
- */
-function extractSnippet(chunkIndex, assistantContent) {
-  const pattern = new RegExp(`\\[来源${chunkIndex}\\]([^\\[]*)`)
-  const match = pattern.exec(assistantContent)
-  if (!match) return null
-
-  let snippet = match[1].trim()
-  // 去除可能混入的其他 [来源M] 标记（对齐后端 re.sub(r'\[来源\d+\]', '', snippet)）
-  snippet = snippet.replace(/\[来源\d+\]/g, '').trim()
-  if (snippet.length < 4) return null
-
-  // 跳过开头的标点符号
-  snippet = snippet.replace(/^[，,。！？\s]+/, '')
-  // 截取前 50 字符作为搜索关键词
-  snippet = snippet.slice(0, 50)
-  // 清理尾部不完整的词/标点
-  snippet = snippet.replace(/[，,。！？\s]+$/, '')
-
-  return snippet.length >= 3 ? snippet : null
-}
-
-/**
- * 空白字符规范化：将所有连续空白（空格/换行/制表符等）替换为单个空格。
- * 对齐后端 _locate_preview 的 re.sub(r'\s+', ' ', ...) 逻辑。
- */
-function normalizeWhitespace(text) {
-  return text.replace(/\s+/g, ' ')
-}
-
-/**
- * 构建原始文本 → 规范化文本的字符位置映射。
- * normPosMap[normalizedIdx] = originalIdx
- * 用于在规范化匹配成功后回溯到原始文本位置。
- */
-function buildNormPosMap(original) {
-  const map = []
-  for (let i = 0; i < original.length; i++) {
-    if (/\s/.test(original[i])) {
-      // 连续空白只映射第一个字符到规范化位置
-      if (i === 0 || !/\s/.test(original[i - 1])) {
-        map.push(i)
-      }
-    } else {
-      map.push(i)
-    }
-  }
-  return map
-}
-
-/** 判断是否为规范化空白序列的起始位置（非空白 或 连续空白的首个） */
-function isNormCharStart(original, pos) {
-  return !/\s/.test(original[pos]) || pos === 0 || !/\s/.test(original[pos - 1])
-}
-
-/**
  * 生成来源预览 HTML（含 <mark> 高亮）
- * 优先使用 preview_text（后端定位的 ±100 字符上下文窗口），
- * 降级使用 content 前 200 字符。
  *
- * 匹配策略：规范化空白字符后匹配（对齐后端 _locate_preview 的 re.sub(r'\s+', ' ', ...)），
- * 解决 LLM 回答含 \n 而 chunk 原始文本含空格的不一致问题。
+ * 后端已通过 BM25 句级定位计算 highlight_start / highlight_end，
+ * 前端纯切片渲染，不做任何匹配逻辑。
  *
- * @param {Object} src — 来源 chunk 对象
- * @param {string} assistantContent — LLM 完整回答（用于提取引用片段）
+ * @param {Object} src — 来源 chunk 对象（含 preview_text / highlight_start / highlight_end）
  * @returns {string} — 转义后的 HTML 字符串
  */
-function getSourcePreviewHtml(src, assistantContent) {
-  // 1. 确定展示文本：优先 preview_text，降级 content 前 200 字符
+function getSourcePreviewHtml(src) {
   const displayText = src.preview_text || (src.content || '').slice(0, 200)
-
   if (!displayText) return ''
 
-  // 2. 尝试提取 LLM 引用片段并在展示文本中定位
-  //    同时尝试两种模式：A) [来源N]后跟文字 B) 文字后跟[来源N]
-  if (src.preview_text && assistantContent) {
-    let snippet = extractSnippet(src.chunk_index, assistantContent)
-    if (!snippet) {
-      // 回退：尝试匹配「文字[来源N]」模式（LLM 将引用标在句末）
-      snippet = extractSnippetAfter(src.chunk_index, assistantContent)
-    }
-    if (snippet) {
-      // 规范化空白后匹配（对齐后端 _locate_preview 的 re.sub(r'\s+', ' ', ...)）
-      // LLM 回答中 snippet 含 \n，chunk 原始文本含空格，需统一处理
-      const normSnippet = normalizeWhitespace(snippet).toLowerCase()
-      const normDisplay = normalizeWhitespace(displayText).toLowerCase()
+  const markStyle = 'background:#FFE082;color:#1A1A1A;padding:1px 3px;border-radius:2px;box-decoration-break:clone'
 
-      const normIdx = normDisplay.indexOf(normSnippet)
-      if (normIdx >= 0) {
-        // 规范化匹配成功 → 回溯到原始文本位置
-        const posMap = buildNormPosMap(displayText)
-        const origStart = posMap[normIdx]
-        // 计算原始文本中的结束位置：规范化 snippet 长度对应的原始范围
-        let origEnd = origStart
-        let normCount = 0
-        for (let i = origStart; i < displayText.length && normCount < normSnippet.length; i++) {
-          if (isNormCharStart(displayText, i)) {
-            normCount++
-          }
-          origEnd = i + 1
-        }
-
-        const before = escapeHtml(displayText.slice(0, origStart))
-        const matched = escapeHtml(displayText.slice(origStart, origEnd))
-        const after = escapeHtml(displayText.slice(origEnd))
-        // 使用内联样式确保黄色高亮在任何 CSS 环境下可见
-        const markStyle = 'background:#FFE082;color:#1A1A1A;padding:1px 3px;border-radius:2px;box-decoration-break:clone'
-        return `${before}<mark style="${markStyle}">${matched}</mark>${after}`
-      }
+  // 后端已计算高亮区间，直接切片渲染
+  if (src.preview_text && src.highlight_start != null && src.highlight_end != null) {
+    const s = Math.max(0, src.highlight_start)
+    const e = Math.min(displayText.length, src.highlight_end)
+    if (s < e) {
+      const before = escapeHtml(displayText.slice(0, s))
+      const matched = escapeHtml(displayText.slice(s, e))
+      const after = escapeHtml(displayText.slice(e))
+      return `${before}<mark style="${markStyle}">${matched}</mark>${after}`
     }
   }
 
-  // 3. 无匹配或降级场景：纯文本展示
+  // 无高亮区间：纯文本展示
   return escapeHtml(displayText)
-}
-
-/**
- * 回退提取：「文字[来源N]」模式 — LLM 将引用标在引用句末尾
- * 取 [来源N] 前 50 字符作为搜索片段
- */
-function extractSnippetAfter(chunkIndex, assistantContent) {
-  const pattern = new RegExp(`(.{1,50})\\[来源${chunkIndex}\\]`)
-  const match = pattern.exec(assistantContent)
-  if (!match) return null
-
-  let snippet = match[1].trim()
-  snippet = snippet.replace(/^[，,。！？\s]+/, '')
-  snippet = snippet.replace(/[，,。！？\s]+$/, '')
-  return snippet.length >= 3 ? snippet : null
 }
 </script>
 

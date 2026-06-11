@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.37 |
+| 文档版本 | v0.38 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin 后端 ✅） |
@@ -924,9 +924,9 @@ def match_sentences(output: RetrievalOutput, question: str) -> RetrievalOutput:
 
 ---
 
-**SSE sources 事件格式（向前兼容）**
+**SSE sources 事件格式**
 
-Phase 5.5 **不改变** SSE sources 事件的 JSON 格式——`preview_text` / `preview_range` 字段保留，语义从「LLM 引用定位」变为「Evidence 定位」：
+Phase 5.5 新增 `highlight_start` / `highlight_end` 字段，前端纯切片渲染，不再做 indexOf 匹配：
 
 ```json
 {
@@ -936,30 +936,43 @@ Phase 5.5 **不改变** SSE sources 事件的 JSON 格式——`preview_text` / 
     "page": 3,
     "content": "新员工入职流程包括以下步骤：第一步，填写个人...",
     "preview_text": "入职流程包括以下步骤：第一步，填写个人信息表并提交身份证复印件...",
-    "preview_range": {"start": 5, "end": 205}
+    "preview_range": {"start": 5, "end": 205},
+    "highlight_start": 14,
+    "highlight_end": 38
   }]
 }
 ```
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| `preview_text` | string | Evidence 定位后的预览文本（以 `matched_sentence` 为中心的 ±100 字符窗口） |
+| `preview_text` | string \| null | Evidence 定位后的预览文本（以 `matched_sentence` 为中心的 ±100 字符窗口） |
 | `preview_range.start` | int | 预览窗口在 chunk.content 中的起始位置 |
 | `preview_range.end` | int | 预览窗口在 chunk.content 中的结束位置 |
+| `highlight_start` | int \| null | 高亮区间在 preview_text 内的起始偏移（含），前端 `slice(0, start)` 切片 |
+| `highlight_end` | int \| null | 高亮区间在 preview_text 内的结束偏移（不含），前端 `slice(start, end)` 切片 |
 
-> **兼容性约束**：`content` 字段保留（完整 chunk 内容）。旧版前端不解析 `preview_text` / `preview_range` 时仍可展示 `content` 截断，完全向前兼容。
+> **兼容性约束**：`content` 字段保留（完整 chunk 内容）。旧版前端不解析 `preview_text` / `highlight_start` / `highlight_end` 时仍可展示 `content` 截断，完全向前兼容。
 
 ---
 
-**前端渲染规格（零改动）**
+**前端渲染规格（纯切片渲染）**
 
-前端 `MessageItem.vue` 继续使用 `src.preview_text` 展示预览，与旧行为完全一致。前端侧的 snippet 提取逻辑（`extractSnippet()` / `extractSnippetAfter()` 等函数）可保留或后续清理——它们是对后端旧 `_locate_preview` 逻辑的前端复刻，现在两端都不再需要。
+前端 `MessageItem.vue` 的 `getSourcePreviewHtml(src)` 基于后端提供的 `highlight_start` / `highlight_end` 做纯切片渲染，**零匹配逻辑**。旧 snippet 体系（`extractSnippet()` / `extractSnippetAfter()` / `normalizeWhitespace()` / `buildNormPosMap()` / `isNormCharStart()` 共 ~80 行）已全部删除。
+
+```
+getSourcePreviewHtml(src):
+  displayText = src.preview_text || src.content.slice(0, 200)
+  if highlight_start/end 存在:
+    → escapeHtml(slice(0, start)) + <mark> + escapeHtml(slice(start, end)) + </mark> + escapeHtml(slice(end))
+  else:
+    → escapeHtml(displayText)
+```
 
 | 要素 | 行为 |
 |:---|:---|
 | 默认展示 | 显示 `preview_text`（Evidence 定位后的智能预览） |
 | 降级展示 | `preview_text` 为 None 时前端自行取 `content` 前 200 字符 |
-| 高亮范围 | `preview_range` 内的引用片段用 `<mark>` 标签包裹（黄色背景高亮） |
+| 高亮渲染 | 后端 `highlight_start/end` → 前端 `slice` 切片 + `<mark>` 包裹（黄色背景），零 indexOf/normalize |
 | 引用编号 | `[来源N]` 编号保持不变，LLM Prompt 和 sources 事件中的编号一一对应 |
 
 ---

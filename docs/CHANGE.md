@@ -1,6 +1,6 @@
 # DocMind 变更日志
 
-## 2026-06-11 — Evidence Highlight：句级 BM25 定位重构
+## 2026-06-11 — Evidence Highlight：句级 BM25 定位重构 + highlight_start/end 纯渲染
 
 ### 修改
 
@@ -8,21 +8,21 @@
 |:---|:---|:---|
 | 新建 | `backend/app/rag/sentence_matcher.py` | 句级 Evidence 定位模块（~40 行）：chunk 切句 → BM25Okapi → argmax → 记录 `matched_sentence` + `matched_sentence_score` |
 | 修改 | `backend/app/rag/retriever.py` | `RetrievalResult` 新增 `matched_sentence` / `matched_sentence_score` 字段 |
-| 修改 | `backend/app/services/chat_service.py` | ① 删除 5 个旧函数：`_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet`（~100 行）② `_build_sources()` 改为基于 `matched_sentence` 生成预览窗口，移除 `assistant_content` 参数 ③ `_validate_and_prepare()` 在 Rerank 后调用 `match_sentences()` ④ 3 处 `_build_sources()` 调用点移除 `assistant_content=` 参数 |
-| 修改 | `backend/tests/test_sources_preview.py` | 重写为 Evidence 定位测试（`match_sentences` + `_build_sources` 集成），移除已删除函数的旧用例 |
-| 新建 | `backend/tests/test_sentence_matcher.py` | 句级定位单元测试（14 用例）：空输入 / 单句 chunk / 多 chunk 独立定位 / 无句子 / 确定性验证 / 字段透传 |
-| 修改 | `backend/tests/test_sse_helpers.py` | `TestBuildSources` 适配新 `_build_sources()` 签名（移除 `assistant_content` 参数） |
+| 修改 | `backend/app/schemas/chat.py` | `ChatSourceChunk` 新增 `highlight_start` / `highlight_end` 字段（int \| None），前端纯切片渲染 |
+| 修改 | `backend/app/services/chat_service.py` | ① 删除 5 个旧函数（~100 行）② `_build_sources()` 计算 `highlight_start/end`（matched_sentence 在 preview_text 内的偏移）③ `_validate_and_prepare()` 在 Rerank 后调用 `match_sentences()` |
+| 修改 | `frontend/src/components/chat/MessageItem.vue` | ① `getSourcePreviewHtml(src)` 改为纯切片渲染（`slice(0, start) + <mark> + slice(start, end) + </mark> + slice(end)`）② 删除 5 个旧函数：`extractSnippet` / `extractSnippetAfter` / `normalizeWhitespace` / `buildNormPosMap` / `isNormCharStart`（~80 行）③ 模板调用移除 `msg.content` 参数 |
+| 修改 | `backend/tests/test_sources_preview.py` | 新增 `TestHighlightRange`（3 用例：精确覆盖 / 边界内 / 无 matched 降级）；既有用例补充 highlight 断言 |
+| 修改 | `backend/tests/test_sse_helpers.py` | `TestBuildSources` 适配 highlight 字段断言 |
+| 新建 | `backend/tests/test_sentence_matcher.py` | 句级定位单元测试（14 用例） |
+| 修改 | `frontend/tests/MessageItem.test.js` | U11.6 测试改为基于 `highlight_start/end` 的纯渲染验证 |
 
 ### 架构变更
 
-- **Evidence Highlight 替代 LLM 引用定位**：将「事后猜 LLM 引用了哪里」→「检索时就确定证据句」。句级定位复用已有 `rank-bm25`（BM25Okapi），不引入新算法。
-- **数据流**：`Vector + BM25 检索 → RRF 融合 → Rerank → 【句级 BM25 定位】→ Prompt 组装 → LLM 生成 → _build_sources()`
-- **`preview_text` 语义**：从「LLM 引用定位」变为「Evidence 定位」，API 字段向前兼容，前端零改动。
-- **净代码变化**：约 -150 行（删除 ~100 行旧定位逻辑，新增 ~40 行 sentence_matcher）
-
-### 零改动文件
-
-`schemas/chat.py`、`fusion.py`、`reranker.py`、`prompt_builder.py`、前端 `MessageItem.vue` — 字段透传，API 完全向前兼容。
+- **Evidence Highlight 替代 LLM 引用定位**：将「事后猜 LLM 引用了哪里」→「检索时就确定证据句」。
+- **highlight_start/end 纯渲染**：后端计算高亮区间（preview_text 内偏移），前端纯 `slice` 切片渲染，无 indexOf / normalizeWhitespace / snippet 提取。
+- **数据流**：`BM25 句级定位 → matched_sentence → preview_text ±100 字符 → highlight_start/end → 前端纯渲染`
+- **删除前端 snippet 体系**：`extractSnippet` / `extractSnippetAfter` / `normalizeWhitespace` / `buildNormPosMap` / `isNormCharStart` 全部删除（~80 行），前端零匹配逻辑。
+- **净代码变化**：约 -130 行（后端删除 ~100 行旧定位 + 前端删除 ~80 行 snippet 体系，新增 ~40 行 sentence_matcher + ~15 行 highlight 计算）
 
 ---
 

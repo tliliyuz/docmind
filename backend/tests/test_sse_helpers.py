@@ -186,7 +186,7 @@ class TestBuildSources:
     """测试 sources 事件数据结构（使用生产函数 _build_sources 避免逻辑重复）"""
 
     def test_sources数据结构完整(self):
-        """U7.85 — sources 事件 chunks 应包含 chunk_index/doc_id/doc_name/content/score/page/preview_text/preview_range"""
+        """U7.85 — sources 事件 chunks 应包含 chunk_index/doc_id/doc_name/content/score/page/preview_text/highlight_start/highlight_end"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
         from app.services.chat_service import _build_sources
 
@@ -216,9 +216,11 @@ class TestBuildSources:
         assert len(sources[0].content) == len("这是第一段检索内容" * 20)
         assert sources[0].score == 0.95
         assert sources[0].page == 1
-        # 无 assistant_content 时 preview 字段为 None
+        # 无 matched_sentence 时 preview/highlight 字段为 None
         assert sources[0].preview_text is None
         assert sources[0].preview_range is None
+        assert sources[0].highlight_start is None
+        assert sources[0].highlight_end is None
 
         # 第二条：page 为 None
         assert sources[1].chunk_index == 2
@@ -227,7 +229,7 @@ class TestBuildSources:
         assert sources[1].page is None
 
     def test_智能预览定位(self):
-        """Evidence 定位：match_sentences 后 matched_sentence 生成 preview_text 和 preview_range"""
+        """Evidence 定位：match_sentences 后生成 preview_text + highlight_start/end"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
         from app.rag.sentence_matcher import match_sentences
         from app.services.chat_service import _build_sources
@@ -244,9 +246,14 @@ class TestBuildSources:
         assert sources[0].preview_range is not None
         assert sources[0].preview_range.start >= 0
         assert sources[0].preview_range.end <= len(content)
+        # highlight 区间精确覆盖 matched_sentence
+        assert sources[0].highlight_start is not None
+        assert sources[0].highlight_end is not None
+        highlighted = sources[0].preview_text[sources[0].highlight_start:sources[0].highlight_end]
+        assert highlighted == matched.results[0].matched_sentence
 
     def test_智能预览降级(self):
-        """无 matched_sentence 时 preview 为 None（前端自行降级展示 content 前 200 字符）"""
+        """无 matched_sentence 时 preview/highlight 为 None（前端降级展示 content 前 200 字符）"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
         from app.services.chat_service import _build_sources
 
@@ -254,12 +261,13 @@ class TestBuildSources:
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        # 不调用 match_sentences → matched_sentence 为 None → preview 为 None
+        # 不调用 match_sentences → matched_sentence 为 None → preview/highlight 为 None
         sources = _build_sources(reranked_output.results, {1: "x.txt"})
 
-        # 无 matched_sentence 时 preview 字段为 None
         assert sources[0].preview_text is None
         assert sources[0].preview_range is None
+        assert sources[0].highlight_start is None
+        assert sources[0].highlight_end is None
         # content 保留完整内容（前端可自行取前 200 字符展示）
         assert sources[0].content == content
 

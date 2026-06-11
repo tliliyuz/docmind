@@ -42,6 +42,8 @@ class ChatSourceChunk(BaseModel):
     page: int | None = None
     preview_text: str | None = Field(None, description="定位后的预览文本（200 字符上下文窗口）")
     preview_range: PreviewRange | None = Field(None, description="预览窗口在 content 中的起止位置")
+    highlight_start: int | None = Field(None, description="高亮区间在 preview_text 内的起始偏移（含）")
+    highlight_end: int | None = Field(None, description="高亮区间在 preview_text 内的结束偏移（不含）")
 
 
 class TokenUsage(BaseModel):
