@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.59 |
-| 最后更新 | 2026-06-10 |
+| 文档版本 | v0.60 |
+| 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -801,20 +801,35 @@
 | U10.9 | 降级-LLM 异常 | `intent` | LLM API 抛 Exception | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ✅ | 2026-06-10 | test_fallback_on_llm_failure |
 | U10.10 | 降级-无效标签 | `intent` | LLM 返回 "UNKNOWN" | 回退 `_is_casual_chat()` → CASUAL（"你好"命中正则） | ✅ | 2026-06-10 | test_fallback_on_invalid_label |
 
-### 6.11 Phase 5 sources 智能预览测试用例
+### 6.11 Phase 5 sources Evidence 预览测试用例
 
-> 测试文件：`tests/test_sources_preview.py`（27 用例，全部通过 ✅）+ `tests/test_sse_helpers.py` TestBuildSources（4 用例）。覆盖 `_locate_preview` 精确匹配/降级/短 chunk 边界、`_fallback_preview` 降级、`_build_sources` 集成、ChatSourceChunk/PreviewRange Schema 校验。
+> 测试文件：`tests/test_sources_preview.py`（21 用例，全部通过 ✅）+ `tests/test_sse_helpers.py` TestBuildSources（4 用例）+ `tests/test_sentence_matcher.py`（14 用例，全部通过 ✅）。
+> 
+> Phase 5.5 从「LLM 引用定位」重构为「Evidence Highlight（句级 BM25 定位）」：`match_sentences()` 在检索阶段定位最佳证据句 → `_build_sources()` 基于 `matched_sentence` 生成 ±100 字符预览窗口。旧 `_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet` 共 5 个函数已删除。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U11.1 | 定位-精确匹配 | `_build_sources()` | LLM 回答含「新员工入职流程包括以下步骤」片段，chunk 中精确存在 | `preview_text` 定位到正确位置，`preview_range` 窗口中心在引用文字 | ✅ | 2026-06-10 | test_sources_preview.py TestLocatePreviewExactMatch (3 用例)：强断言验证窗口中心在 snippet 附近 ±100 字符 |
-| U11.2 | 定位-子串匹配失败降级 | `_build_sources()` | LLM 用自己的话概括，chunk 中不存在该片段 | `preview_text = content[:200]`，`preview_range = {0, 200}` | ✅ | 2026-06-10 | TestLocatePreviewFallback (5 用例)：snippet 不存在/无[来源N]标记/snippet过短/异常降级 |
-| U11.3 | 定位-短 chunk（<200字符） | `_build_sources()` | chunk.content 仅 80 字符 | `preview_text = content`（完整），`preview_range = {0, len(content)}` | ✅ | 2026-06-10 | TestLocatePreviewShortChunk (3 用例)：精确匹配/降级/恰好200字符 |
-| U11.4 | SSE-sources 含 preview_text | `chat_service` SSE 输出 | 正常问答流程 | `event: sources` 中每条 chunk 含 `preview_text` + `preview_range` 字段 | ✅ | 2026-06-10 | TestBuildSourcesPreviewIntegration (6 用例)：字段存在/类型正确/多条独立定位/score精度 |
-| U11.5 | SSE-sources 向前兼容 | `chat_service` SSE 输出 | 前端仅解析 content 字段 | `content` 字段仍在，旧前端不受影响 | ✅ | 2026-06-10 | TestBuildSourcesPreviewIntegration.test_content字段保留完整内容_向前兼容 |
-| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹引用片段，黄色背景高亮 | ✅ | 2026-06-10 | `getSourcePreviewHtml()` 通过 C3.54/C3.55 间接覆盖（sources panel 显示逻辑）；`<mark>` 高亮渲染通过组件 DOM 测试间接验证，暂无独立单元测试 |
+| U11.1 | Evidence定位-精确匹配 | `match_sentences()` + `_build_sources()` | question「入职申请表提交」→ 句级 BM25 定位最佳句 | `matched_sentence` 含「入职申请表」，`preview_text` 以该句为中心 ±100 窗口 | ✅ | 2026-06-11 | TestEvidencePreviewIntegration (3 用例)：强断言验证窗口中心在证据句附近 |
+| U11.2 | Evidence定位-无匹配降级 | `_build_sources()` | chunk 无 `matched_sentence` | `preview_text = None`, `preview_range = None`（前端自行降级取 content 前 200 字符） | ✅ | 2026-06-11 | TestEvidencePreviewFallback (3 用例)：无 matched_sentence / 空 content / 两者皆空 |
+| U11.3 | Evidence定位-短 chunk（<200字符） | `match_sentences()` + `_build_sources()` | chunk.content 仅 ~20 字符 | `preview_text` 在 chunk 中，`preview_range` 范围有效 | ✅ | 2026-06-11 | TestEvidencePreviewShortChunk (2 用例)：短 chunk 证据句定位 + 恰好 200 字符 |
+| U11.4 | SSE-sources 含 preview_text | `_build_sources()` | 正常 Evidence 定位后构建 sources | `preview_text` / `preview_range` 字段存在且类型正确（str / PreviewRange int） | ✅ | 2026-06-11 | TestBuildSourcesFormat (3 用例)：字段类型/向前兼容/score 精度 |
+| U11.5 | SSE-sources 向前兼容 | `_build_sources()` | content 字段保留完整 | `content` 字段仍在且完整，旧前端不受影响 | ✅ | 2026-06-11 | TestBuildSourcesFormat.test_content字段保留完整内容_向前兼容 |
+| U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 preview_text 的 chunk | `<mark>` 标签包裹引用片段，黄色背景高亮 | ✅ | 2026-06-10 | `getSourcePreviewHtml()` 通过 C3.54/C3.55 间接覆盖（sources panel 显示逻辑）；前端零改动 |
 
-### 6.12 Phase 5 性能埋点验证
+### 6.12 Phase 5.5 句级 Evidence 定位（sentence_matcher）测试用例
+
+> 测试文件：`tests/test_sentence_matcher.py`（14 用例，全部通过 ✅）。覆盖 `match_sentences()` 函数：空输入 / 单句 chunk / 多 chunk 独立定位 / 无句子 / 确定性验证 / 字段透传。
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U11.10 | 空 results 直接返回 | `match_sentences()` | `RetrievalOutput(results=[])` | 不抛异常，原样返回 | ✅ | 2026-06-11 | TestMatchSentencesEmpty (3 用例)：空 results / 空 content / 纯空白 content |
+| U11.11 | 单句 chunk 即为最佳句 | `match_sentences()` | chunk 仅含 1 句 | 该句即为 `matched_sentence`，`matched_sentence_score` 为 float | ✅ | 2026-06-11 | TestMatchSentencesSingleSentence (2 用例)：单句 + 无句末标点 |
+| U11.12 | 多 chunk 各自独立定位 | `match_sentences()` | 2 个 chunk 内容不同 | 各自匹配到不同最佳句 | ✅ | 2026-06-11 | TestMatchSentencesMultiChunk (3 用例)：不同句/不同 question 不同句/确定性验证 |
+| U11.13 | 无有效句子降级 | `match_sentences()` | content 仅含标点/换行 | `matched_sentence = None` | ✅ | 2026-06-11 | TestMatchSentencesNoSentences (2 用例)：纯标点/仅换行 |
+| U11.14 | score 字段验证 | `match_sentences()` | 正常定位 | `matched_sentence_score` 为 float，最佳句分数高于其他句 | ✅ | 2026-06-11 | TestMatchSentencesScore (2 用例) |
+| U11.15 | 字段透传 + 幂等 | `match_sentences()` | 重复调用 | 原有字段不变（doc_id/content/score/page/doc_name），重复调用幂等 | ✅ | 2026-06-11 | TestMatchSentencesFieldPassthrough (2 用例) |
+
+### 6.13 Phase 5 性能埋点验证
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|
@@ -911,7 +926,8 @@
 | 前端 `components/layout/AdminLayout.vue` | ≥ 60% | ✅ 19 通过 | Phase 5：Admin 独立布局（19 用例：渲染结构/路由标题/导航项/返回按钮/slot） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5：意图分类器（10 用例，U10.1-U10.10，全部通过） |
-| `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5：sources 智能预览（27 用例，U11.1-U11.5；U11.6 前端待补充） |
+| `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；U11.1-U11.6） |
+| `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，U11.10-U11.15） |
 | 性能埋点（检索+LLM） | ≥ 70% | ⬜ | Phase 5：U9.6/U9.7 埋点验证（4 用例，U12.1-U12.4） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |

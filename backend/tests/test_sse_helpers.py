@@ -227,16 +227,18 @@ class TestBuildSources:
         assert sources[1].page is None
 
     def test_智能预览定位(self):
-        """有 assistant_content 时应生成 preview_text 和 preview_range"""
+        """Evidence 定位：match_sentences 后 matched_sentence 生成 preview_text 和 preview_range"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
+        from app.rag.sentence_matcher import match_sentences
         from app.services.chat_service import _build_sources
 
         content = "公司报销制度规定：差旅报销需提交差旅申请单和交通票据。报销金额上限为每次5000元。"
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        assistant_content = "根据报销制度，差旅报销需要提交[来源1]差旅申请单和交通票据。"
-        sources = _build_sources(reranked_output.results, {1: "报销制度.md"}, assistant_content=assistant_content)
+        # Evidence 定位：句级 BM25 → matched_sentence
+        matched = match_sentences(reranked_output, "差旅报销需要提交什么材料")
+        sources = _build_sources(matched.results, {1: "报销制度.md"})
 
         assert sources[0].preview_text is not None
         assert sources[0].preview_range is not None
@@ -244,7 +246,7 @@ class TestBuildSources:
         assert sources[0].preview_range.end <= len(content)
 
     def test_智能预览降级(self):
-        """assistant_content 中 snippet 在 chunk 中找不到时应降级到前 200 字符"""
+        """无 matched_sentence 时 preview 为 None（前端自行降级展示 content 前 200 字符）"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
         from app.services.chat_service import _build_sources
 
@@ -252,14 +254,14 @@ class TestBuildSources:
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        # snippet 在 chunk 中不存在
-        assistant_content = "[来源1]完全不相关的文本内容"
-        sources = _build_sources(reranked_output.results, {1: "x.txt"}, assistant_content=assistant_content)
+        # 不调用 match_sentences → matched_sentence 为 None → preview 为 None
+        sources = _build_sources(reranked_output.results, {1: "x.txt"})
 
-        assert sources[0].preview_text is not None
-        assert len(sources[0].preview_text) == 200
-        assert sources[0].preview_range.start == 0
-        assert sources[0].preview_range.end == 200
+        # 无 matched_sentence 时 preview 字段为 None
+        assert sources[0].preview_text is None
+        assert sources[0].preview_range is None
+        # content 保留完整内容（前端可自行取前 200 字符展示）
+        assert sources[0].content == content
 
     def test_doc_map缺失时doc_name为空(self):
         """doc_map 中找不到 doc_id 时 doc_name 应为空字符串"""

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.40 |
-| 最后更新 | 2026-06-10 |
+| 文档版本 | v0.41 |
+| 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Admin 后端 ✅ / 前端联调 ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 部署 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin 后端 ✅ / 前端联调 ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 部署 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -396,12 +396,13 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | `chat_service.py` 集成 | `_validate_and_prepare()` 中（Rewrite 之前）插入分类→路由逻辑；META 直接返回固定响应；CASUAL 跳过检索 |
 | ✅ | 移除 `_is_casual_chat()` 主逻辑 | 降级为 fallback 保留，分类正常时不再作为主分类逻辑 |
 
-#### 7.1.2 sources 智能预览（2 子任务）
+#### 7.1.2 sources 智能预览 + Evidence Highlight（3 子任务）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ✅ | 后端定位逻辑 | `chat_service.py` — `_locate_preview()` / `_fallback_preview()` 实现；`_build_sources()` 新增 `assistant_content` 参数 + `preview_text` / `preview_range` 字段；`ChatSourceChunk` / `PreviewRange` Schema |
+| ✅ | 后端定位逻辑（v1 — LLM 引用定位） | `chat_service.py` — `_locate_preview()` / `_fallback_preview()` 实现；`_build_sources()` 新增 `assistant_content` 参数 + `preview_text` / `preview_range` 字段；`ChatSourceChunk` / `PreviewRange` Schema |
 | ✅ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染（`<mark>` 标签包裹 `preview_range` 范围） |
+| ✅ | Evidence Highlight 重构（v2 — 句级 BM25 定位） | 将定位从「LLM 生成后」前移到「检索时」：新建 `sentence_matcher.py`（句级 BM25 定位，~50 行）；`RetrievalResult` 新增 `matched_sentence` / `matched_sentence_score` 字段；删除旧 5 个函数（`_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet`，~100 行）；`_build_sources()` 简化为基于 `matched_sentence` 生成预览窗口。净代码 -150 行 |
 
 ### 7.2 管理后台（简易版）
 
@@ -463,7 +464,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 状态 | 任务 | 测试类型 | 说明 |
 |:---|:---|:---|:---|
 | ✅ | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 = 10 用例（`test_intent.py`），全部通过 |
-| ✅ | sources 智能预览测试 | 单元测试 | 定位正确性 3 + 降级 5 + 短 chunk 边界 3 + SSE 格式 6 + Schema 校验 6 + 集成 4 = 27 用例（`test_sources_preview.py`），全部通过；U11.6 前端渲染待补充 |
+| ✅ | sources Evidence 预览测试 | 单元测试 | Evidence 定位集成 3 + 降级 3 + 短 chunk 2 + 格式 3 + 边界 5 + Schema 5 = 21 用例（`test_sources_preview.py`）+ 句级定位 14 用例（`test_sentence_matcher.py`）= 35 用例，全部通过；前端零改动 |
 | ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
 | ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
 | ⬜ | 性能埋点验证 | 单元测试 | 检索耗时 1 + LLM 耗时 1 + 日志格式校验 2 = 4 用例 |

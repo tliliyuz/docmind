@@ -1,19 +1,84 @@
 # DocMind 变更日志
 
-## 2026-06-10 — Sources <mark> 高亮渲染修复（第二轮）
+## 2026-06-11 — Evidence Highlight：句级 BM25 定位重构
+
+### 修改
+
+| 操作 | 文件 | 变更 |
+|:---|:---|:---|
+| 新建 | `backend/app/rag/sentence_matcher.py` | 句级 Evidence 定位模块（~40 行）：chunk 切句 → BM25Okapi → argmax → 记录 `matched_sentence` + `matched_sentence_score` |
+| 修改 | `backend/app/rag/retriever.py` | `RetrievalResult` 新增 `matched_sentence` / `matched_sentence_score` 字段 |
+| 修改 | `backend/app/services/chat_service.py` | ① 删除 5 个旧函数：`_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet`（~100 行）② `_build_sources()` 改为基于 `matched_sentence` 生成预览窗口，移除 `assistant_content` 参数 ③ `_validate_and_prepare()` 在 Rerank 后调用 `match_sentences()` ④ 3 处 `_build_sources()` 调用点移除 `assistant_content=` 参数 |
+| 修改 | `backend/tests/test_sources_preview.py` | 重写为 Evidence 定位测试（`match_sentences` + `_build_sources` 集成），移除已删除函数的旧用例 |
+| 新建 | `backend/tests/test_sentence_matcher.py` | 句级定位单元测试（14 用例）：空输入 / 单句 chunk / 多 chunk 独立定位 / 无句子 / 确定性验证 / 字段透传 |
+| 修改 | `backend/tests/test_sse_helpers.py` | `TestBuildSources` 适配新 `_build_sources()` 签名（移除 `assistant_content` 参数） |
+
+### 架构变更
+
+- **Evidence Highlight 替代 LLM 引用定位**：将「事后猜 LLM 引用了哪里」→「检索时就确定证据句」。句级定位复用已有 `rank-bm25`（BM25Okapi），不引入新算法。
+- **数据流**：`Vector + BM25 检索 → RRF 融合 → Rerank → 【句级 BM25 定位】→ Prompt 组装 → LLM 生成 → _build_sources()`
+- **`preview_text` 语义**：从「LLM 引用定位」变为「Evidence 定位」，API 字段向前兼容，前端零改动。
+- **净代码变化**：约 -150 行（删除 ~100 行旧定位逻辑，新增 ~40 行 sentence_matcher）
+
+### 零改动文件
+
+`schemas/chat.py`、`fusion.py`、`reranker.py`、`prompt_builder.py`、前端 `MessageItem.vue` — 字段透传，API 完全向前兼容。
+
+---
+
+## 2026-06-10 — Sources 智能预览双向定位修复 + 前后端一致性对齐
 
 ### 修复
 
 | 文件 | 变更 |
 |:---|:---|
-| `frontend/src/components/chat/MessageItem.vue` | ① **内联样式**：`<mark>` 改用 `style="background:#FFE082;...""` 内联样式，彻底绕过 Vue scoped CSS `:deep()` 对 `v-html` 注入内容的穿透不确定性 ② **双向引用提取**：新增 `extractSnippetAfter()` 回退提取「文字[来源N]」模式（LLM 常将引用标在句末而非句首）③ **空格容错匹配**：`indexOf` → `\s+` 正则搜索，对齐后端 `re.sub(r'\s+', ' ', ...)` ④ CSS `:deep(mark)` 背景色 `#FFFBEB`→`#FFF3B0` 并在内联中覆盖为 `#FFE082`（可见黄色） |
-| `frontend/tests/MessageItem.test.js` | `<mark>` 断言适配内联 style 属性：`toContain('<mark>')` → `toContain('<mark')` |
+| `backend/app/services/chat_service.py` | ① **双向 snippet 提取**：新增 `_extract_snippet_before()` 提取 `[来源N]` **前** 50 字符（句末引用模式），原 after 逻辑抽取为 `_extract_snippet_after()` ② **公共匹配函数**：提取 `_try_match_snippet()` 复用规范化匹配 + ±100 字符窗口逻辑 ③ `_locate_preview()` 改为双向遍历（先 after 再 before），任一命中即返回 ④ `_extract_snippet_after()` 新增尾部标点清理（对齐前端 `extractSnippet`） |
+| `backend/tests/test_sources_preview.py` | 新增 9 用例：`TestExtractSnippetBidirectional`（6 用例，含尾部标点清理验证）+ `TestLocatePreviewBidirectionalMatch`（3 用例） |
+| `frontend/src/components/chat/MessageItem.vue` | ① `extractSnippetAfter()` 正则新增 `s` 标志（`re.DOTALL` 等价），与后端 `_extract_snippet_before` 行为对齐 ② `extractSnippet()` / `extractSnippetAfter()` 最小长度阈值统一为 4（对齐后端） |
 
-### 根因分析（追加）
+### 前后端一致性对齐明细
 
-1. **Vue scoped `:deep()` + `v-html` 穿透不可靠**：scoped 样式通过 `data-v-xxx` 属性选择器作用，`v-html` 注入的 DOM 节点不携带该属性。虽然 `:deep()` 理论上将选择器编译为 `.source-content[data-v-xxx] mark`（仅要求父级带属性），但 Vue 3.5 + 特定构建配置下可能不生效 → 改用内联样式彻底消除依赖
-2. **LLM 引用位置多样性**：原代码仅处理 `[来源N]引用文字` 模式，但 DeepSeek/Qwen 经常输出 `引用文字[来源N]` → 新增 `extractSnippetAfter` 回退提取
-3. **空格规范化差异**（首轮已修复，保留）
+| # | 不一致项 | 后端 | 前端 | 修复 |
+|---|---|---|---|---|
+| 1 | after 方向尾部标点清理 | ❌ 缺失 | ✅ 有 | 后端补上 `re.sub(r'[，,。！？\s]+$', '', snippet)` |
+| 2 | before 方向正则跨行 | ✅ `re.DOTALL` | ❌ 缺 `s` 标志 | 前端补上 `new RegExp(..., 's')` |
+| 3 | 最小 snippet 长度阈值 | 4 | 3 | 前端统一为 4 |
+
+### 根因
+
+`_locate_preview()` 仅提取 `[来源N]` **后**的文本作为搜索片段，但 DeepSeek/Qwen 等模型常将引用标在**句末**（如「...事由 [来源2]。」）。此时 `[来源N]` 后方是标点/换行/下一句（LLM 自己的话），`str.find()` 在 chunk 中必然找不到 → 降级到前 200 字符。用户看到的「智能预览」实际上只是文档标题/导语，与引用位置完全无关。
+
+### 修复后效果
+
+| 场景 | 修复前 | 修复后 |
+|---|---|---|
+| `[来源2]员工须提前3个工作日...`（句首） | ✅ after 命中 | ✅ after 命中（不变） |
+| `...事由 [来源2]。`（句末） | ❌ 降级到前 200 字符 | ✅ before 命中，预览定位到引用段 |
+
+---
+
+## 2026-06-10 — Sources 智能预览前端实现 + <mark> 高亮渲染
+
+### 修改
+
+| 文件 | 变更 |
+|:---|:---|
+| `frontend/src/components/chat/MessageItem.vue` | ① **Sources 智能预览渲染**：优先展示 `preview_text`（后端定位的 ±100 字符上下文窗口），降级回退 `content` 前 200 字符。新增 `getSourcePreviewHtml()` / `extractSnippet()` / `extractSnippetAfter()` / `escapeHtml()` / `normalizeWhitespace()` / `buildNormPosMap()` / `isNormCharStart()` 辅助函数 ② **双向引用提取**：`extractSnippet()` 处理句首引用「[来源N]文字」→ `extractSnippetAfter()` 处理句末引用「文字[来源N]」③ **空格容错匹配**：`normalizeWhitespace()` 将连续空白归一化（`/\s+/g → ' '`）后 `indexOf`，对齐后端 `re.sub(r'\s+', ' ', ...)` ④ **位置回溯**：`buildNormPosMap()` + `isNormCharStart()` 将规范化匹配位置映射回原始文本偏移，确保 `<mark>` 高亮边界准确 ⑤ **内联样式**：`<mark>` 使用 `style="background:#FFE082;..."` 内联样式，绕过 Vue scoped CSS `:deep()` 对 `v-html` 注入内容的穿透不确定性 ⑥ CSS `:deep(mark)` 背景色设为 `#FFF3B0`（可见黄色），内联 `#FFE082` 进一步覆盖确保可见 |
+| `frontend/tests/MessageItem.test.js` | `<mark>` 断言适配内联 style 属性（`toContain('<mark')`）；新增 4 用例覆盖 U11.6 高亮渲染（匹配/无匹配/降级 content/HTML 转义） |
+
+### 设计决策
+
+| 决策 | 选择 | 原因 |
+|:---|:---|:---|
+| 前端高亮算法 | 从 LLM 回答双向提取 `[来源N]` 前后 ≤50 字符 → 规范化空白后 `indexOf` 匹配 → `<mark>` 包裹 | 与后端 `_locate_preview` 提取逻辑一致，零额外 API 调用 |
+| 位置回溯 | `buildNormPosMap` 构建规范化→原始字符映射 | 空白归一化后匹配位置需精确映射回原文才能正确定位 `<mark>` 边界 |
+| `<mark>` 样式方案 | 内联 style 兜底 + CSS `:deep()` 双保险 | Vue scoped `:deep()` + `v-html` 穿透不可靠（Vue 3.5 + 特定构建配置下可能不生效） |
+
+### 根因分析
+
+1. **Vue scoped `:deep()` + `v-html` 穿透不可靠**：scoped 样式通过 `data-v-xxx` 属性选择器作用，`v-html` 注入的 DOM 节点不携带该属性。虽然 `:deep()` 理论上将选择器编译为 `.source-content[data-v-xxx] mark`，但特定构建配置下可能不生效 → 改用内联样式彻底消除依赖
+2. **LLM 引用位置多样性**：DeepSeek/Qwen 经常输出 `引用文字[来源N]`（句末引用），仅处理 `[来源N]引用文字` 会导致 snippet 提取为空 → 新增 `extractSnippetAfter` 双向提取
+3. **空格规范化差异**：LLM 回答中的换行符与 chunk 原始文本中的空格不一致，需统一归一化后匹配
 
 ---
 
@@ -114,7 +179,7 @@
 
 | 文件 | 变更 |
 |:---|:---|
-| `frontend/src/components/chat/MessageItem.vue` | Sources 智能预览渲染：优先展示 `preview_text`（后端定位的 ±100 字符上下文窗口），提取 LLM 回答中 `[来源N]` 后的引用片段并在预览文本中 `<mark>` 高亮；降级回退 `content` 前 200 字符。新增 `getSourcePreviewHtml()` / `extractSnippet()` / `escapeHtml()` 辅助函数 |
+| `frontend/src/components/chat/MessageItem.vue` | Sources 智能预览渲染（详见上方「Sources 智能预览前端实现 + <mark> 高亮渲染」条目） |
 | `frontend/src/views/admin/StatsPage.vue` | 对接 `GET /api/admin/stats`：7 项统计卡真实数据 + `formatNumber()` 千分位 / `formatStorage()` 存储格式化 + 快捷管理入口卡片 |
 | `frontend/src/views/admin/KnowledgeList.vue` | 对接 `GET /api/admin/knowledge-bases`：表格 + visibility/status/search 筛选 + 分页 + 编辑 KB 元数据弹窗（名称/描述/visibility）+ 删除确认 |
 | `frontend/src/views/admin/DocumentList.vue` | 对接 `GET /api/admin/documents`：表格 + status/filename/sort_by/order 筛选 + 分页 + KB 名称列 + 上传者列 + 状态标签 |

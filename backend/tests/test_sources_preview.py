@@ -1,18 +1,19 @@
-"""Sources 智能预览单元测试
+"""Sources Evidence 预览单元测试
 
 对齐 TEST_CASES.md §6.11：
-- U11.1 定位-精确匹配：_locate_preview 在 chunk 中精确定位引用段落
-- U11.2 定位-子串匹配失败降级：snippet 不存在时回退 _fallback_preview
-- U11.3 定位-短 chunk（<200字符）：返回完整内容
+- U11.1 Evidence定位-精确匹配：match_sentences 定位最佳句，_build_sources 生成 preview
+- U11.2 Evidence定位-无匹配降级：无 matched_sentence 时 preview 为 None
+- U11.3 Evidence定位-短 chunk（<200字符）：窗口覆盖全 chunk
 - U11.4 SSE-sources 含 preview_text/preview_range：_build_sources 格式校验
 - U11.5 SSE-sources 向前兼容：content 字段保留完整内容
 
-覆盖 app/services/chat_service.py 中的 _locate_preview / _fallback_preview / _build_sources
+覆盖 app/rag/sentence_matcher.py match_sentences + app/services/chat_service.py _build_sources
 """
 
 import pytest
 
 from app.rag.retriever import RetrievalOutput, RetrievalResult
+from app.rag.sentence_matcher import match_sentences
 from app.schemas.chat import ChatSourceChunk, PreviewRange
 
 
@@ -20,7 +21,7 @@ from app.schemas.chat import ChatSourceChunk, PreviewRange
 
 
 def _make_chunk_content() -> str:
-    """构造测试用 chunk 内容（>200 字符，含可定位片段）"""
+    """构造测试用 chunk 内容（>200 字符，含多句可定位）"""
     return (
         "新员工入职流程包括以下步骤："
         "第一步，提交入职申请表和个人身份证明文件。"
@@ -31,359 +32,251 @@ def _make_chunk_content() -> str:
     )
 
 
-# ==================== _fallback_preview 测试 ====================
+def _make_result(content: str, doc_id: int = 1, score: float = 0.9) -> RetrievalResult:
+    """快捷构造单个 RetrievalResult"""
+    return RetrievalResult(
+        doc_id=doc_id,
+        chunk_index=0,
+        content=content,
+        score=score,
+    )
 
 
-class TestFallbackPreview:
-    """_fallback_preview() 降级预览函数测试"""
+# ==================== Evidence 定位：match_sentences + _build_sources 集成 ====================
 
-    def test_正常内容返回前200字符(self):
-        """U11.2 降级路径：返回 chunk 前 200 字符 + PreviewRange(0, 200)"""
-        from app.services.chat_service import _fallback_preview
 
-        content = "A" * 300
-        preview_text, preview_range = _fallback_preview(content)
+class TestEvidencePreviewIntegration:
+    """match_sentences → _build_sources 完整链路测试"""
 
-        assert preview_text == "A" * 200
-        assert len(preview_text) == 200
-        assert preview_range.start == 0
-        assert preview_range.end == 200
-
-    def test_短内容返回完整内容(self):
-        """U11.3 边界：chunk < 200 字符时返回完整内容，end = len(content)"""
-        from app.services.chat_service import _fallback_preview
-
-        content = "短文本，仅80字符。" * 2  # 约 20 字符
-        preview_text, preview_range = _fallback_preview(content)
-
-        assert preview_text == content
-        assert preview_range.start == 0
-        assert preview_range.end == len(content)
-
-    def test_空内容返回空字符串(self):
-        """空 chunk 内容不抛异常，返回空字符串"""
-        from app.services.chat_service import _fallback_preview
-
-        preview_text, preview_range = _fallback_preview("")
-
-        assert preview_text == ""
-        assert preview_range.start == 0
-        assert preview_range.end == 0
-
-
-# ==================== _locate_preview 测试 ====================
-
-
-class TestLocatePreviewExactMatch:
-    """_locate_preview() 精确匹配测试（强断言验证定位准确性）"""
-
-    def test_精确匹配_窗口中心在引用文字附近(self):
-        """U11.1 精确匹配：snippet 在 chunk 中精确找到，窗口中心在匹配位置"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = _make_chunk_content()
-        # LLM 回答中 [来源1] 后紧跟的 snippet 在 chunk 中存在
-        assistant_content = "根据入职流程，[来源1]提交入职申请表和个人身份证明文件。这是必须的。"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        # 定位应成功（非降级）
-        assert preview_text is not None
-        assert preview_range is not None
-        # 预览文本应在 chunk 中
-        assert preview_text in chunk_content
-        # 窗口大小应合理（±100 字符窗口，最多 200 字符）
-        assert 0 < len(preview_text) <= 200
-        # 范围边界有效
-        assert 0 <= preview_range.start < preview_range.end <= len(chunk_content)
-        # 窗口中心附近应包含引用文字的关键部分
-        center = (preview_range.start + preview_range.end) // 2
-        snippet_pos = chunk_content.find("提交入职申请表")
-        assert snippet_pos >= 0
-        # 窗口中心应在 snippet 附近（容差 100 字符）
-        assert abs(center - snippet_pos) <= 100
-
-    def test_精确匹配_不同chunk_index(self):
-        """不同 [来源N] 编号能正确定位到对应 snippet"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = "VPN 密码忘记了可以通过 IT 自助服务平台重置，或拨打 IT 热线 8888。"
-        # assistant_content 中有 [来源2] 和 [来源3]，验证 chunk_index=2 能正确提取
-        assistant_content = (
-            "VPN 问题请参考[来源1]相关文档。"
-            "关于密码重置，[来源2]可以通过 IT 自助服务平台重置。"
-            "其他问题[来源3]请联系管理员。"
-        )
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=2
-        )
-
-        assert preview_text is not None
-        # 窗口应包含 "IT 自助服务平台" 附近的内容
-        assert "IT 自助服务平台" in preview_text
-
-    def test_精确匹配_规范化空格后匹配(self):
-        """snippet 含多余空格时规范化后仍能匹配"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = "报销制度规定：差旅费报销需提供发票和行程单。"
-        # snippet 有多余空格，chunk 中无多余空格
-        assistant_content = "[来源1]差旅费报销  需提供  发票和行程单。"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        # 规范化空格后应能匹配
-        assert preview_text is not None
-        assert "差旅费报销" in preview_text
-
-
-class TestLocatePreviewFallback:
-    """_locate_preview() 降级场景测试"""
-
-    def test_snippet不存在降级(self):
-        """U11.2：snippet 在 chunk 中完全找不到时降级到前 200 字符"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = "A" * 300
-        assistant_content = "[来源1]完全不存在的文本片段XYZ"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        assert preview_text == "A" * 200
-        assert preview_range.start == 0
-        assert preview_range.end == 200
-
-    def test_无来源标记降级(self):
-        """assistant_content 中无对应 [来源N] 标记时降级"""
-        from app.services.chat_service import _locate_preview
-
-        # 使用 >200 字符的 chunk 确保降级后验证 end=200
-        chunk_content = "X" * 300
-        assistant_content = "这份文档介绍了入职流程。"  # 无 [来源1]
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        # 降级到 _fallback_preview：返回前 200 字符
-        assert preview_text == "X" * 200
-        assert preview_range.start == 0
-        assert preview_range.end == 200
-
-    def test_snippet过短降级(self):
-        """snippet < 4 字符时降级（太短无法可靠匹配）"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = _make_chunk_content()
-        # [来源1] 后只有 1 个字符
-        assistant_content = "[来源1]的"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        # snippet 太短，应降级
-        assert preview_text == chunk_content[:200]
-        assert preview_range.start == 0
-
-    def test_异常时降级不抛异常(self):
-        """_locate_preview 内部异常时降级，不抛出"""
-        from app.services.chat_service import _locate_preview
-
-        # 传入异常参数（chunk_index=0 可能导致正则不匹配但不会崩溃）
-        chunk_content = "正常内容" * 50
-        assistant_content = ""  # 空回答
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        # 应降级不抛异常
-        assert preview_text == chunk_content[:200]
-        assert preview_range.start == 0
-        assert preview_range.end == 200
-
-
-class TestLocatePreviewShortChunk:
-    """_locate_preview() 短 chunk 边界测试"""
-
-    def test_短chunk精确匹配返回完整内容(self):
-        """U11.3：chunk < 200 字符且有匹配时，返回完整内容，窗口覆盖全 chunk"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = "新员工入职需要提交身份证复印件。"
-        assistant_content = "[来源1]入职需要提交身份证复印件。"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        # 短 chunk 完整内容
-        assert preview_text == chunk_content
-        # 范围覆盖全 chunk（窗口在匹配位置附近，但短 chunk 中窗口即全 chunk）
-        assert preview_range.start >= 0
-        assert preview_range.end <= len(chunk_content)
-
-    def test_短chunk无匹配降级返回完整内容(self):
-        """U11.3：短 chunk < 200 字符且无匹配时，降级返回完整内容"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = "短文本内容"  # 仅 6 字符
-        assistant_content = "[来源1]不存在的片段"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        assert preview_text == chunk_content
-        assert preview_range.start == 0
-        assert preview_range.end == len(chunk_content)
-
-    def test_恰好200字符不截断(self):
-        """chunk 恰好 200 字符，降级时返回全部"""
-        from app.services.chat_service import _locate_preview
-
-        chunk_content = "X" * 200  # 恰好 200 字符
-        assistant_content = "[来源1]不存在片段"
-
-        preview_text, preview_range = _locate_preview(
-            chunk_content, assistant_content, chunk_index=1
-        )
-
-        assert len(preview_text) == 200
-        assert preview_range.start == 0
-        assert preview_range.end == 200
-
-
-# ==================== _build_sources 集成测试 ====================
-
-
-class TestBuildSourcesPreviewIntegration:
-    """_build_sources() 含 preview 字段的集成测试"""
-
-    def test_preview_text和preview_range字段存在(self):
-        """U11.4：正常问答时 sources 每项含 preview_text + preview_range"""
+    def test_evidence定位_精确匹配_preview窗口中心在证据句附近(self):
+        """U11.1：match_sentences 定位最佳句 → _build_sources 以该句为中心生成 ±100 窗口"""
         from app.services.chat_service import _build_sources
 
-        content = "公司报销制度规定：差旅报销需提交差旅申请单和交通票据。报销金额上限为每次5000元。"
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9),
-        ]
-        assistant_content = "根据报销制度，[来源1]差旅报销需提交差旅申请单和交通票据。"
+        chunk_content = _make_chunk_content()
+        output = RetrievalOutput(results=[_make_result(chunk_content)])
 
-        sources = _build_sources(
-            results, {1: "报销制度.md"}, assistant_content=assistant_content
-        )
+        # Step 1: 句级 Evidence 定位
+        matched = match_sentences(output, "入职申请表提交")
+        best_sentence = matched.results[0].matched_sentence
+        assert best_sentence is not None
+        assert "入职申请表" in best_sentence
+
+        # Step 2: _build_sources 基于 matched_sentence 生成 preview
+        sources = _build_sources(matched.results, {1: "入职流程.pdf"})
 
         assert len(sources) == 1
         assert sources[0].preview_text is not None
-        assert isinstance(sources[0].preview_range, PreviewRange)
-        # preview_range 字段类型正确
-        assert isinstance(sources[0].preview_range.start, int)
-        assert isinstance(sources[0].preview_range.end, int)
-        # start < end（有效范围）
-        assert sources[0].preview_range.start < sources[0].preview_range.end
+        assert sources[0].preview_range is not None
+        # preview_text 应在 chunk 中
+        assert sources[0].preview_text in chunk_content
+        # 窗口大小 ≤ 200
+        assert len(sources[0].preview_text) <= 200
+        # 窗口中心应覆盖证据句
+        center_pos = sources[0].preview_range.start + len(sources[0].preview_text) // 2
+        best_pos = chunk_content.find(best_sentence)
+        assert abs(center_pos - (best_pos + len(best_sentence) // 2)) <= 100
 
-    def test_content字段保留完整内容_向前兼容(self):
-        """U11.5：content 字段保留完整 chunk 内容，旧前端不受影响"""
+    def test_evidence定位_不同question命中不同句子(self):
+        """不同 question 对同一 chunk 应命中不同证据句（matched_sentence 不同）"""
         from app.services.chat_service import _build_sources
 
-        content = "X" * 500  # 长内容
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9),
-        ]
-        assistant_content = "[来源1]X" * 30  # snippet 存在
-
-        sources = _build_sources(
-            results, {1: "test.txt"}, assistant_content=assistant_content
+        chunk = (
+            "报销制度规定：差旅费报销需提供发票和行程单。"
+            "办公用品采购需填写采购申请表。"
+            "所有报销单需经部门负责人审批。"
         )
 
-        # content 保留完整内容
-        assert sources[0].content == content
-        assert len(sources[0].content) == 500
-        # preview_text 是子集（窗口内文本）
-        assert sources[0].preview_text is not None
-        assert len(sources[0].preview_text) <= 200
-        # preview_text 来自 content（子串关系）
-        assert sources[0].preview_text in content
+        # Question 1: 差旅费
+        out1 = RetrievalOutput(results=[_make_result(chunk)])
+        matched1 = match_sentences(out1, "差旅费报销需要什么材料")
 
-    def test_无assistant_content时preview字段为None(self):
-        """无 assistant_content 时 preview 字段为 None（不执行定位）"""
+        # Question 2: 办公用品
+        out2 = RetrievalOutput(results=[_make_result(chunk)])
+        matched2 = match_sentences(out2, "办公用品怎么采购")
+
+        # 验证 matched_sentence 定位到不同句子
+        s1 = matched1.results[0].matched_sentence
+        s2 = matched2.results[0].matched_sentence
+        assert s1 is not None
+        assert s2 is not None
+        assert s1 != s2, f"不同 question 应命中不同句子，但都命中: {s1}"
+        assert "差旅费" in s1
+        assert "办公用品" in s2
+
+    def test_evidence定位_多chunk各自独立(self):
+        """多条 chunk 时每条独立执行句级定位，chunk_index 从 1 递增"""
         from app.services.chat_service import _build_sources
 
-        content = "测试内容" * 50
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9),
-        ]
+        chunk1 = "员工入职需要提交身份证复印件和学历证明。人力资源部审核通过后办理入职手续。"
+        chunk2 = "VPN 配置步骤：打开系统设置，选择网络和Internet，点击VPN添加连接。"
 
-        sources = _build_sources(results, {1: "test.txt"}, assistant_content=None)
+        output = RetrievalOutput(results=[
+            _make_result(chunk1, doc_id=1),
+            _make_result(chunk2, doc_id=2),
+        ])
+
+        matched = match_sentences(output, "入职需要什么材料 VPN配置")
+        sources = _build_sources(matched.results, {1: "入职.pdf", 2: "IT手册.pdf"})
+
+        assert len(sources) == 2
+        assert sources[0].chunk_index == 1
+        assert sources[1].chunk_index == 2
+        # 各自有 preview
+        assert sources[0].preview_text is not None
+        assert sources[1].preview_text is not None
+        # chunk1 的 preview 在 chunk1 中
+        assert sources[0].preview_text in chunk1
+        # chunk2 的 preview 在 chunk2 中
+        assert sources[1].preview_text in chunk2
+
+
+# ==================== 降级：无 matched_sentence 时 preview 为 None ====================
+
+
+class TestEvidencePreviewFallback:
+    """无 matched_sentence → _build_sources 降级测试"""
+
+    def test_无matched_sentence时preview为None(self):
+        """U11.2：chunk 无 matched_sentence 时 preview_text / preview_range 为 None"""
+        from app.services.chat_service import _build_sources
+
+        # 不调用 match_sentences，直接构造无 matched_sentence 的 result
+        result = RetrievalResult(
+            doc_id=1, chunk_index=0,
+            content="测试内容" * 50,
+            score=0.9,
+            # matched_sentence 默认为 None
+        )
+
+        sources = _build_sources([result], {1: "test.txt"})
 
         assert sources[0].preview_text is None
         assert sources[0].preview_range is None
         # content 仍在
-        assert sources[0].content == content
+        assert sources[0].content == "测试内容" * 50
 
-    def test_空assistant_content时preview字段为None(self):
-        """空 assistant_content 也不执行定位"""
+    def test_空content时preview为None(self):
+        """chunk.content 为空时不执行 Evidence 定位"""
         from app.services.chat_service import _build_sources
 
-        content = "测试内容"
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9),
-        ]
+        result = RetrievalResult(
+            doc_id=1, chunk_index=0,
+            content="",
+            score=0.5,
+            matched_sentence="某句",
+        )
 
-        sources = _build_sources(results, {1: "test.txt"}, assistant_content="")
+        sources = _build_sources([result], {1: "test.txt"})
 
+        assert len(sources) == 1
+        assert sources[0].content == ""
         assert sources[0].preview_text is None
         assert sources[0].preview_range is None
 
-    def test_多条chunk各独立定位(self):
-        """多条 chunk 时每条独立执行定位，chunk_index 与 [来源N] 对应"""
+    def test_matched_sentence为None_空字符串content(self):
+        """空 content 且无 matched_sentence → 安全返回 None"""
         from app.services.chat_service import _build_sources
 
-        content1 = "报销流程：第一步填写报销单。第二步提交审批。第三步财务打款。"
-        content2 = "VPN 配置：打开设置，选择网络，添加 VPN 连接。"
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content=content1, score=0.9),
-            RetrievalResult(doc_id=2, chunk_index=1, content=content2, score=0.8),
-        ]
-        assistant_content = (
-            "关于报销，[来源1]第一步填写报销单，然后提交审批。"
-            "关于 VPN，[来源2]打开设置，选择网络。"
+        result = RetrievalResult(
+            doc_id=1, chunk_index=0,
+            content="",
+            score=0.5,
         )
 
-        sources = _build_sources(
-            results, {1: "报销.md", 2: "VPN.md"}, assistant_content=assistant_content
-        )
+        sources = _build_sources([result], {1: "test.txt"})
+        assert sources[0].preview_text is None
 
-        assert len(sources) == 2
-        # chunk_index 与 [来源N] 一致
-        assert sources[0].chunk_index == 1
-        assert sources[1].chunk_index == 2
-        # 各自独立定位成功
+
+# ==================== 短 chunk 边界 ====================
+
+
+class TestEvidencePreviewShortChunk:
+    """短 chunk（<200 字符）Evidence 定位测试"""
+
+    def test_短chunk_evidence定位后窗口覆盖全内容(self):
+        """U11.3：chunk < 200 字符时 Evidence 窗口可能覆盖全 chunk"""
+        from app.services.chat_service import _build_sources
+
+        chunk_content = "新员工入职需要提交身份证复印件。"
+        output = RetrievalOutput(results=[_make_result(chunk_content)])
+
+        matched = match_sentences(output, "入职需要提交什么")
+        sources = _build_sources(matched.results, {1: "入职.txt"})
+
         assert sources[0].preview_text is not None
-        assert sources[1].preview_text is not None
-        # 各自定位到正确 chunk 内容
-        assert "报销单" in sources[0].preview_text
-        assert "VPN" in sources[1].preview_text
+        # 窗口在 chunk 内容范围内
+        assert sources[0].preview_text in chunk_content
+        # 范围有效
+        assert 0 <= sources[0].preview_range.start < sources[0].preview_range.end <= len(chunk_content)
 
-    def test_score保留原始精度(self):
-        """score 保留 4 位小数"""
+    def test_恰好200字符chunk(self):
+        """chunk 恰好 200 字符，Evidence 定位正常"""
         from app.services.chat_service import _build_sources
 
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content="内容", score=0.123456),
-        ]
+        chunk_content = "A" * 200
+        # 加标点使其可切句
+        chunk_with_periods = "AAAA。BBBB。CCCC。" + "X" * 182
 
-        sources = _build_sources(results, {1: "test.txt"})
+        output = RetrievalOutput(results=[_make_result(chunk_with_periods)])
+        matched = match_sentences(output, "AAAA BBBB")
 
+        # 有 matched_sentence 则应有 preview
+        if matched.results[0].matched_sentence:
+            sources = _build_sources(matched.results, {1: "test.txt"})
+            assert sources[0].preview_text is not None
+            assert len(sources[0].preview_text) <= len(chunk_with_periods)
+
+
+# ==================== _build_sources 格式校验 ====================
+
+
+class TestBuildSourcesFormat:
+    """_build_sources() 输出格式校验"""
+
+    def test_preview_text和preview_range字段类型正确(self):
+        """U11.4：sources 每项 preview_text / preview_range 字段类型正确"""
+        from app.services.chat_service import _build_sources
+
+        content = "公司报销制度规定：差旅报销需提交差旅申请单和交通票据。报销金额上限为每次5000元。"
+        output = RetrievalOutput(results=[_make_result(content)])
+        matched = match_sentences(output, "差旅报销需提交什么")
+
+        sources = _build_sources(matched.results, {1: "报销制度.md"})
+
+        assert len(sources) == 1
+        assert isinstance(sources[0].preview_text, str)
+        assert isinstance(sources[0].preview_range, PreviewRange)
+        assert isinstance(sources[0].preview_range.start, int)
+        assert isinstance(sources[0].preview_range.end, int)
+        assert sources[0].preview_range.start < sources[0].preview_range.end
+
+    def test_content字段保留完整内容_向前兼容(self):
+        """U11.5：content 字段保留完整 chunk 内容"""
+        from app.services.chat_service import _build_sources
+
+        content = "X" * 500
+        output = RetrievalOutput(results=[_make_result(content)])
+        matched = match_sentences(output, "X" * 30)
+
+        sources = _build_sources(matched.results, {1: "test.txt"})
+
+        assert sources[0].content == content
+        assert len(sources[0].content) == 500
+        assert sources[0].preview_text is not None
+        assert len(sources[0].preview_text) <= 200
+        assert sources[0].preview_text in content
+
+    def test_score保留4位小数(self):
+        """score 保留 4 位小数精度"""
+        from app.services.chat_service import _build_sources
+
+        result = RetrievalResult(
+            doc_id=1, chunk_index=0,
+            content="测试内容。",
+            score=0.123456,
+        )
+
+        sources = _build_sources([result], {1: "test.txt"})
         assert sources[0].score == 0.1235  # round(0.123456, 4)
 
 
@@ -394,35 +287,17 @@ class TestBuildSourcesEdgeCases:
         """空检索结果不抛异常"""
         from app.services.chat_service import _build_sources
 
-        sources = _build_sources([], {}, assistant_content="任意回答")
+        sources = _build_sources([], {})
         assert sources == []
-
-    def test_content为空的chunk(self):
-        """chunk.content 为空时不执行定位，preview 为 None"""
-        from app.services.chat_service import _build_sources
-
-        results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content="", score=0.5),
-        ]
-
-        sources = _build_sources(
-            results, {1: "test.txt"}, assistant_content="[来源1]内容"
-        )
-
-        assert len(sources) == 1
-        assert sources[0].content == ""
-        # content 为空时不应尝试定位
-        assert sources[0].preview_text is None
-        assert sources[0].preview_range is None
 
     def test_chunk_index从1开始递增(self):
         """chunk_index 从 1 开始，与 LLM Prompt 中 [来源N] 编号一致"""
         from app.services.chat_service import _build_sources
 
         results = [
-            RetrievalResult(doc_id=1, chunk_index=0, content="A", score=0.9),
-            RetrievalResult(doc_id=2, chunk_index=1, content="B", score=0.8),
-            RetrievalResult(doc_id=3, chunk_index=2, content="C", score=0.7),
+            RetrievalResult(doc_id=1, chunk_index=0, content="A。", score=0.9),
+            RetrievalResult(doc_id=2, chunk_index=1, content="B。", score=0.8),
+            RetrievalResult(doc_id=3, chunk_index=2, content="C。", score=0.7),
         ]
 
         sources = _build_sources(results, {1: "A", 2: "B", 3: "C"})
@@ -430,6 +305,43 @@ class TestBuildSourcesEdgeCases:
         assert sources[0].chunk_index == 1
         assert sources[1].chunk_index == 2
         assert sources[2].chunk_index == 3
+
+    def test_doc_name从doc_map查询(self):
+        """doc_name 正确从 doc_map 映射"""
+        from app.services.chat_service import _build_sources
+
+        results = [
+            RetrievalResult(doc_id=10, chunk_index=0, content="内容。", score=0.9),
+            RetrievalResult(doc_id=20, chunk_index=0, content="内容。", score=0.8),
+        ]
+
+        sources = _build_sources(results, {10: "文档A.pdf", 20: "文档B.pdf"})
+
+        assert sources[0].doc_name == "文档A.pdf"
+        assert sources[1].doc_name == "文档B.pdf"
+
+    def test_doc_id不在doc_map中返回空字符串(self):
+        """doc_id 不在 doc_map 中时 doc_name 为空字符串"""
+        from app.services.chat_service import _build_sources
+
+        results = [RetrievalResult(doc_id=99, chunk_index=0, content="内容。", score=0.9)]
+        sources = _build_sources(results, {})
+
+        assert sources[0].doc_name == ""
+
+    def test_page字段透传(self):
+        """page 字段正确透传到 ChatSourceChunk"""
+        from app.services.chat_service import _build_sources
+
+        results = [
+            RetrievalResult(doc_id=1, chunk_index=0, content="内容。", score=0.9, page=5),
+            RetrievalResult(doc_id=2, chunk_index=0, content="内容。", score=0.8, page=None),
+        ]
+
+        sources = _build_sources(results, {1: "a.pdf", 2: "b.pdf"})
+
+        assert sources[0].page == 5
+        assert sources[1].page is None
 
 
 # ==================== ChatSourceChunk Schema 校验 ====================
@@ -465,7 +377,6 @@ class TestChatSourceChunkSchema:
         assert d["doc_id"] == 10
         assert d["preview_text"] == "预览文本"
         assert d["preview_range"] == {"start": 0, "end": 100}
-        # content 保留完整内容
         assert d["content"] == "完整的 chunk 内容" * 20
 
     def test_ChatSourceChunk无preview字段序列化(self):
@@ -488,8 +399,7 @@ class TestChatSourceChunkSchema:
         assert pr.start == 0
         assert pr.end == 0
 
-    def test_PreviewRange边界值_负start不合法(self):
-        """Pydantic 默认不拒绝负值（int 类型），由业务逻辑保证"""
+    def test_PreviewRange边界值_非负start(self):
+        """start 应为非负，由 _build_sources 中 max(0, ...) 保证"""
         pr = PreviewRange(start=0, end=100)
-        # start 应为非负，由 _locate_preview 中 max(0, ...) 保证
         assert pr.start >= 0

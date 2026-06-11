@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.35 |
-| 最后更新 | 2026-06-10 |
+| 文档版本 | v0.37 |
+| 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览后端 ✅ / Admin 后端 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin 后端 ✅） |
 
 ---
 
@@ -388,6 +388,8 @@ Phase 4 在 Phase 3 单轮链路基础上加入**会话记忆**和**问题重写
 [Fusion] RRF 融合排序 → 合并两路结果
     ↓
 [Rerank] NoopReranker → 保持 RRF 排序（相关性降序） + 截取 top_k=5
+    ↓
+[Evidence Highlight] 句级 BM25 定位 → 每个 chunk 内切句 → BM25Okapi → 记录 best_sentence  ← §5.1.7
     ↓
 [Prompt] 组装 Prompt → 拼接检索结果 + 历史消息 + 用户问题，软上限预算控制  ← §5.1.2
     ↓
@@ -838,102 +840,126 @@ if not skip_retrieval and _needs_rewrite(question, history_messages):
 | 正则回退的覆盖盲区 | 正则仅覆盖 6 类高频闲谈，新型闲谈模式可能漏判 | 分类 LLM 正常时正则仅作降级兜底；线上观察分类失败率 |
 
 
-#### 5.1.7 sources 智能预览（Chunk Preview）[Implemented]
+#### 5.1.7 Evidence Highlight — 句级 BM25 定位 [Implemented]
 
-**背景**：当前 `event: sources` 返回完整的 chunk 内容（最长 ~1000 字符）。前端展示时截断为 200 字符摘要——但这 200 字符是从 chunk 开头取的，与 LLM 回答中被引用的具体段落无关。用户点击 [来源N] 看到的可能是 chunk 的前 200 字符，而非 LLM 实际引用位置。Phase 5 实现**精确定位**：在 chunk 内找到 LLM 引用文字的位置，截取该位置前后各 100 字符作为预览窗口，前端高亮渲染。
+**背景**：旧方案 `_locate_preview()` 在 LLM 生成回答后，从 `assistant_content` 提取 `[来源N]` 前后的 snippet，再回 chunk 做子串匹配定位引用位置。这有根本性缺陷：①「事后猜 LLM 引用了哪里」不可靠——snippet 非原文时定位失败 → 全部降级到 chunk 前 200 字符盲取；② 定位质量依赖 LLM 引用格式（句首/句末），DeepSeek/Qwen 在不同场景下行为不一致；③ `_locate_preview` + 双向 snippet 提取 + 规范化匹配共 ~100 行业务逻辑内嵌在 chat_service 中，职责混杂。
+
+Phase 5.5 重构为 **Evidence Highlight**：将定位时机从「LLM 生成后」前移到「检索时」，在 chunk 内部用 BM25 直接选出与 question 最相关的句子作为「证据句」。核心原则：**检索时就确定证据句，而非事后猜 LLM 引用了哪里**。
 
 **设计目标**：
-- 预览窗口精准定位到 LLM 实际引用的段落，而非 chunk 开头盲取
-- 定位算法简单可靠（子串匹配），不引入额外 LLM 调用或 embedding 计算
-- 降级策略完善：定位失败时回退到当前行为（chunk 前 200 字符）
+- 证据句定位在 Rerank 之后、Prompt 组装之前完成（`match_sentences()`）
+- 复用已有 `rank-bm25`（BM25Okapi）+ `jieba` 分词，不引入新算法依赖
+- 确定性：同一 question 对同一 chunk 永远返回同一句子（无 LLM 随机性）
+- `preview_text` 语义从「LLM 引用定位」变为「Evidence 定位」，API 字段和前端渲染零改动
 
 ---
 
-**定位算法：子串匹配 + 上下文窗口**
+**数据流**
 
 ```
-输入: chunk.content（最长 ~1000 chars）, assistant_content（LLM 完整回答）
-输出: preview_text, preview_range: {start, end}
+用户问题
+    ↓
+Vector + BM25 检索（chunk 级，不变）
+    ↓
+RRF 融合（不变）
+    ↓
+Rerank（不变）
+    ↓
+【句级 BM25 定位】← 新增：sentence_matcher.py
+  chunk 切句 → BM25Okapi(sentences) → 取 argmax → 记录 best_sentence + score
+    ↓
+Prompt 组装（不变，RetrievalResult 透传 matched_sentence）
+    ↓
+LLM 生成（不变）
+    ↓
+_build_sources()：matched_sentence → preview_text + preview_range
+  （已经保证是 chunk 子串，find() 必然命中）
+```
 
-算法:
-  1. 从 assistant_content 中提取 [来源N] 后面的第一句话（取引用位置后 50 字符）
-     → snippet = 紧邻 [来源N] 的文本片段
-  2. 在 chunk.content 中查找 snippet 的子串匹配
-     → idx = chunk.content.find(snippet)
-  3. 匹配成功:
-     → 窗口中心 = idx + len(snippet) // 2
-     → start = max(0, 窗口中心 - 100)
-     → end = min(len(chunk.content), 窗口中心 + 100)
-     → preview_text = chunk.content[start:end]
-     → preview_range = {start, end}
-  4. 匹配失败（snippet 非原文引用 / 过于模糊）:
-     → 降级: preview_text = chunk.content[:200]（当前行为）
-     → preview_range = {start: 0, end: 200}
+---
+
+**句级定位算法：BM25 在 chunk 内部选句**
+
+```python
+# backend/app/rag/sentence_matcher.py
+
+import jieba
+from rank_bm25 import BM25Okapi
+
+_SENTENCE_SEP = re.compile(r'[。！？!?\n]+')
+
+def match_sentences(output: RetrievalOutput, question: str) -> RetrievalOutput:
+    """对每个 chunk 内部做句级 BM25 定位，记录最佳证据句。"""
+    question_tokens = jieba.lcut(question)
+
+    for result in output.results:
+        # 切句
+        raw = _SENTENCE_SEP.split(result.content)
+        sentences = [s.strip() for s in raw if s.strip()]
+        if not sentences:
+            continue
+
+        # 句级 BM25（每 chunk 独立索引，~1ms）
+        tokenized = [jieba.lcut(s) for s in sentences]
+        bm25 = BM25Okapi(tokenized)
+        scores = bm25.get_scores(question_tokens)
+
+        # 取 argmax → 最佳证据句
+        best_idx = max(range(len(scores)), key=lambda i: scores[i])
+        result.matched_sentence = sentences[best_idx]
+        result.matched_sentence_score = float(scores[best_idx])
+
+    return output
 ```
 
 | 要点 | 决策 | 原因 |
 |:---|:---|:---|
-| 匹配粒度 | snippet = [来源N] 后 50 字符 | 太长可能因 LLM 改写不匹配，太短容易误匹配 |
-| 搜索策略 | 精确子串 `str.find()` | 简单可靠，chunk 本身是原文，LLM 引用大概率原样出现 |
-| 上下文窗口 | ±100 字符 | 200 字符窗口适合前端卡片展示，不挤占消息区域 |
-| 多 chunk 引用 | 每个 [来源N] 独立定位 | 不同 chunk 的引用位置各不同，独立处理 |
+| 定位时机 | Rerank 后、Prompt 前 | 确保 `used_chunks` 携带 `matched_sentence` |
+| 切句策略 | 中文标点 `。！？!?\n` 正则切分 | 覆盖常见句末标点，跨行文本统一处理 |
+| 搜索算法 | BM25Okapi（每 chunk 独立微型索引，3-8 句） | IDF 天然区分「审批流程」和「经审批后」的关键词权重差异；复用已有依赖零新增 |
+| 确定性 | 同一 question 永远返回同一 sentence | 纯算法，无 LLM 随机性 |
+| 性能 | 每 chunk ~1ms（轻量 NumPy 计算） | 5 chunks × 1ms = 5ms，对检索链路延迟无感知影响 |
 
-> **设计决策：用子串匹配而非 embedding 相似度**。Embedding 相似度需要额外 API 调用（增加延迟和成本），且相似度最高的 chunk 位置不一定是 LLM 实际引用的段落。子串匹配零额外成本、毫秒级完成。
+> **设计决策：用 BM25 在 chunk 内部选句而非依赖 LLM 引用格式**。旧方案 `_locate_preview` 依赖 LLM 在回答中写 `[来源N]` 且 snippet 必须是原文，这在以下场景会系统性失败：① LLM 用自己的话概括而非原文引用；② `[来源N]` 放在句末时 snippet 是标点/换行/下一句；③ LLM 未引用任何 `[来源N]`（常见于 DeepSeek/Qwen）。Evidence 方案将定位前移到检索阶段，完全解耦 LLM 行为。
 
 ---
 
-**SSE sources 事件扩展**
+**SSE sources 事件格式（向前兼容）**
 
-当前 `event: sources` 格式：
-
-```json
-{
-  "chunks": [
-    {
-      "chunk_id": 42,
-      "doc_name": "入职指南.pdf",
-      "page": 3,
-      "content": "新员工入职流程包括以下步骤：第一步，填写个人..."
-    }
-  ]
-}
-```
-
-Phase 5 新增 `preview_text` 和 `preview_range` 字段：
+Phase 5.5 **不改变** SSE sources 事件的 JSON 格式——`preview_text` / `preview_range` 字段保留，语义从「LLM 引用定位」变为「Evidence 定位」：
 
 ```json
 {
-  "chunks": [
-    {
-      "chunk_id": 42,
-      "doc_name": "入职指南.pdf",
-      "page": 3,
-      "content": "新员工入职流程包括以下步骤：第一步，填写个人...",
-      "preview_text": "入职流程包括以下步骤：第一步，填写个人信息表并提交身份证复印件...",
-      "preview_range": {"start": 5, "end": 205}
-    }
-  ]
+  "chunks": [{
+    "chunk_index": 1,
+    "doc_name": "入职指南.pdf",
+    "page": 3,
+    "content": "新员工入职流程包括以下步骤：第一步，填写个人...",
+    "preview_text": "入职流程包括以下步骤：第一步，填写个人信息表并提交身份证复印件...",
+    "preview_range": {"start": 5, "end": 205}
+  }]
 }
 ```
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| `preview_text` | string | 定位后的预览文本（200 字符上下文窗口） |
+| `preview_text` | string | Evidence 定位后的预览文本（以 `matched_sentence` 为中心的 ±100 字符窗口） |
 | `preview_range.start` | int | 预览窗口在 chunk.content 中的起始位置 |
 | `preview_range.end` | int | 预览窗口在 chunk.content 中的结束位置 |
 
-> **兼容性约束**：`content` 字段保留（完整 chunk 内容），`preview_text` 和 `preview_range` 新增。旧版前端不解析新字段时仍可展示 `content` 截断，向前兼容。
+> **兼容性约束**：`content` 字段保留（完整 chunk 内容）。旧版前端不解析 `preview_text` / `preview_range` 时仍可展示 `content` 截断，完全向前兼容。
 
 ---
 
-**前端渲染规格**
+**前端渲染规格（零改动）**
+
+前端 `MessageItem.vue` 继续使用 `src.preview_text` 展示预览，与旧行为完全一致。前端侧的 snippet 提取逻辑（`extractSnippet()` / `extractSnippetAfter()` 等函数）可保留或后续清理——它们是对后端旧 `_locate_preview` 逻辑的前端复刻，现在两端都不再需要。
 
 | 要素 | 行为 |
 |:---|:---|
-| 默认展示 | 显示 `preview_text`（定位后的智能预览），替代当前 chunk 前 200 字符盲取 |
-| 降级展示 | `preview_text` 不存在时回退到 `content` 前 200 字符（当前行为） |
-| 高亮范围 | `preview_range` 内的引用片段用 `<mark>` 标签包裹（黄色背景高亮），视觉上区分引用文字与上下文 |
-| 展开详情 | 点击来源卡片可展开完整 `content`（与当前 `el-collapse` 行为一致） |
+| 默认展示 | 显示 `preview_text`（Evidence 定位后的智能预览） |
+| 降级展示 | `preview_text` 为 None 时前端自行取 `content` 前 200 字符 |
+| 高亮范围 | `preview_range` 内的引用片段用 `<mark>` 标签包裹（黄色背景高亮） |
 | 引用编号 | `[来源N]` 编号保持不变，LLM Prompt 和 sources 事件中的编号一一对应 |
 
 ---
@@ -942,39 +968,44 @@ Phase 5 新增 `preview_text` 和 `preview_range` 字段：
 
 ```
 定位流程:
-  try:
-    snippet = 提取 [来源N] 后 50 字符
-    idx = chunk.content.find(snippet)
-    if idx >= 0:
-      → 计算 preview_text + preview_range（定位成功）
-    else:
-      → 降级: preview_text = chunk.content[:200], preview_range = {0, 200}
-  except (提取片段异常):
-    → 降级: preview_text = chunk.content[:200], preview_range = {0, 200}
-  
-  日志记录定位成功率（INFO 级别），便于线上观察算法效果
+  match_sentences(reranked_output, question):
+    if output.results 为空:
+      → 直接返回（无 chunk 可定位）
+    for each chunk:
+      if content 为空/纯空白:
+        → matched_sentence 保持 None
+      if 切句后无有效句子:
+        → matched_sentence 保持 None
+      else:
+        → BM25Okapi 评分 → 记录 best_sentence + score
+        
+_build_sources():
+  if matched_sentence 非空且 content 非空:
+    → content.find(matched_sentence)  # 保证命中（句子来自 chunk 原文）
+    → 以匹配位置为中心取 ±100 字符窗口
+  else:
+    → preview_text = None, preview_range = None  # 前端自行降级
 ```
 
 | 降级场景 | 处理 |
 |:---|:---|
-| snippet 在 chunk 中找不到 | `preview_text = content[:200]`，`preview_range = {0, 200}` |
-| snippet 提取异常（[来源N] 后无文字） | 同上降级 |
-| chunk.content 本身 < 200 字符 | 返回完整 content，`preview_range = {0, len(content)}` |
-| LLM 未引用任何 [来源N] | sources 回退全量发送（已有逻辑），每条 chunk 无引用文字可定位 → 全部降级 |
+| chunk 无有效句子（纯标点/空白） | `matched_sentence = None` → `preview_text = None` |
+| chunk.content 为空 | `matched_sentence = None` → `preview_text = None` |
+| 检索结果为空 | `match_sentences()` 直接返回，无 chunk 可定位 |
 
 ---
 
 **实现文件**
 
 ```
-backend/app/services/chat_service.py   ← 修改：_build_sources() 新增定位逻辑
-frontend/src/components/chat/MessageItem.vue  ← 修改：sources 卡片使用 preview_text + 高亮
+backend/app/rag/sentence_matcher.py        ← 新建：match_sentences()（~50 行）
+backend/app/rag/retriever.py               ← 修改：RetrievalResult +2 字段（matched_sentence / matched_sentence_score）
+backend/app/services/chat_service.py        ← 修改：删除 5 个旧函数（~100 行），_build_sources() 基于 matched_sentence 重写
+backend/tests/test_sentence_matcher.py      ← 新建：14 用例
+backend/tests/test_sources_preview.py       ← 重写：Evidence 集成测试
 ```
 
-**实现要点**：
-- 定位逻辑内嵌在 `_build_sources()` 方法中（~30 行），每次构建 sources 事件时对每条 chunk 执行定位
-- 子串匹配不区分大小写（`content.lower().find(snippet.lower())`），提高匹配容错
-- 提取 snippet 时跳过 [来源N] 本身（`re.sub(r'\[来源\d+\]', '', near_text)`），避免匹配到 chunk 中的其他来源标记
+**零改动文件**：`schemas/chat.py`、`fusion.py`、`reranker.py`、`prompt_builder.py`、前端 `MessageItem.vue` — 字段透传，API 完全向前兼容。
 
 ---
 
@@ -982,9 +1013,9 @@ frontend/src/components/chat/MessageItem.vue  ← 修改：sources 卡片使用 
 
 | 局限 | 说明 | 缓解 |
 |:---|:---|:---|
-| LLM 改写原文 | LLM 回答可能用自己的话概括而非原文引用，导致 snippet 不匹配 | 降级回退 content[:200]；snippet 取 50 字符足够短以减少被改写概率 |
-| 中英文混合 | 子串匹配在混合文本中可能因全角/半角空格差异失败 | 匹配前统一规范化空格（`re.sub(r'\s+', ' ', ...)`） |
-| 多引用同 chunk | 同一 chunk 被多处引用时，仅取第一个 [来源N] 匹配位置 | 实际上极少发生（RRF Rerank 后每条 chunk 独立引用） |
+| BM25 关键词偏好 | 句级 BM25 倾向于选择含 question 关键词的句子，可能忽略语义相关但不含关键词的句子 | BM25 仅用于句子选择（chunk 级检索已由向量语义 + BM25 双路保证），误选概率低 |
+| 短 chunk 窗口覆盖全量 | chunk < 200 字符时 ±100 窗口覆盖全 chunk，不同 question 的 `preview_text` 可能相同 | matched_sentence 仍不同（可用于调试/可观测），前端展示差异由 `<mark>` 高亮体现 |
+| 纯算法无法感知上下文 | 句级 BM25 对每句独立评分，不考虑句间逻辑关系（如因果/转折） | chunk 级 RRF 已保证 chunk 级相关性；句级定位是锦上添花，非核心召回 |
 
 ---
 

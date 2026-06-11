@@ -22,13 +22,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetrievalResult:
-    """标准化检索结果，Vector / BM25 共用，方便 RRF 融合"""
+    """标准化检索结果，Vector / BM25 共用，方便 RRF 融合
+
+    matched_sentence / matched_sentence_score 由 sentence_matcher 在检索后填充，
+    用于 Evidence Highlight（句级 BM25 定位），透传到 Prompt 组装和 Sources 预览。
+    """
     doc_id: int
     chunk_index: int
     content: str
     score: float
     page: int | None = None
     doc_name: str = ""
+    matched_sentence: str | None = None
+    matched_sentence_score: float | None = None
 
 
 @dataclass
