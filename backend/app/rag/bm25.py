@@ -8,6 +8,7 @@
 
 import json
 import logging
+import time
 
 import jieba
 import redis
@@ -129,28 +130,42 @@ class BM25Retriever:
             (bm25实例|None(空语料), [(doc_id, chunk_index), ...], [chunk_content, ...])
         """
         cache_key = _build_cache_key(kb_id)
+        t0 = time.perf_counter()
 
         # 尝试从 Redis 缓存加载
         try:
             cached = self._redis.get(cache_key)
             if cached is not None:
+                t_redis = time.perf_counter()
                 data = json.loads(cached)
                 tokens = data["tokens"]
                 doc_ids = [tuple(pair) for pair in data["doc_ids"]]
                 contents = data.get("contents", [])
                 bm25 = BM25Okapi(tokens)
-                logger.debug("BM25 缓存命中: kb_id=%d, %d chunks", kb_id, len(tokens))
+                t_build = time.perf_counter()
+                logger.info(
+                    "BM25_PERF cache=hit chunks=%d redis=%.3fs deserialize=%.3fs build=%.3fs total=%.3fs",
+                    len(tokens),
+                    t_redis - t0,
+                    t_build - t_redis,
+                    t_build - t0,
+                    t_build - t0,
+                )
                 return bm25, doc_ids, contents
         except Exception as e:
             logger.warning("Redis 读取 BM25 缓存失败（降级为直查）: %s", e)
 
         # 缓存未命中 → 从 MySQL 加载
-        return await self._load_and_cache(kb_id, cache_key)
+        result = await self._load_and_cache(kb_id, cache_key)
+        t_end = time.perf_counter()
+        logger.info("BM25_PERF cache=miss total=%.3fs", t_end - t0)
+        return result
 
     async def _load_and_cache(
         self, kb_id: int, cache_key: str
     ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[str]]:
         """从 MySQL 加载 chunks → jieba 分词 → 缓存到 Redis → 构建 BM25Okapi。"""
+        t0 = time.perf_counter()
         async with self._session_factory() as db:
             result = await db.execute(
                 select(Chunk.doc_id, Chunk.chunk_index, Chunk.content)
@@ -158,6 +173,7 @@ class BM25Retriever:
                 .order_by(Chunk.doc_id, Chunk.chunk_index)
             )
             rows = result.all()
+        t_mysql = time.perf_counter()
 
         if not rows:
             logger.info("KB %d 无 chunk 数据", kb_id)
@@ -179,6 +195,7 @@ class BM25Retriever:
             doc_ids.append((row.doc_id, row.chunk_index))
             tokenized_corpus.append(_tokenize(row.content))
             contents.append(row.content)
+        t_jieba = time.perf_counter()
 
         # 写入 Redis 缓存
         try:
@@ -191,8 +208,19 @@ class BM25Retriever:
             logger.info("BM25 缓存已写入: kb_id=%d, %d chunks", kb_id, len(doc_ids))
         except Exception as e:
             logger.warning("Redis 写入 BM25 缓存失败（不影响检索）: %s", e)
+        t_redis = time.perf_counter()
 
         bm25 = BM25Okapi(tokenized_corpus)
+        t_build = time.perf_counter()
+        logger.info(
+            "BM25_LOAD chunks=%d mysql=%.3fs jieba=%.3fs redis_write=%.3fs build=%.3fs total=%.3fs",
+            len(rows),
+            t_mysql - t0,
+            t_jieba - t_mysql,
+            t_redis - t_jieba,
+            t_build - t_redis,
+            t_build - t0,
+        )
         return bm25, doc_ids, contents
 
 

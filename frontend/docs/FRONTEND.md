@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.23 |
+| 文档版本 | v0.24 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 Admin 布局重构 — Admin 独立侧边栏 ✅ / 文档删除 ✅ / 活跃统计 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin 布局重构 ✅） |
 
 ---
 
@@ -247,11 +247,16 @@ ChatPage 支持两种进入方式：
     ↓
 调用 chatStore.sendMessage() → POST /api/chat（SSE）
     ↓
+后端意图识别（3 类分流，前端无感知）：
+  KNOWLEDGE → 完整 RAG 链路（检索→RRF→Rerank→Evidence Highlight→Prompt→LLM）
+  CASUAL    → 跳过检索，闲谈 Prompt + LLM 直接回复
+  META      → 不调 LLM，固定模板响应（毫秒级）
+    ↓
 接收 SSE 事件流：
   event: meta      → 记录 conversation_id（新对话时后端自动创建）、task_id
-  event: thinking  → 展开思考过程框（黄色折叠面板），实时追加内容
+  event: thinking  → 展开思考过程框（黄色折叠面板），实时追加内容（仅 KNOWLEDGE/CASUAL）
   event: message   → 逐字追加到助手消息内容区（Markdown 实时渲染）
-  event: sources   → 在消息底部渲染引用来源卡片（每个片段标注 [来源N] 编号，与 LLM 回答中的引用一一对应）
+  event: sources   → 在消息底部渲染引用来源卡片（仅 KNOWLEDGE 意图发送，CASUAL/META 无此事件）
   event: finish    → 关闭 typing，更新消息 ID，首轮保存 title
   event: error     → 替换为错误提示，关闭 typing
   : ping\n\n       → SSE 心跳注释帧（15s 间隔），前端忽略
@@ -936,10 +941,10 @@ function parseSSEEvent(raw) {
 | 事件类型 | 触发条件 | 前端处理 |
 |:---|:---|:---|
 | meta | 连接建立后首个事件 | 记录 `conversation_id`（新对话时后端自动创建）、`task_id` |
-| thinking | `deep_thinking=true` 时 | 助手气泡内展开黄色边框折叠面板，内容逐字追加。**仅实时展示，不落库**（刷新丢失） |
-| message | 正常生成 | 逐字追加到助手消息内容区，Markdown 实时渲染 |
-| sources | 检索结果就绪（message 前或后） | 消息底部渲染引用来源卡片（[来源N] 编号 + 文档名 + 页码 + 智能预览）。后端通过 `highlight_start/end` 提供高亮区间，前端纯 slice 切片渲染（零匹配逻辑）；`preview_text` 不存在时降级使用 `content` 前 200 字符 |
-| finish | 全部输出完毕 | 关闭 typing 动画，更新消息 ID，首轮保存 title，记录 token_usage |
+| thinking | `deep_thinking=true` 时（仅 KNOWLEDGE/CASUAL 意图） | 助手气泡内展开黄色边框折叠面板，内容逐字追加。**仅实时展示，不落库**（刷新丢失）。META 意图无此事件 |
+| message | 正常生成（含 META 意图的固定模板） | 逐字追加到助手消息内容区，Markdown 实时渲染。META 意图一次性输出固定模板 |
+| sources | 检索结果就绪（**仅 KNOWLEDGE 意图**） | 消息底部渲染引用来源卡片（[来源N] 编号 + 文档名 + 页码 + 智能预览）。后端通过 `highlight_start/end` 提供高亮区间，前端纯 slice 切片渲染（零匹配逻辑）；`preview_text` 不存在时降级使用 `content` 前 200 字符。**CASUAL/META 意图无此事件** |
+| finish | 全部输出完毕 | 关闭 typing 动画，更新消息 ID，首轮保存 title，记录 token_usage（META 意图 token_usage 全为 0） |
 | error | 检索/LLM 异常 | 替换 typing 为错误提示卡片，关闭 streaming 状态 |
 | (注释帧) | 每 15s | `: ping\n\n`，解析时跳过，用户不可见 |
 

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.38 |
+| 文档版本 | v0.39 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin 后端 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ⬜ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -407,32 +407,40 @@ Phase 4 在 Phase 3 单轮链路基础上加入**会话记忆**和**问题重写
 - `collection.query(query_embeddings=[vec], n_results=10, where={"kb_id": kb_id})`
 - metadata 值为数值类型（int），入库和查询两端统一使用 int，无需类型转换
 
-**BM25 关键词检索**（索引生命周期）：
+**BM25 关键词检索**（索引生命周期 — 三级缓存）：
 
 ```
 文档终态（completed/success_with_warnings）
     ↓ Celery ingest task 末尾触发
-DEL Redis key: bm25_tokens:{kb_id}
+DEL Redis key: bm25_tokens:{kb_id}  +  清除进程内缓存
     ↓ 下次查询时
 get_bm25_index(kb_id):
-  ├── Redis GET bm25_tokens:{kb_id}
-  │   ├── 命中 → json.loads → BM25Okapi(tokens)  实例化（轻量，<50ms）
-  │   └── 未命中 → 懒加载重建:
-  │        1. SELECT content FROM chunks WHERE kb_id=? ORDER BY id
-  │        2. [jieba.lcut(c.content) for c in chunks]  ← 最昂贵步骤
-  │        3. SETEX bm25_tokens:{kb_id} 300 {"doc_ids":[...], "tokens":[[...],...]}
-  │        4. BM25Okapi(tokens)
+  ├── L1: 进程内缓存（dict，TTL=60s）
+  │   ├── 命中 → 直接返回 BM25Okapi 实例（<1ms）
+  │   └── 未命中 → 进入 L2
+  ├── L2: Redis 缓存（async Redis，TTL=300s）
+  │   ├── 命中 → json.loads → BM25Okapi(tokens) 实例化（~50ms）
+  │   └── 未命中 → 进入 L3
+  └── L3: 懒加载重建（MySQL → jieba → Redis → 进程内缓存）
+       1. SELECT content FROM chunks WHERE kb_id=? ORDER BY id
+       2. [jieba.lcut(c.content) for c in chunks]  ← 最昂贵步骤
+       3. SETEX bm25_tokens:{kb_id} 300 {"doc_ids":[...], "tokens":[[...],...]}
+       4. BM25Okapi(tokens)
   └── get_scores(jieba.lcut(question)) → top_k=10
 ```
 
 | 事件 | 触发 | 操作 |
 |:---|:---|:---|
-| 文档入库完成 | Celery ingest 末尾 | `DEL bm25_tokens:{kb_id}` |
-| 文档删除完成 | Celery delete 末尾 | `DEL bm25_tokens:{kb_id}` |
-| reprocess 触发 | document_service | `DEL bm25_tokens:{kb_id}` |
-| 查询时缓存未命中 | `get_bm25_index()` | 懒加载重建（MySQL → jieba → Redis） |
+| 文档入库完成 | Celery ingest 末尾 | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| 文档删除完成 | Celery delete 末尾 | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| reprocess 触发 | document_service | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| 查询时缓存未命中 | `get_bm25_index()` | 懒加载重建（MySQL → jieba → Redis → 进程内缓存） |
 
 **设计要点**：
+- **三级缓存**：进程内 dict（TTL=60s）→ Redis（TTL=300s）→ MySQL 懒加载
+- **进程内缓存**：避免 Redis 网络 IO，cache hit 从 ~50ms 降至 <1ms
+- **async Redis**：`redis.asyncio` 替换同步 `redis.Redis`，修复事件循环阻塞（原同步调用导致 ~2.8s 阻塞）
+- **Celery 保持同步**：Celery Worker 继续使用同步 `get_redis()`，`invalidate_bm25_cache` 提供同步/异步两个版本
 - **缓存 `tokenized_corpus` 而非 pickle BM25Okapi 实例**：JSON 格式跨版本安全、Redis 友好、可人工排查
 - **BM25Okapi 构造极轻量**（纯 NumPy 计算），真正昂贵的是 IO + jieba 分词
 - **TTL=300s** 作为兜底：即使 Celery 未触发 DEL，缓存也会过期重建
@@ -702,11 +710,11 @@ Question → Retrieval → 结果好 → 直接回答
 
 #### 5.1.6 意图识别（Intent Classification）[Implemented]
 
-**背景**：Phase 3 使用 `_is_casual_chat()` 正则 stopgap（6 类模式：问候/致谢/告别/极短输入等）覆盖高频闲谈场景，跳过检索直接回复。但正则无法区分「知识查询」与「真正的闲聊」——「你能做什么」被误判为知识查询走完整 RAG 链路浪费 token，「最近有什么新政策」被正则误判为闲谈跳过检索。Phase 5 用 LLM 分类替换正则，提升分类准确率。
+**背景**：Phase 3 使用 `_is_casual_chat()` 正则 stopgap（6 类模式：问候/致谢/告别/极短输入等）覆盖高频闲谈场景，跳过检索直接回复。但正则无法区分「知识查询」与「真正的闲聊」——「你能做什么」被误判为知识查询走完整 RAG 链路浪费 token，「最近有什么新政策」被正则误判为闲谈跳过检索。Phase 5 用 LLM 分类替换正则，提升分类准确率。Phase 5 性能优化改为**规则优先 + Flash 模型兜底**的两阶段架构，将 ~90% 流量在 <1ms 内完成分类。
 
 **设计目标**：
 - 分类准确率 > 95%（相比正则 stopgap 的 ~70%）
-- 分类延迟 < 300ms（轻量 Prompt + `deep_thinking=False` + `max_tokens=10`）
+- 分类延迟：规则命中 <1ms，Flash 模型兜底 ~1-2s（仅 ~10% 流量）
 - LLM 分类失败时回退正则 stopgap，不影响主流程可用性
 
 ---
@@ -723,7 +731,32 @@ Question → Retrieval → 结果好 → 直接回答
 
 ---
 
-**分类 Prompt（约 200 tokens）**
+**两阶段分类架构（规则优先 + Flash 模型兜底）**
+
+Phase 5 初版使用 LLM-only 分类（deepseek-v4-pro），实测延迟 ~5s。性能优化改为两阶段架构：
+
+```
+用户问题
+    │
+    ▼
+Stage 1: 规则分类（<1ms）
+    │
+    ├─ META      → 直接返回（regex 命中：「你能做什么」「支持什么」等）
+    ├─ CASUAL    → 直接返回（regex 命中：问候/致谢/告别/极短输入等）
+    └─ UNKNOWN   → 进入 Stage 2
+            │
+            ▼
+Stage 2: LLM 兜底（deepseek-v4-flash，~10% 流量）
+    ├─ 返回有效标签 → Intent 枚举
+    └─ 失败/无效标签 → 降级回退 _is_casual_chat() 正则
+```
+
+| 要点 | 决策 | 原因 |
+|:---|:---|:---|
+| Stage 1 规则 | `_is_meta_question()` + `_is_casual_chat()` 正则 | META/CASUAL 占 ~90% 流量，规则 <1ms 完成 |
+| Stage 2 模型 | `deepseek-v4-flash`（非 pro） | flash 模型延迟 ~1-2s，分类任务简单无需 pro |
+| 模型配置 | `config.py` 新增 `LLM_FLASH_MODEL` | 同一 base_url/api_key，仅 model 不同 |
+| 降级策略 | flash 失败 → `_is_casual_chat()` 正则 → 保守 KNOWLEDGE | 「宁可查了没用，不可该查不查」 |
 
 ```python
 INTENT_SYSTEM_PROMPT = """你是一个查询意图分类器。将用户问题分为以下三类之一：
@@ -777,14 +810,12 @@ else:  # KNOWLEDGE
 
 **延迟优化**
 
-| 要点 | 决策 | 原因 |
-|:---|:---|:---|
-| deep_thinking | `False` | 分类是简单任务，无需深度思考 |
-| max_tokens | `10` | 输出仅需 1 个词（`KNOWLEDGE` / `CASUAL` / `META`），10 tokens 绰绰有余 |
-| 独立 LLM 调用 | ✅ 是 | 分类必须在 Rewrite 和 Retrieval 之前，无法与主 LLM 调用合并 |
-| 预期延迟 | < 300ms | 轻量 Prompt + 短输出，实测应在此范围内 |
+| 阶段 | 延迟 | 流量占比 | 说明 |
+|:---|:---|:---|:---|
+| Stage 1 规则命中 | <1ms | ~90% | META/CASUAL 正则直接返回，零 LLM 调用 |
+| Stage 2 Flash 模型 | ~1-2s | ~10% | `deepseek-v4-flash`，轻量 Prompt + `deep_thinking=False` + `max_tokens=10` |
 
-> **设计决策：选择一次额外 LLM 调用而非复用主 LLM**。分类结果决定是否触发检索——检索是 RAG 链路中最昂贵的步骤（向量查询 + BM25 + RRF），用 ~300ms 的分类避免不必要的检索是净收益。闲谈和元问题占日常对话的 10-20%，分类可为这些请求节省 2-5s 的检索耗时。
+> **设计决策：规则优先 + Flash 模型兜底**。Phase 5 初版使用 pro 模型做全量分类（~5s/次），实测 META/CASUAL 占 ~90% 流量且规则可覆盖。优化后规则命中 <1ms，仅 ~10% 模糊问题需 Flash 模型兜底。分类结果决定是否触发检索——检索是 RAG 链路中最昂贵的步骤（向量查询 + BM25 + RRF），用 <1ms 的规则分类避免不必要的检索是净收益。
 
 ---
 
@@ -792,16 +823,21 @@ else:  # KNOWLEDGE
 
 ```
 classify_intent(question)
-  ↓ try
-LLM 调用（deep_thinking=False, max_tokens=10）
-  ↓ 成功 + 有效标签 → 返回 Intent 枚举
-  ↓ 失败（网络/API异常/返回无效标签）
-  ↓ except / invalid
-回退 _is_casual_chat(question)  ← Phase 3 正则 stopgap（已有 6 类模式）
-  ├── 命中 → Intent.CASUAL
-  └── 未命中 → Intent.KNOWLEDGE（保守策略：宁可查了没用，不可该查不查）
-  
-日志记录分类失败原因（WARNING 级别），便于线上观察分类 LLM 可用性
+  │
+  ▼
+Stage 1: 规则分类（<1ms）
+  ├─ META regex 命中 → Intent.META
+  ├─ CASUAL regex 命中 → Intent.CASUAL
+  └─ UNKNOWN → 进入 Stage 2
+          │
+          ▼
+Stage 2: Flash 模型兜底（~1-2s）
+  ├─ 成功 + 有效标签 → 返回 Intent 枚举
+  └─ 失败/无效标签 → 降级回退 _is_casual_chat() 正则
+        ├── 命中 → Intent.CASUAL
+        └── 未命中 → Intent.KNOWLEDGE（保守策略）
+
+日志记录分类阶段（rule/flash/fallback）+ 延迟，便于线上监控
 ```
 
 **降级原则**：**保守路由**。分类失败时走 `KNOWLEDGE` 路径（触发检索），确保用户的知识查询不会被误判为闲谈而跳过检索。代价是闲谈被误判为知识查询时多走一次检索（~1-2s），但「该查的没查」比「不该查的查了」严重得多。
@@ -811,8 +847,10 @@ LLM 调用（deep_thinking=False, max_tokens=10）
 **实现文件**
 
 ```
-backend/app/rag/intent.py              ← 实现：classify_intent() + Intent 枚举 + Prompt 常量（复用已有占位文件）
-backend/app/services/chat_service.py   ← 修改：_validate_and_prepare() 集成（Rewrite 之前）
+backend/app/rag/intent.py              ← 实现：classify_intent() + Intent 枚举 + 规则分类 + Flash 模型调用
+backend/app/config.py                  ← 新增：LLM_FLASH_MODEL 配置项
+backend/app/core/llm.py                ← 修改：chat_completion() 新增 model 参数
+backend/app/services/chat_service.py   ← 修改：_validate_and_prepare() 集成（Rewrite 之前），删除 _is_casual_chat 迁入 intent.py
 ```
 
 **集成点**：`chat_service._validate_and_prepare()` 中，在 Query Rewrite（§5.1.5）之前：
@@ -1136,17 +1174,22 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 | 技术 | rank-bm25 (BM25Okapi) + jieba 分词 |
 |:---|:---|
 
-**索引生命周期**（详见 §5.1.1）：
+**索引生命周期**（详见 §5.1.1，三级缓存）：
 
 | 事件 | 触发 | 操作 |
 |:---|:---|:---|
-| 文档入库完成 | Celery ingest 末尾 | `DEL bm25_tokens:{kb_id}`（下次查询懒加载重建） |
-| 文档删除完成 | Celery delete 末尾 | `DEL bm25_tokens:{kb_id}` |
-| reprocess 触发 | document_service | `DEL bm25_tokens:{kb_id}` |
-| 查询时缓存未命中 | `get_bm25_index()` | 懒加载重建（MySQL → jieba 分词 → Redis SETEX 300） |
+| 文档入库完成 | Celery ingest 末尾 | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| 文档删除完成 | Celery delete 末尾 | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| reprocess 触发 | document_service | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| 查询时缓存未命中 | `get_bm25_index()` | 懒加载重建（MySQL → jieba → Redis → 进程内缓存） |
 
-**缓存结构**（Redis key: `bm25_tokens:{kb_id}`，TTL=300s）：
+**缓存结构**（三级缓存）：
+- **L1 进程内缓存**：`dict[kb_id] → (BM25Okapi, doc_ids, contents, expire_at)`，TTL=60s，<1ms
+- **L2 Redis 缓存**：`bm25_tokens:{kb_id}` JSON，TTL=300s，~50ms（async Redis）
+- **L3 MySQL 懒加载**：SELECT + jieba 分词 + SETEX，~2.5s
+
 ```json
+// Redis 缓存结构
 {
   "doc_ids": [101, 102, 103],
   "tokens": [["入职", "指南", "欢迎"], ["报销", "制度"], ["VPN", "配置"]]
@@ -1155,6 +1198,7 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 - 缓存 `tokenized_corpus`（分词结果列表），**禁止** pickle BM25Okapi 实例
 - 查询时 `BM25Okapi(tokens)` 实时实例化（轻量，纯 NumPy 计算）
 - 真正昂贵的是 jieba 分词 + MySQL IO
+- **async Redis**：FastAPI 上下文使用 `redis.asyncio`，Celery 保持同步 `redis.Redis`
 
 ### 6.3 RRF 融合排序
 
@@ -1233,20 +1277,23 @@ collection.query(where={"kb_id": kb_id})  # 直接传 int
 - 内置 `get_batch_scores()` 方法，适合知识库范围内的局部检索
 - BM25 公式已稳定数十年，最后更新 2022-02 不构成弃用理由
 
-**索引生命周期**（详见 §5.1.1）：
+**索引生命周期**（详见 §5.1.1，三级缓存）：
 
 | 事件 | 触发 | 操作 |
 |:---|:---|:---|
-| 文档入库完成 | Celery ingest 末尾 | `DEL bm25_tokens:{kb_id}` |
-| 文档删除完成 | Celery delete 末尾 | `DEL bm25_tokens:{kb_id}` |
-| reprocess 触发 | document_service | `DEL bm25_tokens:{kb_id}` |
-| 查询时缓存未命中 | `get_bm25_index()` | 懒加载重建（MySQL → jieba → Redis SETEX 300） |
+| 文档入库完成 | Celery ingest 末尾 | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| 文档删除完成 | Celery delete 末尾 | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| reprocess 触发 | document_service | `DEL bm25_tokens:{kb_id}` + 清除进程内缓存 |
+| 查询时缓存未命中 | `get_bm25_index()` | 懒加载重建（MySQL → jieba → Redis → 进程内缓存） |
 
-**缓存结构**（Redis key: `bm25_tokens:{kb_id}`，TTL=300s）：
-- 存储 `{"doc_ids": [...], "tokens": [[...], ...]}` JSON
+**缓存结构**（三级缓存）：
+- **L1 进程内缓存**：`dict[kb_id] → (BM25Okapi, doc_ids, contents, expire_at)`，TTL=60s，<1ms
+- **L2 Redis 缓存**：`bm25_tokens:{kb_id}` JSON，TTL=300s，~50ms（async Redis）
+- **L3 MySQL 懒加载**：SELECT + jieba 分词 + SETEX，~2.5s
 - **禁止** pickle BM25Okapi 实例（跨版本不安全、Redis 不友好）
 - 查询时 `BM25Okapi(tokens)` 实时实例化（轻量，纯 NumPy 计算，<50ms）
 - 真正昂贵的步骤是 jieba 分词 + MySQL IO
+- **async Redis**：FastAPI 上下文使用 `redis.asyncio`，Celery 保持同步 `redis.Redis`
 
 **IDF 静默衰减风险**：`rank-bm25` 的 IDF 基于语料初始化时固定，文档删除后不会自动衰减已不在语料中的词的 IDF。但对于 RAG 场景，IDF 偏差影响有限——BM25 结果仅作为 RRF 融合的一路信号，最终排序由双路融合 + Rerank 共同决定。
 
@@ -1280,7 +1327,32 @@ class NoopReranker(BaseReranker):
 - 前端规模可控（~12 个组件、~3 个页面），类型检查收益有限
 - 如后续团队协作或规模增长，可渐进式迁移（Vue 3 支持 JS + TS 混用）
 
-### 7.5 文件存储策略
+### 7.5 LLM 模型选择策略
+
+**双模型架构**：pro 模型用于主回复生成，flash 模型用于辅助简单任务。
+
+| 函数 | 用途 | 模型 | 原因 |
+|:---|:---|:---|:---|
+| `stream_chat_completion()` | RAG 主回复生成 | pro（`settings.LLM_MODEL`） | 需要高质量长文本生成 + 深度思考 |
+| `chat_completion()` | 意图分类 / 问题改写 / 标题生成 | flash（`settings.LLM_FLASH_MODEL`） | 简单任务，短输出，延迟敏感 |
+
+**配置**（`config.py`）：
+```python
+LLM_MODEL: str = "deepseek-v4-pro"       # 主回复模型
+LLM_FLASH_MODEL: str = "deepseek-v4-flash"  # 辅助任务模型
+```
+
+两个模型共享同一 `base_url` / `api_key`（DeepSeek 同一服务），仅 `model` 参数不同。
+
+**适用 Flash 模型的场景**：
+- 意图分类：输出 1 个标签（`KNOWLEDGE` / `CASUAL` / `META`），<10 tokens
+- 问题改写：输出改写后的短问题，~20 tokens
+- 标题生成：输出 ≤20 字标题，~20 tokens
+
+**不适用 Flash 模型的场景**：
+- RAG 主回复：需要长文本生成 + 引用标注 + 可能的深度思考，必须用 pro
+
+### 7.6 文件存储策略
 
 | 阶段 | 方案 | 说明 |
 |:---|:---|:---|
@@ -1312,7 +1384,7 @@ class OSSStorage(StorageBackend): ...      # 后续扩展
 
 ---
 
-### 7.6 知识库可见性模型（弱混合模式）
+### 7.7 知识库可见性模型（弱混合模式）
 
 **设计原则**：`visibility` 控制 READ（谁能看），`ownership` 控制 WRITE（谁能改）。
 

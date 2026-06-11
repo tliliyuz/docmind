@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.41 |
+| 文档版本 | v0.42 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin 后端 ✅ / 前端联调 ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 部署 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ⬜ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -403,6 +403,43 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 后端定位逻辑（v1 — LLM 引用定位） | `chat_service.py` — `_locate_preview()` / `_fallback_preview()` 实现；`_build_sources()` 新增 `assistant_content` 参数 + `preview_text` / `preview_range` 字段；`ChatSourceChunk` / `PreviewRange` Schema |
 | ✅ | 前端预览渲染 | `MessageItem.vue` — 被引段落高亮渲染（`<mark>` 标签包裹 `preview_range` 范围） |
 | ✅ | Evidence Highlight 重构（v2 — 句级 BM25 定位） | 将定位从「LLM 生成后」前移到「检索时」：新建 `sentence_matcher.py`（句级 BM25 定位，~50 行）；`RetrievalResult` 新增 `matched_sentence` / `matched_sentence_score` 字段；删除旧 5 个函数（`_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet`，~100 行）；`_build_sources()` 简化为基于 `matched_sentence` 生成预览窗口。净代码 -150 行 |
+
+#### 7.1.3 P0 性能优化（2 子任务）
+
+> **设计文档**：详见 `.claude/plans/001-intent-optimization.md`。
+
+**P0-1：意图识别 — 规则快速通道 + Flash 模型兜底**
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | `_is_meta_question()` regex | META 意图规则分类（「你能做什么」「支持什么」等模式） |
+| ⬜ | CASUAL regex 迁入 intent.py | `_CASUAL_PATTERNS` + `_is_casual_chat()` 从 `chat_service.py` 搬到 `intent.py` |
+| ⬜ | `classify_intent()` 重构 | 规则优先 → `_llm_classify()` 兜底（`deepseek-v4-flash`） |
+| ⬜ | `config.py` 新增 `LLM_FLASH_MODEL` | 默认 `deepseek-v4-flash`，同 base_url/api_key |
+| ⬜ | `llm.py` 新增 `model` 参数 | `chat_completion()` 支持指定模型，默认改为 `settings.LLM_FLASH_MODEL`（非流式场景统一用 Flash） |
+| ⬜ | `chat_service.py` 适配 | 删除 `_is_casual_chat`，改为 `from app.rag.intent import _is_casual_chat`；`_generate_title_llm()` 自动受益 |
+| ⬜ | `query_rewriter.py` 验证 | `rewrite_query()` 自动受益于 `chat_completion()` 默认值改为 Flash（无需改代码） |
+
+**P0-2：BM25 优化 — async Redis + 进程内缓存**
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | `redis_client.py` 新增 `get_async_redis()` | 保留同步客户端（Celery）+ 新增 `redis.asyncio` 异步客户端（FastAPI） |
+| ⬜ | `bm25.py` async Redis | `self._redis.get()` → `await self._async_redis.get()`，修复事件循环阻塞 |
+| ⬜ | `bm25.py` 进程内缓存 | `dict[kb_id] → (BM25Okapi, doc_ids, contents, expire_at)`，TTL=60s |
+| ⬜ | `bm25.py` async `invalidate_bm25_cache()` | 清除 Redis + 进程内缓存，提供同步/异步两个版本 |
+| ⬜ | 调用方适配 | `chat_service.py` async 初始化 / `document_service.py` await 调用 / `tasks.py` 保持同步 |
+
+**预期效果**：
+
+| 场景 | 当前 | P0-1 优化后 | P0-2 优化后 |
+|:---|:---|:---|:---|
+| META "你能做什么" | ~5s pro | <1ms regex | — |
+| CASUAL "你好" | ~5s pro | <1ms regex | — |
+| 模糊问题（意图分类） | ~5s pro | ~1-2s flash | — |
+| 问题改写 | ~3-5s pro | ~1-2s flash | — |
+| 标题生成 | ~3-5s pro | ~1-2s flash | — |
+| BM25 cache hit | ~2.8s（同步阻塞） | — | ~5ms（进程内缓存） |
 
 ### 7.2 管理后台（简易版）
 

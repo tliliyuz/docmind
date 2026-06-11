@@ -1,5 +1,79 @@
 # DocMind 变更日志
 
+## 2026-06-11 — P0 性能优化规划：意图识别 + BM25
+
+### 设计
+
+| 优化项 | 问题 | 方案 | 预期效果 |
+|:---|:---|:---|:---|
+| 意图识别 | `classify_intent` 每次走 LLM（deepseek-v4-pro），实测 ~5s | 规则优先（<1ms）+ Flash 模型兜底（deepseek-v4-flash，~10% 流量） | META/CASUAL <1ms，模糊问题 ~1-2s |
+| BM25 | `redis_client.py` 使用同步 `redis.Redis`，在 async 上下文中阻塞事件循环（~2.8s） | ① 新增 `get_async_redis()`（redis.asyncio）② 进程内 dict 缓存（TTL=60s） | cache hit ~5ms（进程内）/ ~50ms（Redis） |
+
+### Flash 模型适用范围
+
+`chat_completion()` 默认值从 `settings.LLM_MODEL`（pro）改为 `settings.LLM_FLASH_MODEL`（flash），所有非流式 LLM 调用统一用 Flash 模型：
+
+| 场景 | 文件 | 当前模型 | 优化后 |
+|:---|:---|:---|:---|
+| 意图分类 | `intent.py::classify_intent()` | pro | flash |
+| 问题改写 | `query_rewriter.py::rewrite_query()` | pro | flash |
+| 标题生成 | `chat_service.py::_generate_title_llm()` | pro | flash |
+| **RAG 主回复** | `stream_chat_completion()` | pro | **pro（不变）** |
+
+### 文档同步
+
+| 文件 | 变更 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | §5.1.6 意图识别：新增两阶段分类架构；§5.1.1/§6.2/§7.2 BM25：三级缓存 + async Redis；新增 §7.5 LLM 模型选择策略 |
+| `docs/ROADMAP.md` | 新增 §7.1.3 P0 性能优化（P0-1 意图识别 7 项 + P0-2 BM25 5 项）+ 预期效果表补充问题改写/标题生成 |
+
+> 详见 `.claude/plans/001-intent-optimization.md`。
+
+---
+
+## 2026-06-11 — Phase 5 意图识别实现 + Admin 后端 + Admin 前端联调
+
+### 新增
+
+| 操作 | 文件 | 变更 |
+|:---|:---|:---|
+| 新建 | `backend/app/rag/intent.py` | LLM 意图分类器（~116 行）：3 类分类（KNOWLEDGE/CASUAL/META）+ few-shot Prompt + 降级回退 `_is_casual_chat()` |
+| 新建 | `backend/app/api/admin.py` | Admin API 端点（~76 行）：GET `/stats` / `/knowledge-bases` / `/documents`，`require_admin` 依赖注入 |
+| 新建 | `backend/app/services/admin_service.py` | Admin 业务逻辑（~226 行）：`get_stats()`（7 统计维度）/ `list_all_kbs()`（5 筛选维度）/ `list_all_documents()`（5 筛选 + 5 排序） |
+| 新建 | `backend/app/schemas/admin.py` | Admin Pydantic Schema（~81 行）：`AdminStatsResponse` / `AdminKBItem` / `AdminKBListResponse` / `AdminDocItem` / `AdminDocListResponse` |
+| 新建 | `frontend/src/api/admin.js` | Admin API 封装（3 个接口函数） |
+| 新建 | `frontend/src/components/layout/AdminLayout.vue` | Admin 独立布局（侧边栏 + 主内容区） |
+
+### 修改
+
+| 操作 | 文件 | 变更 |
+|:---|:---|:---|
+| 修改 | `backend/app/services/chat_service.py` | ① 集成 `classify_intent()`：在 `_validate_and_prepare()` 中 Rewrite 之前调用，3 类分流 ② 新增 `_generate_meta_response()`：META 意图固定模板 SSE 响应 ③ CASUAL 意图跳过检索，使用 `CASUAL_SYSTEM_PROMPT` |
+| 修改 | `backend/app/core/exceptions.py` | 新增 `MetaQuestionException(E4006)`：META 意图业务异常，携带 conv + is_first_turn |
+| 修改 | `backend/app/dependencies.py` | 新增 `require_admin()` 依赖注入：校验 `role=admin`，非 admin 返回 403 E5005 |
+| 修改 | `backend/app/main.py` | 注册 `admin_router`（`prefix="/api/admin"`） |
+| 修改 | `backend/app/schemas/__init__.py` | 导出 Admin Schema |
+| 修改 | `frontend/src/App.vue` | Admin 路由嵌套 |
+| 修改 | `frontend/src/router/index.js` | Admin 路由配置（`/admin/*`） |
+| 修改 | `frontend/src/components/layout/Sidebar.vue` | 移除 admin 导航区，用户菜单新增「管理后台」入口 |
+| 修改 | `frontend/src/views/admin/*.vue` | 4 个 Admin 页面对接真实数据（StatsPage / KnowledgeList / DocumentList / ConversationList） |
+
+### 测试
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_intent.py` | 意图分类器测试（10 用例：分类正确性 6 + 路由 2 + 降级 2） |
+| `backend/tests/test_admin_service.py` | Admin Service 测试（21 用例：统计 3 + KB 列表 8 + 文档列表 10） |
+| `backend/tests/test_admin_api.py` | Admin API 测试（27 用例：含权限矩阵参数化 9 用例） |
+
+### 架构变更
+
+- **意图识别 3 类分流**：正则 stopgap（Phase 3）→ LLM 分类器（Phase 5），分类准确率从 ~70% 提升至 >95%。KNOWLEDGE 走完整 RAG，CASUAL 跳过检索，META 不调 LLM。
+- **Admin 后端接口**：3 个 GET 端点（stats / knowledge-bases / documents），`require_admin` 依赖注入统一鉴权。
+- **Admin 前端联调**：4 个管理页面对接真实 API，AdminLayout 独立布局，Sidebar 用户菜单入口。
+
+---
+
 ## 2026-06-11 — Evidence Highlight：句级 BM25 定位重构 + highlight_start/end 纯渲染
 
 ### 修改

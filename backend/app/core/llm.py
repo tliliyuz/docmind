@@ -9,6 +9,7 @@
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import AsyncIterator
 
@@ -97,6 +98,8 @@ async def stream_chat_completion(
 
     try:
         logger.info(f"调用 LLM: model={settings.LLM_MODEL}, deep_thinking={deep_thinking}")
+        t0 = time.perf_counter()
+        t_first = None
 
         stream = await client.chat.completions.create(**request_kwargs)
 
@@ -110,6 +113,10 @@ async def stream_chat_completion(
             # 解析 content 和 reasoning_content
             content = delta.content or ""
             reasoning_content = getattr(delta, "reasoning_content", "") or ""
+
+            if t_first is None and (content or reasoning_content):
+                t_first = time.perf_counter()
+                logger.info("LLM_PERF(流式) 首Token=%.3fs", t_first - t0)
 
             yield LLMChunk(
                 content=content,
@@ -168,8 +175,10 @@ async def chat_completion(
 
     try:
         logger.info(f"调用 LLM (非流式): model={settings.LLM_MODEL}")
+        t0 = time.perf_counter()
 
         response = await client.chat.completions.create(**request_kwargs)
+        t_api = time.perf_counter()
 
         if not response.choices:
             raise LLMCallFailedException(detail="LLM 返回空结果")
@@ -183,6 +192,11 @@ async def chat_completion(
         prompt_tokens = usage.prompt_tokens if usage else 0
         completion_tokens = usage.completion_tokens if usage else 0
         total_tokens = usage.total_tokens if usage else 0
+
+        logger.info(
+            "LLM_PERF(非流式) api=%.3fs prompt_tok=%d completion_tok=%d",
+            t_api - t0, prompt_tokens, completion_tokens,
+        )
 
         return LLMResult(
             content=content,

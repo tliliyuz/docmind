@@ -11,6 +11,7 @@
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import uuid4
@@ -292,6 +293,10 @@ async def _generate_sse_stream(
     """
     assistant_content = ""
     token_usage: dict = {}
+    t0 = time.perf_counter()  # 总起点
+    t_first_token = None
+    t_stream_end = None
+    t_sources_end = None
 
     # 发送 meta 事件
     yield format_sse_event("meta", {
@@ -313,14 +318,20 @@ async def _generate_sse_stream(
             deep_thinking=deep_thinking,
         ):
             if chunk.reasoning_content and deep_thinking:
+                if t_first_token is None:
+                    t_first_token = time.perf_counter()
                 yield format_sse_event("thinking", {
                     "delta": chunk.reasoning_content,
                 })
             if chunk.content:
+                if t_first_token is None:
+                    t_first_token = time.perf_counter()
                 assistant_content += chunk.content
                 yield format_sse_event("message", {
                     "delta": chunk.content,
                 })
+
+        t_stream_end = time.perf_counter()  # LLM 流结束
 
         # DeepSeek 流式 API 不返回 usage，使用 chunker 估算
         prompt_tokens = (
@@ -335,7 +346,14 @@ async def _generate_sse_stream(
         }
 
     except Exception as e:
+        t_error = time.perf_counter()
         logger.exception("LLM 流式调用异常")
+        _ttft = (t_first_token - t0) if t_first_token else None
+        logger.info(
+            "PERF(异常) 首Token=%.3fs LLM已耗时=%.3fs",
+            _ttft if _ttft else -1,
+            t_error - t0,
+        )
         # 即使 LLM 失败，也发送 sources（对齐 API.md §6 错误流程）
         # 优先使用 prompt_result.used_chunks（与 [来源N] 编号一致），为空时回退
         _error_chunks = prompt_result.used_chunks or reranked_output.results
@@ -402,6 +420,8 @@ async def _generate_sse_stream(
             sources = _build_sources(_send_chunks, doc_map)
             yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
+    t_sources_end = time.perf_counter()  # 引用构建结束
+
     # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）
     try:
         assistant_msg = Message(
@@ -432,6 +452,17 @@ async def _generate_sse_stream(
             "title": title,
             "token_usage": token_usage,
         })
+
+        t_finish = time.perf_counter()
+        _ttft = (t_first_token - t0) if t_first_token else -1
+        logger.info(
+            "PERF 首Token=%.3fs 生成=%.3fs 引用构建=%.3fs 收尾=%.3fs 总计=%.3fs",
+            _ttft,
+            (t_stream_end - t_first_token) if (t_first_token and t_stream_end) else -1,
+            (t_sources_end - t_stream_end) if (t_stream_end and t_sources_end) else -1,
+            (t_finish - t_sources_end) if t_sources_end else -1,
+            t_finish - t0,
+        )
 
         # SSE 流结束后，异步调用 LLM 生成更好标题
         if is_first_turn:
@@ -530,6 +561,8 @@ async def _validate_and_prepare(
     Returns:
         (conv, is_first_turn, reranked_output, prompt_result, doc_map)
     """
+    t_prep = time.perf_counter()
+
     # 基础校验
     if not question or not question.strip():
         raise QuestionEmptyException()
@@ -571,9 +604,11 @@ async def _validate_and_prepare(
     # 手动同步 updated_at（对齐 ARCHITECTURE.md §8.6）
     conv.updated_at = datetime.now(timezone.utc)
     await db.commit()
+    t_db_done = time.perf_counter()
 
     # 意图识别（Phase 5，对齐 ARCHITECTURE.md §5.1.6）
     intent = await classify_intent(question)
+    t_intent = time.perf_counter()
     logger.info("INTENT question=%s intent=%s", question[:50], intent.value)
 
     if intent == Intent.META:
@@ -583,8 +618,10 @@ async def _validate_and_prepare(
 
     # 问题重写：仅 KNOWLEDGE 路径触发（对齐 ARCHITECTURE.md §5.1.5）
     _original_question = question
+    t_rewrite = t_intent  # 默认值，未触发重写时复用
     if not skip_retrieval and _needs_rewrite(question, history_messages):
         question = await rewrite_query(question, history_messages)
+        t_rewrite = time.perf_counter()
         logger.info(
             "QUERY_REWRITE original=%s rewritten=%s triggered=True",
             _original_question[:100], question[:100],
@@ -624,12 +661,15 @@ async def _validate_and_prepare(
         # 多路检索（失败包装为 E4003）
         try:
             vector_output = await _vector_retriever.search(question, kb_id)
+            t_vector = time.perf_counter()
             bm25_output = await _bm25_retriever.search(question, kb_id)
+            t_bm25 = time.perf_counter()
             fused_output = rrf_fusion(vector_output, bm25_output)
             reranked_output = await _reranker.rerank(question, fused_output)
             # 句级 Evidence 定位：在 Prompt 组装前，确保 used_chunks 携带 matched_sentence
             reranked_output = match_sentences(reranked_output, question)
             prompt_result = build_prompt(question, reranked_output, history_messages=history_messages)
+            t_retrieval_done = time.perf_counter()
         except Exception as e:
             logger.exception("检索链路异常")
             raise RetrievalServiceException(detail=str(e))
@@ -642,6 +682,26 @@ async def _validate_and_prepare(
             select(Document.id, Document.filename).where(Document.id.in_(doc_ids))
         )
         doc_map = {row.id: row.filename for row in doc_rows.all()}
+
+    t_prep_end = time.perf_counter()
+    if skip_retrieval:
+        logger.info(
+            "PREP_PERF 权限+会话=%.3fs 意图=%.3fs 总计=%.3fs (CASUAL 跳过检索)",
+            t_db_done - t_prep,
+            t_intent - t_db_done,
+            t_prep_end - t_prep,
+        )
+    else:
+        logger.info(
+            "PREP_PERF 权限+会话=%.3fs 意图=%.3fs 重写=%.3fs 向量=%.3fs BM25=%.3fs 融合+Rerank=%.3fs 总计=%.3fs",
+            t_db_done - t_prep,
+            t_intent - t_db_done,
+            t_rewrite - t_intent,
+            t_vector - t_rewrite,
+            t_bm25 - t_vector,
+            t_retrieval_done - t_bm25,
+            t_prep_end - t_prep,
+        )
 
     return conv, is_first_turn, reranked_output, prompt_result, doc_map
 
