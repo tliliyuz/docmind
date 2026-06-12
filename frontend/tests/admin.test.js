@@ -10,7 +10,7 @@ vi.mock('@/api/index', () => ({
   default: { get: mockGet },
 }))
 
-import { getAdminStats, getAdminKnowledgeBases, getAdminDocuments } from '@/api/admin'
+import { getAdminStats, getAdminKnowledgeBases, getAdminDocuments, getTraceStats } from '@/api/admin'
 
 describe('admin API', () => {
   beforeEach(() => {
@@ -80,6 +80,28 @@ describe('admin API', () => {
       mockGet.mockResolvedValue({ data: { code: '0', data: { items: [], total: 0 } } })
       await getAdminDocuments({ sort_by: 'file_size', order: 'asc' })
       expect(mockGet).toHaveBeenCalledWith('/admin/documents', { params: { sort_by: 'file_size', order: 'asc' } })
+    })
+  })
+
+  describe('getTraceStats', () => {
+    it('调用 GET /admin/stats/traces 并透传查询参数', async () => {
+      mockGet.mockResolvedValue({ data: { code: '0', data: { trend: [], latency: [], tokens: [] } } })
+      const params = { days: 7 }
+      await getTraceStats(params)
+      expect(mockGet).toHaveBeenCalledTimes(1)
+      expect(mockGet).toHaveBeenCalledWith('/admin/stats/traces', { params })
+    })
+
+    it('不传参数时默认空对象', async () => {
+      mockGet.mockResolvedValue({ data: { code: '0', data: { trend: [], latency: [], tokens: [] } } })
+      await getTraceStats()
+      expect(mockGet).toHaveBeenCalledWith('/admin/stats/traces', { params: {} })
+    })
+
+    it('网络错误时不捕获，交由调用方处理', async () => {
+      const err = new Error('Network Error')
+      mockGet.mockRejectedValue(err)
+      await expect(getTraceStats()).rejects.toThrow('Network Error')
     })
   })
 })

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.65 |
+| 文档版本 | v0.67 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -842,6 +842,9 @@
 
 ### 6.13 Phase 5 性能埋点验证
 
+> **合并说明**：原检索/LLM 耗时埋点（U12.1/U12.2/U12.3）已合并入 §6.14 Trace 测试体系（标记 ⏭️），由 Trace 结构化写 DB 替代散落 `logger.info`。§6.14.4 补充 chat_service 全链路集成测试。
+> **U12.4 独立保留**：日志 JSON 格式校验（U12.4）与 Trace 独立——它验证的是 Phase 4 结构化日志框架（`logging_config.py`）的输出格式，不涉及 Trace 写入。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|
 | U12.1 | 检索耗时日志 | `chat_service` 检索阶段 | 正常检索流程 | 日志 JSON 包含 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.14 retrieve 细粒度），Trace 结构化写 DB 替代散落日志 |
@@ -892,9 +895,12 @@
 
 #### 6.14.4 后端 — chat_service 集成埋点测试
 
+> **与已通过的 Trace 测试的关系**：§6.14.1-6.14.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入，各阶段 JSON 字段是否符合预期。功能已实现（chat_service 中已接入 TraceRecorder 埋点），测试待编写。
+> **与原性能埋点的关系**：原 §6.13 的 U12.1/U12.2/U12.3（散落 `logger.info` 计时日志）已合并入 Trace 体系（标记 ⏭️），由 Trace 结构化写 DB 替代。本节不再重复验证日志格式，仅关注 chat_service 全链路 Trace 写入的正确性。
+
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U13.10 | 埋点-完整 RAG 流程 | `chat_service.chat()` | KNOWLEDGE 意图问答 | Trace 写入，intent/rewrite/retrieve/rerank/generate 各阶段 JSON 非空 | ⬜ | — | 全链路 Mock |
+| U13.10 | 埋点-完整 RAG 流程 | `chat_service.chat()` | KNOWLEDGE 意图问答 | Trace 写入，intent/rewrite/retrieve/rerank/generate 各阶段 JSON 非空 | ⬜ | — | 全链路 Mock；与 U13.1（Trace 模型写入）互补——U13.1 测 Trace 层，本节测 chat_service 集成层 |
 | U13.11 | 埋点-CASUAL 跳过检索 | `chat_service.chat()` | CASUAL 意图问答 | Trace 写入，retrieve/rerank 为空或跳过标记 | ⬜ | — | — |
 | U13.12 | 埋点-META 不调 LLM | `chat_service.chat()` | META 意图问答 | Trace 写入，generate 为空或跳过标记，token_usage 全为 0 | ⬜ | — | — |
 | U13.13 | 埋点-错误状态 | `chat_service.chat()` | LLM 调用失败 | Trace 写入，status=error，error_message 非空 | ⬜ | — | — |
@@ -919,15 +925,33 @@
 
 #### 6.15.2 前端 — ECharts 组件测试
 
+> 测试文件：`tests/useECharts.test.js`（9 用例，全部通过 ✅）。覆盖 init/setOption/notMerge/resize/dispose/getInstance + pendingOption 暂存机制。
+> TrendChart/LatencyChart/TokenChart 通过 `StatsPage.test.js` 的 ECharts mock 间接覆盖（§6.15.3），无独立测试文件。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C7.1 | useECharts 初始化 | `useECharts` | 组合式函数 | 返回 chart 实例，DOM 元素正确绑定 | ⬜ | — | — |
-| C7.2 | useECharts resize | `useECharts` | 窗口 resize | 图表自动 resize | ⬜ | — | — |
-| C7.3 | useECharts dispose | `useECharts` | 组件卸载 | chart.dispose() 被调用 | ⬜ | — | 防内存泄漏 |
-| C7.4 | TrendChart 渲染 | `TrendChart` | 传入 trend 数据 | 折线图渲染，含成功/失败两条线 | ⬜ | — | Mock ECharts |
-| C7.5 | LatencyChart 渲染 | `LatencyChart` | 传入 latency 数据 | 折线图渲染，含 P50/P95/P99 三条线 | ⬜ | — | — |
-| C7.6 | TokenChart 渲染 | `TokenChart` | 传入 tokens 数据 | 堆叠柱状图渲染，含 Input/Output 堆叠 | ⬜ | — | — |
-| C7.7 | 图表空数据 | 各 Chart 组件 | 数据为空数组 | 不报错，显示空态或不渲染 | ⬜ | — | 边界 |
+| C7.1 | useECharts 初始化 | `useECharts` | 组合式函数 | 挂载后自动 init，getInstance() 返回实例 | ✅ | 2026-06-12 | 2 用例（init + getInstance） |
+| C7.2 | useECharts resize | `useECharts` | 窗口 resize | 图表自动 resize | ✅ | 2026-06-12 | 1 用例 |
+| C7.3 | useECharts dispose | `useECharts` | 组件卸载 | chart.dispose() 被调用 | ✅ | 2026-06-12 | 1 用例 |
+| C7.4 | TrendChart 渲染 | `TrendChart` | 传入 trend 数据 | 折线图渲染，含成功/失败两条线 | ✅ | 2026-06-12 | Mock ECharts（2 线系列：成功/失败） |
+| C7.5 | LatencyChart 渲染 | `LatencyChart` | 传入 latency 数据 | 折线图渲染，含 P50/P95/P99 三条线 | ✅ | 2026-06-12 | Mock ECharts（3 线系列：P50/P95/P99） |
+| C7.6 | TokenChart 渲染 | `TokenChart` | 传入 tokens 数据 | 堆叠柱状图渲染，含 Input/Output 堆叠 | ✅ | 2026-06-12 | Mock ECharts（2 堆叠柱系列） |
+| C7.7 | 图表空数据 | 各 Chart 组件 | 数据为空数组 | 不报错，显示空态或不渲染 | ✅ | 2026-06-12 | 边界：chart-empty 显示，setOption 不调用 |
+| C7.8 | useECharts pendingOption | `useECharts` | 挂载前 setOption | 暂存 option，挂载后自动应用 | ✅ | 2026-06-12 | 3 用例（暂存应用/正常调用/dispose 清除） |
+| C7.9 | useECharts setOption notMerge | `useECharts` | notMerge 参数 | setOption 正确传递 notMerge 参数 | ✅ | 2026-06-12 | 1 用例 |
+
+#### 6.15.3 前端 — StatsPage 图表集成测试
+
+> 测试文件：`tests/StatsPage.test.js`（ECharts 图表集成部分，6 用例，全部通过 ✅）。
+
+| ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| C7.10 | 图表加载中骨架 | `StatsPage` | chartsLoading | loading 时图表区域显示 v-loading | ✅ | 2026-06-12 | — |
+| C7.11 | 图表渲染 3 个组件 | `StatsPage` | 图表数据加载成功 | TrendChart/LatencyChart/TokenChart 均渲染 | ✅ | 2026-06-12 | — |
+| C7.12 | 图表数据传入 | `StatsPage` | prop 传递 | 图表组件通过 data prop 接收数据 | ✅ | 2026-06-12 | — |
+| C7.13 | getTraceStats days=7 | `StatsPage` | API 调用参数 | getTraceStats({ days: 7 }) | ✅ | 2026-06-12 | — |
+| C7.14 | 图表 API 失败容错 | `StatsPage` | getTraceStats 失败 | 不阻断页面，统计卡片正常渲染 | ✅ | 2026-06-12 | — |
+| C7.15 | 并行调用两个 API | `StatsPage` | 性能 | getAdminStats 和 getTraceStats 并行调用 | ✅ | 2026-06-12 | — |
 
 ### 6.16 Phase 5 用户管理测试用例
 
@@ -988,22 +1012,23 @@
 
 ### 6.17 Phase 5 Trace 前端组件测试
 
-> 前端测试文件（待创建）：`frontend/tests/TraceList.test.js` + `frontend/tests/TraceDetail.test.js`。
+> 前端测试文件：`frontend/tests/TraceList.test.js`（23 用例）+ `frontend/tests/TraceDetail.test.js`（25 用例）。
+> **说明**：TraceList.vue 和 TraceDetail.vue 组件已实现（2026-06-12），后端 API 测试已通过（§6.14.2-6.14.3，57 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-12，48 用例）。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C9.1 | TraceList 渲染 | `TraceList` | 表格 | Trace 表格渲染，含 Trace ID/用户/知识库/问题/耗时/意图/响应/状态列 | ⬜ | — | — |
-| C9.2 | TraceList 空状态 | `TraceList` | 无 Trace | 显示空状态提示 | ⬜ | — | — |
-| C9.3 | TraceList 搜索 | `TraceList` | 输入搜索关键词 | 重新请求列表 | ⬜ | — | — |
-| C9.4 | TraceList 筛选 | `TraceList` | 切换状态/意图/响应模式筛选 | 重新请求列表 | ⬜ | — | — |
-| C9.5 | TraceList 分页 | `TraceList` | 翻页 | 重新请求对应页 | ⬜ | — | — |
-| C9.6 | TraceList 点击行跳转 | `TraceList` | 点击表格行 | 跳转 `/admin/traces/{trace_id}` | ⬜ | — | — |
-| C9.7 | TraceList Trace ID 复制 | `TraceList` | 点击 Trace ID | 复制到剪贴板 | ⬜ | — | navigator.clipboard |
-| C9.8 | TraceDetail 渲染 | `TraceDetail` | 基本信息 | 用户/会话/知识库/耗时/意图/响应/状态正确显示 | ⬜ | — | — |
-| C9.9 | TraceDetail 阶段卡片 | `TraceDetail` | 5 个阶段 | Intent/Rewrite/Retrieve/Rerank/Generate 卡片各显示耗时+状态 | ⬜ | — | — |
-| C9.10 | TraceDetail JSON 展开 | `TraceDetail` | 点击查看JSON | JSON 面板展开，内容语法高亮 | ⬜ | — | — |
-| C9.11 | TraceDetail JSON 折叠 | `TraceDetail` | 再次点击 | JSON 面板折叠 | ⬜ | — | — |
-| C9.12 | TraceDetail 返回导航 | `TraceDetail` | 点击返回 | 跳转 `/admin/traces` | ⬜ | — | — |
+| C9.1 | TraceList 渲染 | `TraceList` | 表格 | Trace 表格渲染，含 Trace ID/用户/知识库/问题/耗时/意图/响应/状态列 | ✅ | 2026-06-12 | 含概览卡片（computed summary） |
+| C9.2 | TraceList 空状态 | `TraceList` | 无 Trace | 显示空状态提示 | ✅ | 2026-06-12 | — |
+| C9.3 | TraceList 搜索 | `TraceList` | 输入搜索关键词 | 300ms 防抖后重新请求列表 | ✅ | 2026-06-12 | vi.useFakeTimers + advanceTimersByTime(300) |
+| C9.4 | TraceList 筛选 | `TraceList` | 切换状态/意图/响应模式筛选 | 重新请求列表 | ✅ | 2026-06-12 | status/intent_type/response_mode 参数传递 |
+| C9.5 | TraceList 分页 | `TraceList` | 翻页 | 重新请求对应页 | ✅ | 2026-06-12 | el-pagination 事件触发 |
+| C9.6 | TraceList 点击行跳转 | `TraceList` | 点击表格行 | 跳转 `/admin/traces/{trace_id}` | ✅ | 2026-06-12 | router.push 验证 |
+| C9.7 | TraceList Trace ID 复制 | `TraceList` | 点击 Trace ID | 复制到剪贴板 | ✅ | 2026-06-12 | navigator.clipboard.writeText mock |
+| C9.8 | TraceDetail 渲染 | `TraceDetail` | 基本信息 | 用户/会话/知识库/耗时/意图/响应/状态正确显示 | ✅ | 2026-06-12 | 含 tag 组件渲染 |
+| C9.9 | TraceDetail 阶段卡片 | `TraceDetail` | 5 个阶段 | Intent/Rewrite/Retrieve/Rerank/Generate 卡片各显示耗时+状态 | ✅ | 2026-06-12 | 5 阶段 duration 格式化 |
+| C9.10 | TraceDetail JSON 展开 | `TraceDetail` | 点击查看JSON | JSON 面板展开，内容语法高亮 | ✅ | 2026-06-12 | highlight.js mock |
+| C9.11 | TraceDetail JSON 折叠 | `TraceDetail` | 再次点击 | JSON 面板折叠 | ✅ | 2026-06-12 | v-if 切换验证 |
+| C9.12 | TraceDetail 返回导航 | `TraceDetail` | 点击返回 | 跳转 `/admin/traces` | ✅ | 2026-06-12 | router.push 验证 |
 
 ---
 
@@ -1106,12 +1131,13 @@
 | 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例，2026-06-03（MessageItem +2 用例：未找到相关信息 sources panel 显示/隐藏，2026-06-10 已追踪） |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
 | 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
-| 前端 `api/admin.js` | ≥ 80% | ✅ 9 用例 | Phase 5：Admin API 参数透传（9 用例：getStats 3 + getKBs 3 + getDocs 3，2026-06-10） |
-| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 19 用例 | Phase 5：系统统计页（加载态/数据渲染/千分位/formatStorage/错误态/null 边界，2026-06-10；2026-06-11 改名系统统计） |
+| 前端 `api/admin.js` | ≥ 80% | ✅ 12 用例 | Phase 5：Admin API 参数透传（12 用例：getStats 3 + getKBs 3 + getDocs 3 + getTraceStats 3，2026-06-12 更新） |
+| 前端 `composables/useECharts.js` | ≥ 80% | ✅ 9 用例 | Phase 5：ECharts 组合式函数（init/setOption/notMerge/resize/dispose/getInstance + pendingOption 暂存 3 用例，2026-06-12） |
+| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 24 用例 | Phase 5：系统统计页（加载态/数据渲染/千分位/formatStorage/错误态/null 边界/ECharts 图表集成 6 用例，2026-06-12 更新：移除快捷入口 3 用例） |
 | 前端 `views/admin/KnowledgeList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：知识库管理页（列表加载/空状态/搜索防抖/筛选/分页/编辑弹窗/删除/错误处理/formatDateTime，2026-06-10） |
 | 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页（列表加载/搜索/筛选排序/分页/删除含 KB 确认/getStatusLabel/isTerminal/formatFileSize，2026-06-10） |
-| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ⏸️ 已废弃 | ~~Phase 5：活跃统计占位页~~（2026-06-11 移除路由，页面已合并到系统统计页，测试文件保留但不再运行） |
-| 前端组件 | ≥ 60% | ✅ 327 通过 | 2026-06-11 运行 `npm run test`：20 文件 327 用例全部通过（AdminLayout 用例已同步导航变更：系统概览→系统统计、移除活跃统计） |
+| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户活跃统计页（描述/占位/7 维度卡片/预览表格/表头顺序，2026-06-12 更新：移除 detail-title 断言 1 用例） |
+| 前端组件 | ≥ 60% | ✅ 341 通过 | 2026-06-12 运行 `npm run test`：21 文件 341 用例全部通过（新增 useECharts 9 用例 + getTraceStats 3 用例；StatsPage +5 净增；ConversationList -1 移除 detail-title 断言） |
 | `models/trace.py` | ≥ 80% | ✅ | Phase 5：Trace ORM 模型（通过 service 测试覆盖） |
 | `services/trace_service.py` | ≥ 80% | ✅ 23 用例 | Phase 5：Trace Service（test_trace_service.py：record_trace 3 + TraceRecorder 7 + list_traces 5 + get_trace_detail 2 + get_trace_stats 6） |
 | `api/admin.py` (Trace 端点) | ≥ 90% | ✅ 17 用例 | Phase 5：Trace API（test_trace_api.py：列表 6 + 详情 2 + 权限 3 + 统计 6） |
@@ -1119,11 +1145,11 @@
 | `api/admin.py` (用户管理端点) | ≥ 90% | ⬜ | Phase 5：用户管理 API（12 用例，A9.20-A9.31） |
 | `services/admin_service.py` (用户管理) | ≥ 80% | ⬜ | Phase 5：用户管理 Service（12 用例，U15.1-U15.12） |
 | `services/admin_service.py` (统计增强) | ≥ 80% | ✅ 7 用例 | Phase 5：ECharts 统计增强（test_admin_api.py TestAdminStatsChartsAPI：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
-| 前端 `views/admin/TraceList.vue` | ≥ 60% | ⬜ | Phase 5：Trace 列表页（7 用例，C9.1-C9.7） |
-| 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ⬜ | Phase 5：Trace 详情页（5 用例，C9.8-C9.12） |
+| 前端 `views/admin/TraceList.vue` | ≥ 60% | ✅ 23 用例 | Phase 5：Trace 列表页（7 用例，C9.1-C9.7） |
+| 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ✅ 25 用例 | Phase 5：Trace 详情页（5 用例，C9.8-C9.12） |
 | 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ⬜ | Phase 5：用户列表页（9 用例，C8.1-C8.9） |
 | 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ⬜ | Phase 5：用户详情页（4 用例，C8.10-C8.13） |
-| 前端 `components/charts/*.vue` | ≥ 60% | ⬜ | Phase 5：ECharts 图表组件（7 用例，C7.1-C7.7） |
+| 前端 `components/charts/*.vue` | ≥ 60% | ✅ 21 用例 | Phase 5：ECharts 图表组件（7 用例，C7.1-C7.7） |
 
 ---
 

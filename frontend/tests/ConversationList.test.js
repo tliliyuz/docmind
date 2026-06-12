@@ -1,24 +1,13 @@
-/** ConversationList 组件测试（活跃统计占位页） */
+/** ConversationList 组件测试（admin 用户活跃统计页） */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ConversationList from '@/views/admin/ConversationList.vue'
 
 function getComponent() {
-  return mount(ConversationList, {
-    global: {
-      stubs: {
-        'router-link': { template: '<a><slot /></a>', props: ['to'] },
-      },
-    },
-  })
+  return mount(ConversationList)
 }
 
 describe('ConversationList', () => {
-  it('渲染页面标题"活跃统计"', () => {
-    const wrapper = getComponent()
-    expect(wrapper.find('.detail-title').text()).toBe('活跃统计')
-  })
-
   it('渲染页面描述', () => {
     const wrapper = getComponent()
     expect(wrapper.find('.detail-desc').text()).toContain('用户活跃度')

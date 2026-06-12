@@ -1,5 +1,74 @@
 # DocMind 变更日志
 
+## 2026-06-12 — Phase 5：Trace 前端组件测试 + ECharts 图表组件测试
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/tests/TraceList.test.js` | TraceList 组件测试（23 用例，C9.1-C9.7）：表格/概览卡片渲染、空状态、300ms 搜索防抖（useFakeTimers）、状态/意图/响应模式筛选参数传递、分页事件、行点击 router.push 跳转、Trace ID 剪贴板复制 |
+| `frontend/tests/TraceDetail.test.js` | TraceDetail 组件测试（25 用例，C9.8-C9.12）：基本信息卡片+Tag 渲染、5 阶段卡片（Intent/Rewrite/Retrieve/Rerank/Generate 耗时格式化）、JSON 面板展开/折叠（highlight.js mock）、返回导航、错误面板 |
+| `frontend/tests/Charts.test.js` | 图表组件测试（21 用例，C7.4-C7.7）：TrendChart（成功/失败折线）、LatencyChart（P50/P95/P99 三线）、TokenChart（Input/Output 堆叠柱）、空数据边界（chart-empty 显示 + setOption 不调用）；含 ResizeObserver mock 解决 jsdom 兼容性 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.66→v0.67。§6.17 Trace 前端组件 C9.1-C9.12（12 用例）⬜→✅；§6.15.2 图表组件 C7.4-C7.7（4 用例）⬜→✅；§6.14.4 补充 chat_service 集成测试与已通过 Trace 测试的关系说明；§6.13 补充 U12.1-U12.3 合并入 Trace 的说明；§8 覆盖率表 TraceList/TraceDetail/charts 三行 ⬜→✅ |
+| `docs/ROADMAP.md` | §7.5 新增「Trace 前端组件测试 ✅」（48 用例）和「ECharts 图表组件测试 ✅」（21 用例）两行；§7.5 性能埋点验证描述更新 |
+
+### 测试统计
+
+| 指标 | 值 |
+|:---|:---|
+| 新增用例 | 69（TraceList 23 + TraceDetail 25 + Charts 21） |
+| 全量用例 | 24 文件 / 410 用例，全部通过 |
+| 覆盖文档用例 | C7.4-C7.7, C9.1-C9.12 |
+
+---
+
+## 2026-06-12 — Phase 5：ECharts 系统统计前端实现
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/composables/useECharts.js` | ECharts 组合式函数：响应式 ResizeObserver + 自动 dispose + setOption 封装 |
+| `frontend/src/constants/charts.js` | 图表配置常量：颜色方案（对齐 Design Token）、tooltip/legend/grid/axis 通用配置、formatMs/formatTokens 格式化函数 |
+| `frontend/src/components/charts/TrendChart.vue` | 问答量趋势折线图（成功/失败双线 + 渐变面积） |
+| `frontend/src/components/charts/LatencyChart.vue` | 响应时间分布折线图（P50/P95/P99 三线） |
+| `frontend/src/components/charts/TokenChart.vue` | Token 使用统计堆叠柱状图（Input/Output） |
+| `frontend/tests/useECharts.test.js` | useECharts 组合式函数测试（6 用例） |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/api/admin.js` | 新增 `getTraceStats(params)` — 调用 `GET /api/admin/stats/traces` |
+| `frontend/src/views/admin/StatsPage.vue` | 集成 3 个 ECharts 图表组件，新增图表数据加载（与统计卡片并行请求），图表加载中骨架 + 空数据提示 |
+| `frontend/tests/StatsPage.test.js` | 新增 6 个图表集成测试（loading 态/渲染/数据传入/API 调用参数/失败容错/并行调用） |
+| `frontend/tests/AdminLayout.test.js` | 修复侧边栏导航项数量断言（3→4，对齐链路追踪菜单项） |
+| `docs/CHANGE.md` | 变更记录 |
+
+### 清理
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/views/admin/KnowledgeList.vue` | 移除与 AdminLayout header 重复的页面标题（`<h1 class="detail-title">`）及 `.detail-title` / `.detail-header-left` 样式 |
+| `frontend/src/views/admin/DocumentList.vue` | 同上：移除重复标题及相关样式 |
+| `frontend/src/views/admin/ConversationList.vue` | 同上：移除重复标题及相关样式 |
+| `frontend/src/views/admin/StatsPage.vue` | 移除快捷管理入口（`quick-links` 区域 + 相关 CSS）；移除不再使用的 `.detail-title` 样式 |
+| `frontend/tests/StatsPage.test.js` | 移除 3 个已失效的快捷入口测试用例；清理不再需要的 `router-link` stub |
+| `frontend/tests/ConversationList.test.js` | 移除引用已删除 `.detail-title` 的断言（1 用例）；清理不再需要的 `router-link` stub |
+| `frontend/tests/admin.test.js` | 新增 `getTraceStats` 测试（3 用例：参数透传/默认空参/错误处理） |
+| `docs/TEST_CASES.md` | v0.65→v0.66。§6.15.2 useECharts C7.1-C7.3 ⬜→✅（9 用例已实现）；新增 §6.15.3 StatsPage 图表集成测试（6 用例）；§8 覆盖率表同步（StatsPage 24 用例/ConversationList 16 用例/admin.js 12 用例/useECharts 9 用例/总数 341） |
+| `frontend/docs/FRONTEND.md` | §7.1 侧边栏列表补充链路追踪；§7.4 统计页描述更新（快捷入口移除 + ECharts 已集成）；§11 模块表 Admin Stats 行同步 |
+| `docs/CHANGE.md` | 补充清理变更记录 |
+| `docs/ARCHITECTURE.md` | ECharts 状态 `[Planned]` → `[Implemented]` |
+| `docs/ROADMAP.md` | ECharts 前端 3 项任务标记 ✅ |
+
+---
+
 ## 2026-06-12 — Phase 5：Trace 链路追踪前端实现
 
 ### 新增
