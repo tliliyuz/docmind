@@ -49,6 +49,7 @@ from app.rag.query_rewriter import _needs_rewrite, rewrite_query
 from app.rag.reranker import NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
 from app.rag.sentence_matcher import match_sentences
+from app.rag.trace_recorder import TraceRecorder
 from app.schemas.chat import ChatSourceChunk, PreviewRange
 
 logger = logging.getLogger(__name__)
@@ -265,6 +266,7 @@ async def _generate_sse_stream(
     prompt_result: PromptBuildResult,
     reranked_output: RetrievalOutput,
     doc_map: dict[int, str],
+    recorder: TraceRecorder | None = None,
 ) -> AsyncIterator[str]:
     """SSE 事件流生成器 — LLM 流式调用 + 消息持久化。
 
@@ -314,6 +316,19 @@ async def _generate_sse_stream(
 
         t_stream_end = time.perf_counter()  # LLM 流结束
 
+        # Trace: 记录 LLM 生成阶段
+        if recorder:
+            _ttft_val = (t_first_token - t0) * 1000 if t_first_token else 0
+            _total_val = (t_stream_end - t0) * 1000
+            recorder.record_generate(
+                model=settings.LLM_MODEL,
+                ttft_ms=_ttft_val,
+                total_ms=_total_val,
+                input_tokens=0,  # 流式 API 不返回 usage，下面估算后更新
+                output_tokens=0,
+                finish_reason="stop",
+            )
+
         # DeepSeek 流式 API 不返回 usage，使用 chunker 估算
         prompt_tokens = (
             estimate_tokens(prompt_result.system_prompt)
@@ -325,6 +340,11 @@ async def _generate_sse_stream(
             "completion": completion_tokens,
             "total": prompt_tokens + completion_tokens,
         }
+
+        # Trace: 更新 token 估算值
+        if recorder and recorder._generate_data:
+            recorder._generate_data["input_tokens"] = prompt_tokens
+            recorder._generate_data["output_tokens"] = completion_tokens
 
     except Exception as e:
         t_error = time.perf_counter()
@@ -348,6 +368,10 @@ async def _generate_sse_stream(
         if hasattr(e, "error_code"):
             error_code = e.error_code
             error_msg = e.error_message
+        # Trace 记录 LLM 错误
+        if recorder:
+            recorder.record_error(error_msg)
+            await recorder.finish(db)
         yield format_sse_event("error", {
             "code": error_code,
             "message": error_msg,
@@ -445,6 +469,10 @@ async def _generate_sse_stream(
             t_finish - t0,
         )
 
+        # Trace: 流完成，写入 traces 表
+        if recorder:
+            await recorder.finish(db)
+
         # SSE 流结束后，异步调用 LLM 生成更好标题
         if is_first_turn:
             try:
@@ -480,6 +508,7 @@ async def _generate_meta_response(
     conv: Conversation,
     is_first_turn: bool,
     question: str,
+    recorder: TraceRecorder | None = None,
 ) -> AsyncIterator[str]:
     """META 意图的固定 SSE 响应：不调 LLM，直接返回模板。
 
@@ -516,6 +545,10 @@ async def _generate_meta_response(
             "title": title,
             "token_usage": {"prompt": 0, "completion": 0, "total": 0},
         })
+
+        # Trace: META 路径完成
+        if recorder:
+            await recorder.finish(db)
     except Exception:
         logger.exception("META 响应保存失败")
         await db.rollback()
@@ -534,6 +567,7 @@ async def _validate_and_prepare(
     conversation_id: int | None,
     kb_id: int,
     question: str,
+    recorder: TraceRecorder | None = None,
 ) -> tuple[Conversation, RetrievalOutput, PromptBuildResult, dict[int, str]]:
     """权限校验 + 会话准备 + 检索 + 文档名查询。
 
@@ -592,6 +626,14 @@ async def _validate_and_prepare(
     t_intent = time.perf_counter()
     logger.info("INTENT question=%s intent=%s", question[:50], intent.value)
 
+    # Trace: 记录意图识别阶段
+    if recorder:
+        recorder.record_intent(
+            intent_type=intent.value,
+            method="rule",  # classify_intent 内部使用规则+flash，简化记录
+            duration_ms=(t_intent - t_db_done) * 1000,
+        )
+
     if intent == Intent.META:
         raise MetaQuestionException(question, conv, is_first_turn)
 
@@ -607,15 +649,32 @@ async def _validate_and_prepare(
             "QUERY_REWRITE original=%s rewritten=%s triggered=True",
             _original_question[:100], question[:100],
         )
+        # Trace: 记录问题重写阶段
+        if recorder:
+            recorder.record_rewrite(
+                original_question=_original_question,
+                rewritten_question=question,
+                duration_ms=(t_rewrite - t_intent) * 1000,
+            )
     else:
         logger.info(
             "QUERY_REWRITE original=%s rewritten=(skipped) triggered=False",
             _original_question[:100],
         )
+        # Trace: 重写未触发，记录跳过
+        if recorder:
+            recorder.record_rewrite(
+                original_question=_original_question,
+                rewritten_question=None,
+                duration_ms=0,
+            )
 
     if skip_retrieval:
         # CASUAL 路径：跳过检索，直接使用无上下文 Prompt（仍注入历史，对齐设计决策）
         logger.info("检测到闲谈意图，跳过检索: %s", question[:30])
+        # Trace: CASUAL 路径设置响应模式
+        if recorder:
+            recorder.set_response_mode("CASUAL")
         reranked_output = RetrievalOutput()
         prompt_result = PromptBuildResult(
             system_prompt=CASUAL_SYSTEM_PROMPT,
@@ -647,11 +706,30 @@ async def _validate_and_prepare(
             bm25_output = await bm25_retriever.search(question, kb_id)
             t_bm25 = time.perf_counter()
             fused_output = rrf_fusion(vector_output, bm25_output)
+            t_fusion = time.perf_counter()
             reranked_output = await _reranker.rerank(question, fused_output)
+            t_rerank = time.perf_counter()
             # 句级 Evidence 定位：在 Prompt 组装前，确保 used_chunks 携带 matched_sentence
             reranked_output = match_sentences(reranked_output, question)
             prompt_result = build_prompt(question, reranked_output, history_messages=history_messages)
             t_retrieval_done = time.perf_counter()
+
+            # Trace: 记录检索阶段
+            if recorder:
+                recorder.record_retrieve(
+                    vector_ms=(t_vector - t_rewrite) * 1000,
+                    vector_count=len(vector_output.results),
+                    bm25_ms=(t_bm25 - t_vector) * 1000,
+                    fusion_ms=(t_fusion - t_bm25) * 1000,
+                    fusion_count=len(fused_output.results),
+                    match_sentence_ms=(t_retrieval_done - t_rerank) * 1000,
+                    total_ms=(t_retrieval_done - t_rewrite) * 1000,
+                )
+                recorder.record_rerank(
+                    input_count=len(fused_output.results),
+                    output_count=len(reranked_output.results),
+                    duration_ms=(t_rerank - t_fusion) * 1000,
+                )
         except Exception as e:
             logger.exception("检索链路异常")
             raise RetrievalServiceException(detail=str(e))
@@ -705,17 +783,30 @@ async def chat(
     - LLM 流式输出通过 SSE 事件推送
     - LLM 失败时先发 sources 再发 error
     """
+    trace_id = str(uuid4())
+
+    # Trace: 提前创建 recorder，传入 _validate_and_prepare 记录各阶段数据
+    # conversation_id 用原始参数（新会话时为 None），_validate_and_prepare 返回后回写 conv.id
+    recorder = TraceRecorder(
+        trace_id=trace_id, user_id=user_id,
+        conversation_id=conversation_id, kb_id=kb_id, question=question,
+    )
+
     try:
         conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
             db=db, user_id=user_id, role=role,
             conversation_id=conversation_id, kb_id=kb_id, question=question,
+            recorder=recorder,
         )
     except MetaQuestionException as e:
         # 元问题：不调 LLM，直接返回固定模板 SSE 响应
         # 用户消息已保存，_generate_meta_response 会保存 assistant 消息保持成对
+        # Trace: META 路径，recorder 已在 _validate_and_prepare 中记录 intent
+        recorder.conversation_id = e.conv.id
         return StreamingResponse(
             stream_with_heartbeat(_generate_meta_response(
                 db=db, conv=e.conv, is_first_turn=e.is_first_turn, question=question,
+                recorder=recorder,
             )),
             media_type="text/event-stream",
             headers={
@@ -723,6 +814,9 @@ async def chat(
                 "Connection": "keep-alive",
             },
         )
+
+    # Trace: 新会话时 conversation_id 为 None，用 conv.id 回写
+    recorder.conversation_id = conv.id
 
     task_id = str(uuid4())
 
@@ -737,6 +831,7 @@ async def chat(
             prompt_result=prompt_result,
             reranked_output=reranked_output,
             doc_map=doc_map,
+            recorder=recorder,
         )),
         media_type="text/event-stream",
         headers={

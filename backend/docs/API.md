@@ -5,7 +5,7 @@
 | 文档版本 | v0.27 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ⬜ / 用户管理 ⬜ / ECharts ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / 用户管理 ⬜ / ECharts ⬜） |
 
 ---
 
@@ -1309,7 +1309,7 @@ backend/app/main.py                    ← 修改：注册 admin_router
 
 ### 7.5 Trace 链路追踪接口
 
-> **实现状态**：Phase 5 待实现。详见 `Admin_设计补全_最终方案.md` §三。
+> **实现状态**：已实现（Phase 5）。
 > **权限**：所有 `/api/admin/traces/*` 端点要求 `role=admin`。
 
 #### GET `/api/admin/traces`

@@ -10,6 +10,7 @@ from .chunk import Chunk
 from .conversation import Conversation
 from .message import Message
 from .refresh_token import RefreshToken
+from .trace import Trace
 
 __all__ = [
     "Base",
@@ -23,4 +24,5 @@ __all__ = [
     "Conversation",
     "Message",
     "RefreshToken",
+    "Trace",
 ]

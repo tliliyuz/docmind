@@ -5,7 +5,7 @@
 | 文档版本 | v0.13 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表新增） |
+| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现） |
 
 ---
 
@@ -313,7 +313,7 @@ CREATE TABLE refresh_tokens (
 
 ### 2.8 链路追踪表 `traces`
 
-> **Phase 5 新增**。记录问答全链路各阶段耗时和详情，用于性能观测和统计分析。详见 `Admin_设计补全_最终方案.md` §三。
+> **Phase 5 已实现**。记录问答全链路各阶段耗时和详情，用于性能观测和统计分析。
 
 ```sql
 CREATE TABLE traces (
