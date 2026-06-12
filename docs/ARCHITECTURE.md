@@ -5,7 +5,7 @@
 | 文档版本 | v0.41 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 部署 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / 用户管理 ⬜ / 限流 ⬜ / 部署 ✅） |
 
 ---
 
@@ -54,7 +54,7 @@
 | 部署方案 | Docker Compose + Nginx | 5 服务编排（MySQL/Redis/Backend/Celery/Nginx），详见 §13.1 | [Planned: Phase 5] |
 | 监控告警 | 结构化日志 → Loki + Grafana | 应用级指标 + LLM 调用监控，详见 §13.3 | [Planned: Phase 5] |
 | Trace 链路追踪 | MySQL traces 表 + JSON 字段 | 问答全链路各阶段耗时记录，详见 §5.1.8 | [Implemented] |
-| 可视化图表 | ECharts 5 | Admin 统计页图表（趋势/延迟/Token），从 traces 表聚合 | [Planned: Phase 5] |
+| 可视化图表 | ECharts 5 | Admin 统计页图表（趋势/延迟/Token），从 traces 表聚合 | [Implemented] |
 
 ---
 

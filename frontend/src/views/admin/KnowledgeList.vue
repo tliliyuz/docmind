@@ -1,11 +1,8 @@
 <template>
   <div class="admin-page">
-    <!-- 页面标题栏 -->
+    <!-- 页面描述（标题已在 AdminLayout header 中展示） -->
     <div class="detail-header">
-      <div class="detail-header-left">
-        <h1 class="detail-title">知识库管理</h1>
-        <p class="detail-desc">查看所有用户的知识库（跨用户管理）</p>
-      </div>
+      <p class="detail-desc">查看所有用户的知识库（跨用户管理）</p>
     </div>
 
     <!-- 筛选栏 -->
@@ -360,13 +357,6 @@ onMounted(loadList)
   align-items: flex-start;
   justify-content: space-between;
   margin-bottom: var(--dm-space-6);
-}
-
-.detail-title {
-  font-size: var(--dm-text-xl);
-  font-weight: var(--dm-weight-bold);
-  color: var(--dm-text-primary);
-  line-height: var(--dm-leading-title);
 }
 
 .detail-desc {

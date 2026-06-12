@@ -21,3 +21,11 @@ export function getAdminKnowledgeBases(params = {}) {
 export function getAdminDocuments(params = {}) {
   return api.get('/admin/documents', { params })
 }
+
+/** GET /api/admin/stats/traces — Trace 统计数据（ECharts 图表数据源）
+ * @param {Object} params — { days, group_by }
+ * @returns {Object} { trend, latency, tokens, intent_distribution, response_distribution }
+ */
+export function getTraceStats(params = {}) {
+  return api.get('/admin/stats/traces', { params })
+}

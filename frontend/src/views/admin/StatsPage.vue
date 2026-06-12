@@ -81,21 +81,19 @@
         </div>
       </div>
 
-      <!-- 快捷入口 -->
-      <div class="quick-links">
-        <h3 class="section-title">快捷管理入口</h3>
-        <div class="quick-links-row">
-          <router-link to="/admin/knowledge" class="quick-link-card">
-            <i class="fas fa-database"></i>
-            <span>知识库管理</span>
-            <span class="quick-link-desc">查看所有用户的知识库</span>
-          </router-link>
-          <router-link to="/admin/documents" class="quick-link-card">
-            <i class="fas fa-file-alt"></i>
-            <span>文档管理</span>
-            <span class="quick-link-desc">跨库查看全部文档</span>
-          </router-link>
-        </div>
+      <!-- ECharts 图表区域 -->
+      <div class="charts-section">
+        <!-- 图表加载中 -->
+        <div v-if="chartsLoading" v-loading="chartsLoading" style="min-height: 200px;"></div>
+
+        <!-- 图表内容 -->
+        <template v-else>
+          <TrendChart :data="chartData.trend" />
+          <div class="charts-row">
+            <LatencyChart :data="chartData.latency" />
+            <TokenChart :data="chartData.tokens" />
+          </div>
+        </template>
       </div>
     </template>
 
@@ -110,9 +108,13 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getAdminStats } from '@/api/admin'
+import { getAdminStats, getTraceStats } from '@/api/admin'
+import TrendChart from '@/components/charts/TrendChart.vue'
+import LatencyChart from '@/components/charts/LatencyChart.vue'
+import TokenChart from '@/components/charts/TokenChart.vue'
 
 const loading = ref(true)
+const chartsLoading = ref(true)
 const error = ref('')
 const stats = ref({
   user_count: 0,
@@ -124,7 +126,18 @@ const stats = ref({
   storage_bytes: 0,
 })
 
+const chartData = ref({
+  trend: [],
+  latency: [],
+  tokens: [],
+})
+
 onMounted(async () => {
+  // 并行加载统计数据和图表数据
+  await Promise.all([loadStats(), loadChartData()])
+})
+
+async function loadStats() {
   try {
     const { data } = await getAdminStats()
     if (data.code === '0') {
@@ -137,7 +150,24 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+async function loadChartData() {
+  try {
+    const { data } = await getTraceStats({ days: 7 })
+    if (data.code === '0') {
+      chartData.value = {
+        trend: data.data.trend || [],
+        latency: data.data.latency || [],
+        tokens: data.data.tokens || [],
+      }
+    }
+  } catch {
+    // 图表加载失败不阻断页面，静默处理
+  } finally {
+    chartsLoading.value = false
+  }
+}
 
 /** 格式化数字（千分位） */
 function formatNumber(val) {
@@ -167,13 +197,6 @@ function formatStorage(bytes) {
   align-items: flex-start;
   justify-content: space-between;
   margin-bottom: var(--dm-space-6);
-}
-
-.detail-title {
-  font-size: var(--dm-text-xl);
-  font-weight: var(--dm-weight-bold);
-  color: var(--dm-text-primary);
-  line-height: var(--dm-leading-title);
 }
 
 .detail-desc {
@@ -233,56 +256,16 @@ function formatStorage(bytes) {
   margin-top: var(--dm-space-1);
 }
 
-/* 快捷入口 */
-.quick-links {
-  margin-top: var(--dm-space-2);
+/* ECharts 图表区域 */
+.charts-section {
+  margin-bottom: var(--dm-space-8);
 }
 
-.section-title {
-  font-size: var(--dm-text-base);
-  font-weight: var(--dm-weight-semibold);
-  color: var(--dm-text-primary);
-  margin-bottom: var(--dm-space-4);
-}
-
-.quick-links-row {
+.charts-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--dm-space-4);
-}
-
-.quick-link-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--dm-space-2);
-  padding: var(--dm-space-6);
-  background: var(--dm-bg-card);
-  border: 1px solid var(--dm-border);
-  border-radius: var(--dm-radius-md);
-  text-decoration: none;
-  color: var(--dm-text-primary);
-  transition: all var(--dm-transition-fast);
-}
-
-.quick-link-card:hover {
-  border-color: var(--dm-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.quick-link-card i {
-  font-size: 24px;
-  color: var(--dm-primary);
-}
-
-.quick-link-card span:first-of-type {
-  font-weight: var(--dm-weight-semibold);
-  font-size: var(--dm-text-body);
-}
-
-.quick-link-desc {
-  font-size: var(--dm-text-xs);
-  color: var(--dm-text-tertiary);
+  gap: var(--dm-space-5);
+  margin-top: var(--dm-space-5);
 }
 
 .empty-state {
