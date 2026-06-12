@@ -1,5 +1,32 @@
 # DocMind 变更日志
 
+## 2026-06-12 — Phase 5 文档补全：Trace / ECharts / 用户管理
+
+### 新增
+
+| 文档 | 修改内容 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.45：Phase 5 新增 §7.4a Trace 链路追踪（P0）、§7.4b 系统统计 ECharts（P1）、§7.4c 用户管理（P2）三个模块的任务拆分 + 测试用例 + v2 推迟项 |
+| `docs/ARCHITECTURE.md` | v0.40：新增 §5.1.8 Trace 链路追踪架构（数据模型/JSON 字段/埋点集成/API/索引/实现文件）、§9a ECharts 可视化集成、§9b 用户管理模块；技术选型表新增 Trace + ECharts；模块树更新 |
+| `backend/docs/DATABASE.md` | v0.13：新增 §2.8 traces 表设计（字段/索引/外键/设计要点）；ER 图、索引策略、外键策略表同步更新 |
+| `backend/docs/API.md` | v0.27：新增 §7.5 Trace API（列表+详情）、§7.6 统计增强接口（traces 统计 + stats charts 增强）、§7.7 用户管理 API（CRUD+角色+状态+重置密码）；权限速查表新增 9 个端点 |
+| `frontend/docs/FRONTEND.md` | v0.26：路由表新增 4 个 Admin 路由；新增 §7.6 TraceList、§7.7 TraceDetail、§7.8 AdminUserList、§7.9 AdminUserDetail、§7.10 ECharts 集成；AdminLayout 侧边栏更新；TODO 表更新 |
+| `docs/TEST_CASES.md` | v0.64：新增 §6.14 Trace 测试用例（模型 5 + API 9 + 统计 6 + 埋点 5 = 25 用例）、§6.15 ECharts 测试用例（后端 3 + 前端 7 = 10 用例）、§6.16 用户管理测试用例（Service 12 + API 12 + 前端 13 = 37 用例）、§6.17 Trace 前端组件测试（12 用例）；覆盖率表新增 11 个模块 |
+
+### 修复
+
+| 改动 | 文件 | 说明 |
+|:---|:---|:---|
+| **§7.4 性能埋点合并入 Trace** | `docs/ROADMAP.md` | 原 §7.4（性能埋点接入）与 §7.4a（Trace）在 chat_service.py 检索/LLM 埋点上完全重叠，合并为单一 Trace 模块；Trace 任务补充 `core/llm.py` 流式调用埋点（复用已有 t0/t_first 计时点） |
+| **Trace 埋点说明补充** | `docs/ARCHITECTURE.md` | §5.1.8 埋点集成点补充 `core/llm.py` 说明 + 与现有散落日志的关系说明 |
+| **测试用例去重** | `docs/TEST_CASES.md` | U9.6/U9.7/U12.1-U12.3 标记 ⏭️ 已合并入 §6.14 Trace 测试，避免重复编写 |
+
+### 依据
+
+- `Admin_设计补全_最终方案.md`（v1.0，2026-06-12 已确认）
+
+---
+
 ## 2026-06-11 — 前端多处交互优化（8 项修复）
 
 ### 修改

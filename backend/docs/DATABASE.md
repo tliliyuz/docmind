@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.12 |
-| 最后更新 | 2026-06-09 |
+| 文档版本 | v0.13 |
+| 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充） |
+| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表新增） |
 
 ---
 
@@ -36,7 +36,9 @@ users (用户表)
   ├── conversations (会话表)
   │     └── messages (消息表)
   │
-  └── refresh_tokens (刷新令牌表)
+  ├── refresh_tokens (刷新令牌表)
+  │
+  └── traces (链路追踪表)
 ```
 
 **关系说明**：
@@ -47,6 +49,8 @@ users (用户表)
 - 一个会话包含多条消息，每条消息属于一个会话（1:N）
 - 会话可关联一个知识库（可选），表示当前对话的知识库上下文
 - 一个用户可有多个刷新令牌，每个令牌属于一个用户（1:N）
+- 一个用户可有多条 Trace 记录，每条 Trace 属于一个用户（1:N）
+- 一条 Trace 可关联一个会话（可选），用于关联完整对话内容
 
 ---
 
@@ -307,6 +311,68 @@ CREATE TABLE refresh_tokens (
 - **改密吊销**：`PUT /api/auth/password` → 该用户全部 token `UPDATE revoked_at = NOW()`
 - **过期清理**：`expires_at < NOW()` 的 token 即使 `revoked_at IS NULL` 也视为无效
 
+### 2.8 链路追踪表 `traces`
+
+> **Phase 5 新增**。记录问答全链路各阶段耗时和详情，用于性能观测和统计分析。详见 `Admin_设计补全_最终方案.md` §三。
+
+```sql
+CREATE TABLE traces (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    trace_id VARCHAR(64) NOT NULL COMMENT 'UUID 追踪 ID',
+    user_id BIGINT NOT NULL COMMENT '用户 ID',
+    conversation_id BIGINT COMMENT '会话 ID（可为空）',
+    kb_id BIGINT COMMENT '知识库 ID',
+    question TEXT COMMENT '用户问题',
+    status VARCHAR(32) NOT NULL COMMENT '状态：success / error / partial',
+    intent_type VARCHAR(32) COMMENT '顶层字段：KNOWLEDGE / CASUAL / META',
+    intent_method VARCHAR(32) COMMENT '顶层字段：regex / llm_flash / llm_pro',
+    response_mode VARCHAR(32) COMMENT '顶层字段：RAG / DIRECT_LLM / META / CASUAL / FALLBACK',
+    total_duration_ms INT COMMENT '总耗时（毫秒）',
+    intent JSON COMMENT '意图识别阶段详情',
+    rewrite JSON COMMENT '问题重写阶段详情',
+    retrieve JSON COMMENT '检索阶段详情（细粒度拆分：vector/bm25/fusion/match_sentence）',
+    rerank JSON COMMENT 'Rerank 阶段详情',
+    generate JSON COMMENT 'LLM 生成阶段详情（不存 output）',
+    error_message TEXT COMMENT '错误信息（status=error 时）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间（UTC）',
+    UNIQUE INDEX idx_trace_id (trace_id),
+    INDEX idx_created_at (created_at),
+    INDEX idx_created_status (created_at, status),
+    INDEX idx_created_intent (created_at, intent_type),
+    INDEX idx_created_response (created_at, response_mode),
+    INDEX idx_user_created (user_id, created_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+);
+```
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| id | BIGINT | 主键 |
+| trace_id | VARCHAR(64) | UUID 追踪 ID，唯一索引 |
+| user_id | BIGINT | 用户 ID，有索引 |
+| conversation_id | BIGINT | 会话 ID（可为空），用于关联完整对话内容 |
+| kb_id | BIGINT | 知识库 ID |
+| question | TEXT | 用户问题 |
+| status | VARCHAR(32) | 状态：success / error / partial |
+| intent_type | VARCHAR(32) | 意图类型（顶层字段，用于聚合统计） |
+| intent_method | VARCHAR(32) | 意图分类方法（顶层字段） |
+| response_mode | VARCHAR(32) | 响应模式（顶层字段，用于聚合统计） |
+| total_duration_ms | INT | 总耗时（毫秒） |
+| intent | JSON | 意图识别阶段详情（span_name/start_time/duration_ms/status/intent_type/method/metadata） |
+| rewrite | JSON | 问题重写阶段详情（span_name/start_time/duration_ms/status/original_question/rewritten_question/metadata） |
+| retrieve | JSON | 检索阶段详情，**细粒度拆分**：vector/bm25/fusion/match_sentence 各自独立计时 |
+| rerank | JSON | Rerank 阶段详情（input_count/output_count/metadata.reranker） |
+| generate | JSON | LLM 生成阶段详情（model/ttft_ms/input_tokens/output_tokens/finish_reason），**不存 output** |
+| error_message | TEXT | 错误信息（status=error 时） |
+| created_at | DATETIME | 创建时间（UTC） |
+
+**设计要点**：
+- **顶层字段**：`intent_type`、`intent_method`、`response_mode` 作为独立列，避免聚合统计时 `JSON_EXTRACT` 性能问题
+- **不存 generate.output**：完整对话内容通过 `conversation_id` JOIN 查询，避免重复存储
+- **retrieve 细粒度**：拆分 vector/bm25/fusion/match_sentence，便于定位性能瓶颈（如 `bm25.tokenize_ms` 异常）
+- **索引设计**：`(created_at, status)` 用于 Dashboard 按时间+状态筛选；`(created_at, intent_type)` 用于意图分类统计；`(user_id, created_at)` 用于按用户筛选
+
 ---
 
 ## 3. 索引策略
@@ -325,6 +391,12 @@ CREATE TABLE refresh_tokens (
 | refresh_tokens | idx_user_id | 普通索引 | 按用户查询刷新令牌 |
 | refresh_tokens | idx_token_hash | 普通索引 | 按 token 哈希查找（刷新校验入口） |
 | refresh_tokens | idx_user_active (user_id, revoked_at, expires_at) | 复合索引 | 查询用户有效 token + 改密批量吊销 + Rotation 检测 |
+| traces | idx_trace_id (trace_id) | 唯一索引 | 按 trace_id 查询详情 |
+| traces | idx_created_at (created_at) | 普通索引 | 按时间范围筛选 |
+| traces | idx_created_status (created_at, status) | 复合索引 | Dashboard 按时间+状态筛选 |
+| traces | idx_created_intent (created_at, intent_type) | 复合索引 | 意图分类统计 |
+| traces | idx_created_response (created_at, response_mode) | 复合索引 | 响应模式统计 |
+| traces | idx_user_created (user_id, created_at) | 复合索引 | 按用户筛选 |
 
 > **注意**：MySQL 会自动为外键列创建索引（若该列尚未建立索引）。上表中 `chunks.doc_id`、`chunks.kb_id` 等因已有显式索引，不再重复；`conversations.kb_id` 无外键索引，如需频繁按知识库查询会话，可后续补充。
 
@@ -368,6 +440,8 @@ CREATE TABLE refresh_tokens (
 | `conversations.kb_id` | `knowledge_bases(id)` | `ON DELETE SET NULL` | 知识库删除后会话保留，仅解除关联（kb_id 置空），防止历史对话丢失 |
 | `messages.conversation_id` | `conversations(id)` | `ON DELETE CASCADE` | 删除会话时自动清理全部消息，与业务「删除会话及其全部消息」对齐 |
 | `refresh_tokens.user_id` | `users(id)` | `ON DELETE CASCADE` | 用户删除时自动清理其刷新令牌，避免悬空数据 |
+| `traces.user_id` | `users(id)` | `ON DELETE CASCADE` | 用户删除时自动清理其 Trace 记录 |
+| `traces.conversation_id` | `conversations(id)` | `ON DELETE SET NULL` | 会话删除后 Trace 保留，仅解除关联（conversation_id 置空），Trace 作为性能观测数据独立于会话生命周期 |
 
 > **重要**：知识库/文档的实际删除采用 **Celery 异步物理删除**（先标记 `deleting` → Worker 清理 ChromaDB 向量 + 磁盘文件 → 物理 `DELETE FROM` MySQL 记录）。`ON DELETE CASCADE` 作为数据库层兜底保障——即使 Celery 仅执行 `DELETE FROM knowledge_bases WHERE id=?`，子记录（documents → chunks）也会由 FK CASCADE 自动级联清理，无需显式逐表删除。
 

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.63 |
-| 最后更新 | 2026-06-11 |
+| 文档版本 | v0.64 |
+| 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / 限流 ⬜ / 性能埋点 ⬜ / P0 性能优化 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace ⬜ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -766,8 +766,8 @@
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U9.5 | 请求入口日志 | 中间件/日志工具 | HTTP 请求到达 | 日志包含 request_id + method + path + user_id | ✅ | 2026-06-06 | test_logging.py 12 用例 |
-| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⬜ | — | Phase 5 埋点补充 |
-| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⬜ | — | Phase 5 埋点补充 |
+| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.10-U13.14），结构化写 traces 表替代散落日志 |
+| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.10），generate JSON 记录 ttft_ms/tokens |
 
 ### 6.8 Phase 5 Admin 测试用例
 
@@ -844,10 +844,161 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|
-| U12.1 | 检索耗时日志 | `chat_service` 检索阶段 | 正常检索流程 | 日志 JSON 包含 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` | ⬜ | — | U9.6 实现验证 |
-| U12.2 | LLM 调用日志 | `core/llm` 流式调用 | 正常 LLM 流式调用 | 日志 JSON 包含 `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms` + `total_ms` | ⬜ | — | U9.7 实现验证 |
-| U12.3 | 日志-request_id 贯穿 | `chat_service` 全链路 | 单次问答 | meta/sources/finish 事件中的 request_id 与检索/LLM 日志的 request_id 一致 | ⬜ | — | 链路追踪 |
-| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ⬜ | — | 结构化校验 |
+| U12.1 | 检索耗时日志 | `chat_service` 检索阶段 | 正常检索流程 | 日志 JSON 包含 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.14 retrieve 细粒度），Trace 结构化写 DB 替代散落日志 |
+| U12.2 | LLM 调用日志 | `core/llm` 流式调用 | 正常 LLM 流式调用 | 日志 JSON 包含 `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms` + `total_ms` | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.10 generate JSON） |
+| U12.3 | 日志-request_id 贯穿 | `chat_service` 全链路 | 单次问答 | meta/sources/finish 事件中的 request_id 与检索/LLM 日志的 request_id 一致 | ⏭️ | — | Trace 用 trace_id 贯穿全链路，替代 request_id 方案 |
+| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ⬜ | — | 结构化日志框架已实现（Phase 4），本用例验证日志格式，与 Trace 独立 |
+
+### 6.14 Phase 5 Trace 链路追踪测试用例
+
+> 设计文档：`Admin_设计补全_最终方案.md` §三。
+> 后端测试文件（待创建）：`tests/test_trace_service.py` + `tests/test_trace_api.py`。
+
+#### 6.14.1 后端 — Trace 模型与 Service 测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U13.1 | Trace 写入-正常 | `trace_service.record_trace()` | 完整 Trace 数据 | traces 表新增一行，各字段正确 | ⬜ | — | 含 intent/rewrite/retrieve/rerank/generate JSON |
+| U13.2 | Trace 写入-错误状态 | `trace_service.record_trace()` | status=error + error_message | error_message 正确写入 | ⬜ | — | — |
+| U13.3 | Trace 写入-顶层字段 | `trace_service.record_trace()` | intent_type/method/response_mode | 顶层字段独立存储，非 JSON 内嵌 | ⬜ | — | 避免 JSON_EXTRACT 性能问题 |
+| U13.4 | Trace 写入-generate 不存 output | `trace_service.record_trace()` | generate 含 output 字段 | output 被剥离，不写入 DB | ⬜ | — | 设计约束：通过 conversation_id JOIN 获取 |
+| U13.5 | TraceRecorder 上下文管理器 | `trace_recorder.TraceRecorder()` | 正常问答全流程 | 各阶段 span 自动记录 start_time/duration_ms | ⬜ | — | 上下文管理器 + `with` 语句 |
+
+#### 6.14.2 后端 — Trace API 接口测试
+
+| ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A9.1 | Trace 列表-正常 | GET `/api/admin/traces` | admin 用户 | 200, 分页列表，含 trace_id/user_id/question/status/total_duration_ms | ⬜ | — | — |
+| A9.2 | Trace 列表-按 status 筛选 | GET `/api/admin/traces?status=error` | 混合状态 Trace | 200, 仅返回 status=error 的 Trace | ⬜ | — | — |
+| A9.3 | Trace 列表-按 intent_type 筛选 | GET `/api/admin/traces?intent_type=KNOWLEDGE` | 混合意图 Trace | 200, 仅返回 KNOWLEDGE 意图 | ⬜ | — | — |
+| A9.4 | Trace 列表-按时间范围筛选 | GET `/api/admin/traces?start_date=...&end_date=...` | 多时间段 Trace | 200, 仅返回指定时间范围内 | ⬜ | — | — |
+| A9.5 | Trace 列表-按问题搜索 | GET `/api/admin/traces?search=报销` | 多条 Trace | 200, 仅返回 question 含「报销」的 | ⬜ | — | 模糊搜索 |
+| A9.6 | Trace 列表-分页校验 | GET `/api/admin/traces?page=1&page_size=5` | 多条 Trace | 200, 每页 5 条，total 正确 | ⬜ | — | — |
+| A9.7 | Trace 详情-正常 | GET `/api/admin/traces/{trace_id}` | 有效 trace_id | 200, 含 intent/rewrite/retrieve/rerank/generate JSON 详情 | ⬜ | — | — |
+| A9.8 | Trace 详情-不存在 | GET `/api/admin/traces/invalid-id` | 无效 trace_id | 404 | ⬜ | — | — |
+| A9.9 | Trace 非 admin 拒绝 | GET `/api/admin/traces` | 普通用户 | 403, E5005 | ⬜ | — | 权限矩阵 |
+
+#### 6.14.3 后端 — Trace 统计接口测试
+
+| ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A9.10 | 统计-trend 聚合 | GET `/api/admin/stats/traces?days=7` | 多天 Trace 数据 | trend 数组含 7 天，每天 success/error/partial 计数正确 | ⬜ | — | — |
+| A9.11 | 统计-latency 分位数 | GET `/api/admin/stats/traces?days=7` | 多条不同耗时 Trace | latency 数组含 p50/p95/p99，值正确 | ⬜ | — | 分位数计算验证 |
+| A9.12 | 统计-tokens 聚合 | GET `/api/admin/stats/traces?days=7` | 多条 Trace 含 generate JSON | tokens 数组含 input/output，值正确 | ⬜ | — | JSON 字段提取 |
+| A9.13 | 统计-intent_distribution | GET `/api/admin/stats/traces?days=7` | 混合意图 Trace | intent_distribution 含 KNOWLEDGE/CASUAL/META 计数 | ⬜ | — | — |
+| A9.14 | 统计-response_distribution | GET `/api/admin/stats/traces?days=7` | 混合响应模式 Trace | response_distribution 各模式计数正确 | ⬜ | — | — |
+| A9.15 | 统计-空数据 | GET `/api/admin/stats/traces?days=1` | 无 Trace 数据 | 200, 各数组为空或零值 | ⬜ | — | 边界 |
+
+#### 6.14.4 后端 — chat_service 集成埋点测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U13.10 | 埋点-完整 RAG 流程 | `chat_service.chat()` | KNOWLEDGE 意图问答 | Trace 写入，intent/rewrite/retrieve/rerank/generate 各阶段 JSON 非空 | ⬜ | — | 全链路 Mock |
+| U13.11 | 埋点-CASUAL 跳过检索 | `chat_service.chat()` | CASUAL 意图问答 | Trace 写入，retrieve/rerank 为空或跳过标记 | ⬜ | — | — |
+| U13.12 | 埋点-META 不调 LLM | `chat_service.chat()` | META 意图问答 | Trace 写入，generate 为空或跳过标记，token_usage 全为 0 | ⬜ | — | — |
+| U13.13 | 埋点-错误状态 | `chat_service.chat()` | LLM 调用失败 | Trace 写入，status=error，error_message 非空 | ⬜ | — | — |
+| U13.14 | 埋点-retrieve 细粒度 | `chat_service.chat()` | 正常检索 | retrieve JSON 含 vector/bm25/fusion/match_sentence 各自 duration_ms | ⬜ | — | 细粒度拆分验证 |
+
+### 6.15 Phase 5 ECharts 统计测试用例
+
+> 设计文档：`Admin_设计补全_最终方案.md` §四。
+> 后端测试文件（待创建）：`tests/test_admin_stats_charts.py`。
+
+#### 6.15.1 后端 — 统计增强接口测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|---|:---|:---|:---|:---|
+| U14.1 | stats charts 字段存在 | `admin_service.get_stats()` | 正常调用 | 响应含 charts 字段（trend/latency/tokens） | ⬜ | — | 已有接口增强 |
+| U14.2 | stats charts 数据来源 | `admin_service.get_stats()` | traces 表有数据 | charts 数据从 traces 表聚合，非硬编码 | ⬜ | — | — |
+| U14.3 | stats charts 空数据 | `admin_service.get_stats()` | traces 表为空 | charts 各数组为空或零值，不报错 | ⬜ | — | 边界 |
+
+#### 6.15.2 前端 — ECharts 组件测试
+
+| ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| C7.1 | useECharts 初始化 | `useECharts` | 组合式函数 | 返回 chart 实例，DOM 元素正确绑定 | ⬜ | — | — |
+| C7.2 | useECharts resize | `useECharts` | 窗口 resize | 图表自动 resize | ⬜ | — | — |
+| C7.3 | useECharts dispose | `useECharts` | 组件卸载 | chart.dispose() 被调用 | ⬜ | — | 防内存泄漏 |
+| C7.4 | TrendChart 渲染 | `TrendChart` | 传入 trend 数据 | 折线图渲染，含成功/失败两条线 | ⬜ | — | Mock ECharts |
+| C7.5 | LatencyChart 渲染 | `LatencyChart` | 传入 latency 数据 | 折线图渲染，含 P50/P95/P99 三条线 | ⬜ | — | — |
+| C7.6 | TokenChart 渲染 | `TokenChart` | 传入 tokens 数据 | 堆叠柱状图渲染，含 Input/Output 堆叠 | ⬜ | — | — |
+| C7.7 | 图表空数据 | 各 Chart 组件 | 数据为空数组 | 不报错，显示空态或不渲染 | ⬜ | — | 边界 |
+
+### 6.16 Phase 5 用户管理测试用例
+
+> 设计文档：`Admin_设计补全_最终方案.md` §五。
+> 后端测试文件（待创建）：`tests/test_admin_user_service.py` + `tests/test_admin_user_api.py`。
+
+#### 6.16.1 后端 — 用户管理 Service 测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U15.1 | 用户列表-正常 | `admin_service.list_users()` | 多用户 | 返回分页列表，含 username/role/status/kb_count/doc_count | ⬜ | — | — |
+| U15.2 | 用户列表-按 role 筛选 | `admin_service.list_users(role="admin")` | 混合角色 | 仅返回 admin 用户 | ⬜ | — | — |
+| U15.3 | 用户列表-按 status 筛选 | `admin_service.list_users(status="disabled")` | 混合状态 | 仅返回 disabled 用户 | ⬜ | — | — |
+| U15.4 | 用户列表-搜索 | `admin_service.list_users(search="zhang")` | 多用户 | 仅返回用户名含「zhang」的 | ⬜ | — | 模糊搜索 |
+| U15.5 | 用户详情-正常 | `admin_service.get_user_detail()` | 有效 user_id | 返回含 kb_count/doc_count/conversation_count/message_count/token 统计 | ⬜ | — | 跨表聚合 |
+| U15.6 | 用户详情-不存在 | `admin_service.get_user_detail()` | 无效 user_id | 抛出 NotFoundException | ⬜ | — | — |
+| U15.7 | 变更角色-user→admin | `admin_service.change_user_role()` | role="admin" | 角色更新成功 | ⬜ | — | — |
+| U15.8 | 变更角色-admin→user | `admin_service.change_user_role()` | role="user" | 角色更新成功 | ⬜ | — | — |
+| U15.9 | 禁用用户 | `admin_service.change_user_status()` | status="disabled" | 状态更新为 disabled | ⬜ | — | — |
+| U15.10 | 启用用户 | `admin_service.change_user_status()` | status="active" | 状态更新为 active | ⬜ | — | — |
+| U15.11 | 重置密码 | `admin_service.reset_user_password()` | 有效 user_id + new_password | 密码更新成功，新密码可登录 | ⬜ | — | 验证密码哈希更新 |
+| U15.12 | 重置密码-用户不存在 | `admin_service.reset_user_password()` | 无效 user_id | 抛出 NotFoundException | ⬜ | — | — |
+
+#### 6.16.2 后端 — 用户管理 API 接口测试
+
+| ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A9.20 | 用户列表-正常 | GET `/api/admin/users` | admin 用户 | 200, 分页列表，含 username/role/status/kb_count | ⬜ | — | — |
+| A9.21 | 用户列表-筛选 | GET `/api/admin/users?role=admin&status=active` | 混合用户 | 200, 仅返回匹配的用户 | ⬜ | — | 组合筛选 |
+| A9.22 | 用户列表-搜索 | GET `/api/admin/users?search=zhang` | 多用户 | 200, 仅返回匹配的用户 | ⬜ | — | — |
+| A9.23 | 用户详情-正常 | GET `/api/admin/users/{user_id}` | 有效 user_id | 200, 含统计信息 | ⬜ | — | — |
+| A9.24 | 用户详情-不存在 | GET `/api/admin/users/99999` | 无效 user_id | 404 | ⬜ | — | — |
+| A9.25 | 变更角色-正常 | PUT `/api/admin/users/{user_id}/role` | `{"role":"admin"}` | 200, 角色已更新 | ⬜ | — | — |
+| A9.26 | 变更角色-无效值 | PUT `/api/admin/users/{user_id}/role` | `{"role":"invalid"}` | 422 | ⬜ | — | 参数校验 |
+| A9.27 | 禁用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"disabled"}` | 200, 状态已更新 | ⬜ | — | — |
+| A9.28 | 启用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"active"}` | 200, 状态已更新 | ⬜ | — | — |
+| A9.29 | 重置密码-正常 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"Temp123!"}` | 200, 密码已重置 | ⬜ | — | — |
+| A9.30 | 重置密码-密码过短 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"123"}` | 422 | ⬜ | — | 参数校验 |
+| A9.31 | 用户管理-非 admin 拒绝 | 全部用户管理端点 | 普通用户 | 403, E5005 | ⬜ | — | 权限矩阵 |
+
+#### 6.16.3 前端 — 用户管理组件测试
+
+| ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| C8.1 | AdminUserList 渲染 | `AdminUserList` | 表格 | 用户表格渲染，含用户名/角色/状态/KB数/文档数/会话数/最后活跃/操作列 | ⬜ | — | — |
+| C8.2 | AdminUserList 空状态 | `AdminUserList` | 无用户 | 显示空状态提示 | ⬜ | — | — |
+| C8.3 | AdminUserList 搜索 | `AdminUserList` | 输入搜索关键词 | 重新请求列表（防抖） | ⬜ | — | — |
+| C8.4 | AdminUserList 筛选 | `AdminUserList` | 切换角色/状态筛选 | 重新请求列表 | ⬜ | — | — |
+| C8.5 | AdminUserList 分页 | `AdminUserList` | 翻页 | 重新请求对应页 | ⬜ | — | — |
+| C8.6 | AdminUserList 操作菜单 | `AdminUserList` | 点击 ⋮ | 弹出操作菜单（查看详情/变更角色/禁用启用/重置密码） | ⬜ | — | — |
+| C8.7 | AdminUserList 变更角色确认 | `AdminUserList` | 点击变更角色 | 确认弹窗 → PUT 角色 → 刷新列表 | ⬜ | — | — |
+| C8.8 | AdminUserList 禁用确认 | `AdminUserList` | 点击禁用 | 确认弹窗（危险色）→ PUT 状态 → 刷新列表 | ⬜ | — | — |
+| C8.9 | AdminUserList 重置密码 | `AdminUserList` | 点击重置密码 | 弹窗输入新密码 → POST 重置 → 显示成功提示 | ⬜ | — | — |
+| C8.10 | AdminUserDetail 渲染 | `AdminUserDetail` | 用户信息卡片 | 用户名/角色/状态/创建时间/最后活跃正确显示 | ⬜ | — | — |
+| C8.11 | AdminUserDetail 统计卡片 | `AdminUserDetail` | 统计数据 | KB数/文档数/会话数/消息数/Input Token/Output Token 正确显示 | ⬜ | — | — |
+| C8.12 | AdminUserDetail 快捷操作 | `AdminUserDetail` | 操作按钮 | 变更角色/禁用用户/重置密码按钮存在且可点击 | ⬜ | — | — |
+| C8.13 | AdminUserDetail 返回导航 | `AdminUserDetail` | 点击返回 | 跳转 `/admin/users` | ⬜ | — | — |
+
+### 6.17 Phase 5 Trace 前端组件测试
+
+> 前端测试文件（待创建）：`frontend/tests/TraceList.test.js` + `frontend/tests/TraceDetail.test.js`。
+
+| ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| C9.1 | TraceList 渲染 | `TraceList` | 表格 | Trace 表格渲染，含 Trace ID/用户/知识库/问题/耗时/意图/响应/状态列 | ⬜ | — | — |
+| C9.2 | TraceList 空状态 | `TraceList` | 无 Trace | 显示空状态提示 | ⬜ | — | — |
+| C9.3 | TraceList 搜索 | `TraceList` | 输入搜索关键词 | 重新请求列表 | ⬜ | — | — |
+| C9.4 | TraceList 筛选 | `TraceList` | 切换状态/意图/响应模式筛选 | 重新请求列表 | ⬜ | — | — |
+| C9.5 | TraceList 分页 | `TraceList` | 翻页 | 重新请求对应页 | ⬜ | — | — |
+| C9.6 | TraceList 点击行跳转 | `TraceList` | 点击表格行 | 跳转 `/admin/traces/{trace_id}` | ⬜ | — | — |
+| C9.7 | TraceList Trace ID 复制 | `TraceList` | 点击 Trace ID | 复制到剪贴板 | ⬜ | — | navigator.clipboard |
+| C9.8 | TraceDetail 渲染 | `TraceDetail` | 基本信息 | 用户/会话/知识库/耗时/意图/响应/状态正确显示 | ⬜ | — | — |
+| C9.9 | TraceDetail 阶段卡片 | `TraceDetail` | 5 个阶段 | Intent/Rewrite/Retrieve/Rerank/Generate 卡片各显示耗时+状态 | ⬜ | — | — |
+| C9.10 | TraceDetail JSON 展开 | `TraceDetail` | 点击查看JSON | JSON 面板展开，内容语法高亮 | ⬜ | — | — |
+| C9.11 | TraceDetail JSON 折叠 | `TraceDetail` | 再次点击 | JSON 面板折叠 | ⬜ | — | — |
+| C9.12 | TraceDetail 返回导航 | `TraceDetail` | 点击返回 | 跳转 `/admin/traces` | ⬜ | — | — |
 
 ---
 
@@ -939,7 +1090,7 @@
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，U10.1-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；U11.1-U11.6） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，U11.10-U11.15） |
-| 性能埋点（检索+LLM） | ≥ 70% | ⬜ | Phase 5：U9.6/U9.7 埋点验证（4 用例，U12.1-U12.4） |
+| 性能埋点（检索+LLM） | ≥ 70% | ⏭️ | Phase 5：U9.6/U9.7 已合并入 Trace（§6.14），U12.4 独立保留 |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
@@ -956,6 +1107,17 @@
 | 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页（列表加载/搜索/筛选排序/分页/删除含 KB 确认/getStatusLabel/isTerminal/formatFileSize，2026-06-10） |
 | 前端 `views/admin/ConversationList.vue` | ≥ 60% | ⏸️ 已废弃 | ~~Phase 5：活跃统计占位页~~（2026-06-11 移除路由，页面已合并到系统统计页，测试文件保留但不再运行） |
 | 前端组件 | ≥ 60% | ✅ 327 通过 | 2026-06-11 运行 `npm run test`：20 文件 327 用例全部通过（AdminLayout 用例已同步导航变更：系统概览→系统统计、移除活跃统计） |
+| `models/trace.py` | ≥ 80% | ⬜ | Phase 5：Trace ORM 模型（5 用例，U13.1-U13.5） |
+| `services/trace_service.py` | ≥ 80% | ⬜ | Phase 5：Trace Service（5 用例 + 6 API 用例 + 6 统计用例 + 5 埋点用例） |
+| `api/admin.py` (Trace 端点) | ≥ 90% | ⬜ | Phase 5：Trace API（15 用例，A9.1-A9.15） |
+| `api/admin.py` (用户管理端点) | ≥ 90% | ⬜ | Phase 5：用户管理 API（12 用例，A9.20-A9.31） |
+| `services/admin_service.py` (用户管理) | ≥ 80% | ⬜ | Phase 5：用户管理 Service（12 用例，U15.1-U15.12） |
+| `services/admin_service.py` (统计增强) | ≥ 80% | ⬜ | Phase 5：ECharts 统计增强（3 用例，U14.1-U14.3） |
+| 前端 `views/admin/TraceList.vue` | ≥ 60% | ⬜ | Phase 5：Trace 列表页（7 用例，C9.1-C9.7） |
+| 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ⬜ | Phase 5：Trace 详情页（5 用例，C9.8-C9.12） |
+| 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ⬜ | Phase 5：用户列表页（9 用例，C8.1-C8.9） |
+| 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ⬜ | Phase 5：用户详情页（4 用例，C8.10-C8.13） |
+| 前端 `components/charts/*.vue` | ≥ 60% | ⬜ | Phase 5：ECharts 图表组件（7 用例，C7.1-C7.7） |
 
 ---
 

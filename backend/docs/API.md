@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.26 |
-| 最后更新 | 2026-06-11 |
+| 文档版本 | v0.27 |
+| 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ⬜ / 用户管理 ⬜ / ECharts ⬜） |
 
 ---
 
@@ -1307,6 +1307,378 @@ backend/app/main.py                    ← 修改：注册 admin_router
 
 ---
 
+### 7.5 Trace 链路追踪接口
+
+> **实现状态**：Phase 5 待实现。详见 `Admin_设计补全_最终方案.md` §三。
+> **权限**：所有 `/api/admin/traces/*` 端点要求 `role=admin`。
+
+#### GET `/api/admin/traces`
+
+获取 Trace 列表（分页+筛选）。
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| `page` | int | 否 | 页码，默认 1 |
+| `page_size` | int | 否 | 每页条数，默认 20，最大 100 |
+| `user_id` | int | 否 | 按用户筛选 |
+| `status` | string | 否 | success / error / partial |
+| `intent_type` | string | 否 | KNOWLEDGE / CASUAL / META |
+| `response_mode` | string | 否 | RAG / DIRECT_LLM / META / CASUAL / FALLBACK |
+| `start_date` | string | 否 | 开始时间（ISO 8601） |
+| `end_date` | string | 否 | 结束时间（ISO 8601） |
+| `search` | string | 否 | 按问题模糊搜索 |
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "ok",
+  "data": {
+    "total": 1520,
+    "page": 1,
+    "page_size": 20,
+    "items": [
+      {
+        "id": 1,
+        "trace_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "user_id": 3,
+        "username": "zhangsan",
+        "conversation_id": 123,
+        "kb_id": 1,
+        "kb_name": "公司内部知识库",
+        "question": "报销流程是怎样的？",
+        "status": "success",
+        "intent_type": "KNOWLEDGE",
+        "intent_method": "llm_flash",
+        "response_mode": "RAG",
+        "total_duration_ms": 2892,
+        "created_at": "2026-06-12T10:30:00+00:00"
+      }
+    ]
+  }
+}
+```
+
+#### GET `/api/admin/traces/{trace_id}`
+
+获取 Trace 详情（含各阶段 JSON 详情）。
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "ok",
+  "data": {
+    "id": 1,
+    "trace_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "user_id": 3,
+    "username": "zhangsan",
+    "conversation_id": 123,
+    "kb_id": 1,
+    "kb_name": "公司内部知识库",
+    "question": "报销流程是怎样的？",
+    "status": "success",
+    "intent_type": "KNOWLEDGE",
+    "intent_method": "llm_flash",
+    "response_mode": "RAG",
+    "total_duration_ms": 2892,
+    "intent": {
+      "span_name": "intent",
+      "start_time": "2026-06-12T10:30:00.000Z",
+      "duration_ms": 12,
+      "status": "success",
+      "intent_type": "KNOWLEDGE",
+      "method": "regex",
+      "metadata": {"model": null, "confidence": null}
+    },
+    "rewrite": {
+      "span_name": "rewrite",
+      "start_time": "2026-06-12T10:30:00.120Z",
+      "duration_ms": 320,
+      "status": "success",
+      "original_question": "报销流程是怎样的？",
+      "rewritten_question": null,
+      "metadata": {"model": "deepseek-v4-flash", "input_tokens": 87, "output_tokens": 23}
+    },
+    "retrieve": {
+      "span_name": "retrieve",
+      "start_time": "2026-06-12T10:30:00.440Z",
+      "duration_ms": 3812,
+      "status": "success",
+      "vector": {"duration_ms": 874, "result_count": 12},
+      "bm25": {"duration_ms": 2912, "redis_cache": "miss", "load_chunks_ms": 102, "tokenize_ms": 1860, "score_ms": 920, "candidate_count": 52, "result_count": 12},
+      "fusion": {"duration_ms": 14, "method": "rrf", "result_count": 8},
+      "match_sentence": {"duration_ms": 12}
+    },
+    "rerank": {
+      "span_name": "rerank",
+      "start_time": "2026-06-12T10:30:00.620Z",
+      "duration_ms": 45,
+      "status": "success",
+      "input_count": 8,
+      "output_count": 5,
+      "metadata": {"reranker": "noop"}
+    },
+    "generate": {
+      "span_name": "generate",
+      "start_time": "2026-06-12T10:30:00.665Z",
+      "duration_ms": 2340,
+      "status": "success",
+      "model": "deepseek-v4",
+      "ttft_ms": 120,
+      "input_tokens": 1520,
+      "output_tokens": 421,
+      "finish_reason": "stop"
+    },
+    "error_message": null,
+    "created_at": "2026-06-12T10:30:00+00:00"
+  }
+}
+```
+
+> **注意**：`generate` 阶段不存储 `output`（LLM 回答内容），完整对话内容通过 `conversation_id` JOIN `messages` 表获取。
+
+---
+
+### 7.6 统计增强接口
+
+#### GET `/api/admin/stats/traces`
+
+Trace 统计数据，用于 ECharts 图表渲染。
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| `days` | int | 否 | 过去 N 天，默认 7 |
+| `group_by` | string | 否 | day / hour，默认 day |
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "ok",
+  "data": {
+    "trend": [
+      {"date": "2026-06-06", "success": 128, "error": 2, "partial": 1},
+      {"date": "2026-06-07", "success": 145, "error": 3, "partial": 0}
+    ],
+    "latency": [
+      {"date": "2026-06-06", "p50": 820, "p95": 2100, "p99": 3800},
+      {"date": "2026-06-07", "p50": 790, "p95": 2180, "p99": 4210}
+    ],
+    "tokens": [
+      {"date": "2026-06-06", "input": 152000, "output": 45000},
+      {"date": "2026-06-07", "input": 168000, "output": 52000}
+    ],
+    "intent_distribution": [
+      {"type": "KNOWLEDGE", "count": 1024},
+      {"type": "CASUAL", "count": 256},
+      {"type": "META", "count": 64}
+    ],
+    "response_distribution": [
+      {"mode": "RAG", "count": 980},
+      {"mode": "DIRECT_LLM", "count": 156},
+      {"mode": "META", "count": 64},
+      {"mode": "CASUAL", "count": 96},
+      {"mode": "FALLBACK", "count": 48}
+    ]
+  }
+}
+```
+
+#### GET `/api/admin/stats`（已有接口增强）
+
+响应新增 `charts` 字段：
+
+```json
+{
+  "code": "0",
+  "message": "ok",
+  "data": {
+    "user_count": 12,
+    "kb_count": 5,
+    "doc_count": 45,
+    "chunk_count": 2340,
+    "conversation_count": 89,
+    "message_count": 520,
+    "storage_bytes": 52428800,
+    "charts": {
+      "trend": [...],
+      "latency": [...],
+      "tokens": [...]
+    }
+  }
+}
+```
+
+---
+
+### 7.7 用户管理接口
+
+> **实现状态**：Phase 5 待实现。详见 `Admin_设计补全_最终方案.md` §五。
+> **权限**：所有 `/api/admin/users/*` 端点要求 `role=admin`。
+
+#### GET `/api/admin/users`
+
+获取用户列表（分页+筛选）。
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| `page` | int | 否 | 页码，默认 1 |
+| `page_size` | int | 否 | 每页条数，默认 20，最大 100 |
+| `role` | string | 否 | user / admin |
+| `status` | string | 否 | active / disabled |
+| `search` | string | 否 | 按用户名模糊搜索 |
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "ok",
+  "data": {
+    "total": 15,
+    "page": 1,
+    "page_size": 20,
+    "items": [
+      {
+        "id": 3,
+        "username": "zhangsan",
+        "role": "user",
+        "status": "active",
+        "kb_count": 2,
+        "doc_count": 15,
+        "conversation_count": 28,
+        "last_active_at": "2026-06-12T10:30:00+00:00",
+        "created_at": "2026-05-06T08:00:00+00:00"
+      }
+    ]
+  }
+}
+```
+
+#### GET `/api/admin/users/{user_id}`
+
+获取用户详情（含统计）。
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "ok",
+  "data": {
+    "id": 3,
+    "username": "zhangsan",
+    "role": "user",
+    "status": "active",
+    "kb_count": 2,
+    "doc_count": 15,
+    "conversation_count": 28,
+    "message_count": 156,
+    "total_input_tokens": 524000,
+    "total_output_tokens": 128000,
+    "last_active_at": "2026-06-12T10:30:00+00:00",
+    "created_at": "2026-05-06T08:00:00+00:00"
+  }
+}
+```
+
+#### PUT `/api/admin/users/{user_id}/role`
+
+变更用户角色。
+
+**请求**：
+
+```json
+{"role": "admin"}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| `role` | string | 是 | user / admin |
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "角色变更成功",
+  "data": {"id": 3, "username": "zhangsan", "role": "admin"}
+}
+```
+
+#### PUT `/api/admin/users/{user_id}/status`
+
+禁用/启用用户。
+
+**请求**：
+
+```json
+{"status": "disabled"}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| `status` | string | 是 | active / disabled |
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "用户已禁用",
+  "data": {"id": 3, "username": "zhangsan", "status": "disabled"}
+}
+```
+
+#### POST `/api/admin/users/{user_id}/reset-password`
+
+重置用户密码。
+
+**请求**：
+
+```json
+{"new_password": "TempPass123!"}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| `new_password` | string | 是 | 新密码（≥ 6 字符） |
+
+**响应** (200)：
+
+```json
+{
+  "code": "0",
+  "message": "密码重置成功",
+  "data": {"id": 3, "username": "zhangsan"}
+}
+```
+
+---
+
+### 7.8 Admin 实现文件
+
+```
+backend/app/schemas/admin.py           ← 修改：新增 TraceSchema / UserSchema / StatsChartSchema
+backend/app/services/admin_service.py  ← 修改：新增 Trace/用户管理 Service 方法 + 统计增强
+backend/app/api/admin.py               ← 修改：新增 Trace/用户管理/统计增强端点
+backend/app/models/trace.py            ← 新建：Trace ORM 模型
+backend/app/rag/trace_recorder.py      ← 新建：TraceRecorder 上下文管理器
+backend/alembic/versions/xxx_add_traces.py ← 新建：traces 表迁移
+```
+
+---
+
 ## 8. 完整请求/响应示例
 
 ### 8.1 正常问答流程
@@ -1514,7 +1886,15 @@ data: {"message_id": 13, "title": null, "token_usage": {"prompt": 80, "completio
 | POST | `/api/chat` | user | 问答 SSE（kb_id 需有检索权限：own KB 或 public KB） | Phase 3 |
 | GET | `/api/admin/knowledge-bases` | admin | 全部知识库（跨用户） | Phase 5 |
 | GET | `/api/admin/documents` | admin | 全部文档（跨库） | Phase 5 |
-| GET | `/api/admin/stats` | admin | 概览统计 | Phase 5 |
+| GET | `/api/admin/stats` | admin | 概览统计（含 charts 图表数据） | Phase 5 |
+| GET | `/api/admin/stats/traces` | admin | Trace 统计（trend/latency/tokens/distribution） | Phase 5 |
+| GET | `/api/admin/traces` | admin | Trace 列表（分页+筛选） | Phase 5 |
+| GET | `/api/admin/traces/{trace_id}` | admin | Trace 详情（含各阶段 JSON） | Phase 5 |
+| GET | `/api/admin/users` | admin | 用户列表（分页+筛选） | Phase 5 |
+| GET | `/api/admin/users/{user_id}` | admin | 用户详情（含统计） | Phase 5 |
+| PUT | `/api/admin/users/{user_id}/role` | admin | 变更用户角色 | Phase 5 |
+| PUT | `/api/admin/users/{user_id}/status` | admin | 禁用/启用用户 | Phase 5 |
+| POST | `/api/admin/users/{user_id}/reset-password` | admin | 重置用户密码 | Phase 5 |
 
 ---
 

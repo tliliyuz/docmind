@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.39 |
-| 最后更新 | 2026-06-11 |
+| 文档版本 | v0.40 |
+| 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ⬜ / 限流 ⬜ / 部署 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ⬜ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -53,6 +53,8 @@
 | 限流 | 固定窗口计数器 + Redis | IP/用户级频率限制，阈值压测后确定，详见 §13.2 | [Planned: Phase 5] |
 | 部署方案 | Docker Compose + Nginx | 5 服务编排（MySQL/Redis/Backend/Celery/Nginx），详见 §13.1 | [Planned: Phase 5] |
 | 监控告警 | 结构化日志 → Loki + Grafana | 应用级指标 + LLM 调用监控，详见 §13.3 | [Planned: Phase 5] |
+| Trace 链路追踪 | MySQL traces 表 + JSON 字段 | 问答全链路各阶段耗时记录，详见 §5.1.8 | [Planned: Phase 5] |
+| 可视化图表 | ECharts 5 | Admin 统计页图表（趋势/延迟/Token），从 traces 表聚合 | [Planned: Phase 5] |
 
 ---
 
@@ -150,6 +152,7 @@ DocMind
 │   ├── 多路检索（向量 + BM25）
 │   ├── RRF 融合排序
 │   ├── Rerank 重排序
+│   ├── Evidence Highlight（句级 BM25 定位）
 │   ├── Prompt 组装 & LLM 调用
 │   └── SSE 流式输出
 ├── 会话管理（Session）
@@ -160,8 +163,14 @@ DocMind
 │   ├── 知识库 CRUD
 │   ├── 文档列表 & 状态
 │   └── 分块可视化
+├── 管理后台（Admin）
+│   ├── 系统统计（ECharts 可视化）
+│   ├── Trace 链路追踪（性能观测）
+│   ├── 知识库管理（跨用户）
+│   ├── 文档管理（跨库）
+│   └── 用户管理（CRUD + 角色 + 审计）
 └── 意图识别（Intent）
-    ├── 意图分类（知识查询 / 闲聊）
+    ├── 意图分类（知识查询 / 闲聊 / 元问题）
     └── 问题重写（多轮上下文补全）
 ```
 
@@ -1072,6 +1081,121 @@ backend/tests/test_sources_preview.py       ← 重写：Evidence 集成测试
 
 ---
 
+#### 5.1.8 Trace 链路追踪 [Planned: Phase 5]
+
+> **设计文档**：详见 `Admin_设计补全_最终方案.md` §三。
+> **设计原则**：Trace 不承担审计职责，仅承担性能观测。完整对话内容通过 `conversation_id` JOIN 查询获取，避免重复存储。
+
+**目标**：
+- 记录问答全链路各阶段耗时和详情，支持性能瓶颈定位
+- 提供列表筛选 + 详情查看的 Admin 管理界面
+- 为 ECharts 统计图表提供数据源
+
+---
+
+**数据模型：`traces` 表**
+
+| 字段 | 类型 | 说明 |
+|:---|:---|:---|
+| `id` | BIGINT PK | 自增主键 |
+| `trace_id` | VARCHAR(64) UNIQUE | UUID 追踪 ID |
+| `user_id` | BIGINT FK | 用户 ID |
+| `conversation_id` | BIGINT FK | 会话 ID（可为空） |
+| `kb_id` | BIGINT | 知识库 ID |
+| `question` | TEXT | 用户问题 |
+| `status` | VARCHAR(32) | success / error / partial |
+| `intent_type` | VARCHAR(32) | **顶层字段**：KNOWLEDGE / CASUAL / META |
+| `intent_method` | VARCHAR(32) | **顶层字段**：regex / llm_flash / llm_pro |
+| `response_mode` | VARCHAR(32) | **顶层字段**：RAG / DIRECT_LLM / META / CASUAL / FALLBACK |
+| `total_duration_ms` | INT | 总耗时（毫秒） |
+| `intent` | JSON | 意图识别阶段详情 |
+| `rewrite` | JSON | 问题重写阶段详情 |
+| `retrieve` | JSON | 检索阶段详情（细粒度拆分） |
+| `rerank` | JSON | Rerank 阶段详情 |
+| `generate` | JSON | LLM 生成阶段详情（**不存 output**） |
+| `error_message` | TEXT | 错误信息（status=error 时） |
+| `created_at` | DATETIME | 创建时间（UTC） |
+
+> **顶层字段设计**：`intent_type`、`intent_method`、`response_mode` 作为独立列存储，避免聚合统计时使用 `JSON_EXTRACT` 的性能问题。
+
+---
+
+**JSON 字段结构**
+
+各阶段 JSON 字段均包含 `span_name`、`start_time`、`duration_ms`、`status` 通用字段，加上阶段特有的数据：
+
+| 阶段 | 关键字段 | 说明 |
+|:---|:---|:---|
+| `intent` | intent_type, method, metadata.model, metadata.confidence | 意图分类结果和方法 |
+| `rewrite` | original_question, rewritten_question, metadata.model, metadata.input_tokens, metadata.output_tokens | 改写前后对比 + Token 消耗 |
+| `retrieve` | vector(duration_ms/result_count), bm25(duration_ms/redis_cache/tokenize_ms/score_ms/candidate_count/result_count), fusion(duration_ms/method/result_count), match_sentence(duration_ms) | **细粒度拆分**：向量/BM25/融合/句级定位各自独立计时 |
+| `rerank` | input_count, output_count, metadata.reranker | 输入输出数量 + reranker 类型 |
+| `generate` | model, ttft_ms, input_tokens, output_tokens, finish_reason | LLM 生成指标，**不存 output**（通过 conversation_id JOIN 查询） |
+
+---
+
+**埋点集成点**
+
+```
+chat_service._validate_and_prepare()
+    ↓
+[Intent]  classify_intent()     → trace.intent = {intent_type, method, duration_ms}
+    ↓
+[Rewrite] rewrite_query()       → trace.rewrite = {original, rewritten, tokens}
+    ↓
+[Retrieval] vector + BM25 + RRF → trace.retrieve = {vector, bm25, fusion, match_sentence}
+    ↓
+[Rerank]  reranker.rerank()     → trace.rerank = {input_count, output_count}
+    ↓
+[LLM]     stream_chat()         → trace.generate = {model, ttft_ms, tokens, finish_reason}
+           ↑
+           core/llm.py 已有计时点：t0（调用开始）/ t_first（首Token）
+           复用这些计时点，将 LLM_PERF 日志整合为 Trace.generate JSON
+    ↓
+trace.record() 写入 traces 表
+```
+
+> **与现有日志的关系**：`chat_service.py` 已有 `INTENT`/`QUERY_REWRITE`/`PREP_PERF`/`PERF` 等 `logger.info` 计时日志，`core/llm.py` 已有 `LLM_PERF(流式) 首Token=%.3fs` 日志。Trace 复用这些已有的 `time.perf_counter()` 计时点，将非结构化文本日志整合为结构化 JSON 写入 `traces` 表。原有日志保留用于实时排查（stdout/stderr），Trace 用于持久化观测和 Admin 统计分析。
+
+---
+
+**API 设计**
+
+| 端点 | 方法 | 说明 |
+|:---|:---|:---|
+| `/api/admin/traces` | GET | Trace 列表（分页+筛选：status/intent_type/response_mode/start_date/end_date/search/user_id） |
+| `/api/admin/traces/{trace_id}` | GET | Trace 详情（含各阶段 JSON 详情） |
+| `/api/admin/stats/traces` | GET | Trace 统计（days/group_by 参数，返回 trend/latency/tokens/intent_distribution/response_distribution） |
+
+---
+
+**索引设计**
+
+```sql
+UNIQUE INDEX idx_trace_id (trace_id)
+INDEX idx_created_at (created_at)
+INDEX idx_created_status (created_at, status)      -- Dashboard 按时间+状态筛选
+INDEX idx_created_intent (created_at, intent_type) -- 意图分类统计
+INDEX idx_created_response (created_at, response_mode) -- 响应模式统计
+INDEX idx_user_created (user_id, created_at)       -- 按用户筛选
+```
+
+---
+
+**实现文件**
+
+```
+backend/app/models/trace.py              ← 新建：Trace ORM 模型
+backend/app/schemas/trace.py             ← 新建：TraceResponse / TraceListResponse / TraceStatsResponse
+backend/app/services/trace_service.py    ← 新建：record_trace() / list_traces() / get_trace_detail() / get_trace_stats()
+backend/app/rag/trace_recorder.py        ← 新建：TraceRecorder 上下文管理器
+backend/app/api/admin.py                 ← 修改：新增 3 个 Trace 端点
+backend/app/services/chat_service.py     ← 修改：集成 TraceRecorder 各阶段埋点
+backend/alembic/versions/xxx_add_traces.py ← 新建：traces 表迁移
+```
+
+---
+
 ### 5.2 问答核心逻辑（伪代码，含阶段标注）
 
 ```python
@@ -1650,6 +1774,67 @@ backend/app/main.py              ← handler 增强（堆栈屏蔽 + 日志）
 ```
 backend/app/core/logging.py   ← 新增：日志配置 + JSONFormatter
 backend/app/main.py           ← 中间件注入 request_id
+```
+
+---
+
+## 9a. ECharts 可视化集成 [Planned: Phase 5]
+
+> **设计文档**：详见 `Admin_设计补全_最终方案.md` §四。
+
+### 9a.1 数据流
+
+```
+traces 表 → GET /api/admin/stats/traces (聚合) → 前端 ECharts 渲染
+                                              ↓
+GET /api/admin/stats (已有接口增强，新增 charts 字段)
+```
+
+### 9a.2 图表配置（v1 MVP）
+
+| 图表 | 类型 | X 轴 | Y 轴 | 系列 | 数据源 |
+|:---|:---|:---|:---|:---|:---|
+| 问答量趋势 | 折线图 | 日期 | 问答次数 | 成功（绿）、失败（红） | `traces.status` 按天 GROUP BY |
+| 响应时间分布 | 折线图 | 日期 | 毫秒 | P50（蓝）、P95（橙）、P99（红） | `traces.total_duration_ms` 分位数 |
+| Token 使用统计 | 堆叠柱状图 | 日期 | Token 数 | Input（蓝）、Output（绿） | `traces.generate` JSON 提取 |
+
+### 9a.3 实现要点
+
+- **前端**：引入 `echarts` 包，封装 `useECharts()` 组合式函数（响应式 resize + dispose）
+- **后端**：`/api/admin/stats` 已有接口增强 `charts` 字段，新增 `/api/admin/stats/traces` 独立统计接口
+- **缓存**：统计数据允许 60s 延迟，Redis 缓存可选
+
+---
+
+## 9b. 用户管理模块 [Planned: Phase 5]
+
+> **设计文档**：详见 `Admin_设计补全_最终方案.md` §五。
+
+### 9b.1 设计原则
+
+- 复用现有 `users` 表，v1 不新增表
+- admin 专属接口，非 admin 返回 403 E5005
+- 用户操作（角色变更/禁用/重置密码）需记录审计日志（v2 新增 `user_operations` 表）
+
+### 9b.2 API 设计
+
+| 端点 | 方法 | 说明 |
+|:---|:---|:---|
+| `/api/admin/users` | GET | 用户列表（分页+筛选：role/status/search） |
+| `/api/admin/users/{user_id}` | GET | 用户详情（含统计：kb_count/doc_count/conversation_count/message_count/token 统计） |
+| `/api/admin/users/{user_id}/role` | PUT | 变更角色（user/admin） |
+| `/api/admin/users/{user_id}/status` | PUT | 禁用/启用用户（active/disabled） |
+| `/api/admin/users/{user_id}/reset-password` | POST | 重置密码（生成临时密码） |
+
+### 9b.3 实现文件
+
+```
+backend/app/schemas/admin.py             ← 修改：新增用户管理 Schema
+backend/app/services/admin_service.py    ← 修改：新增用户管理 Service 方法
+backend/app/api/admin.py                 ← 修改：新增 5 个用户管理端点
+frontend/src/views/admin/AdminUserList.vue   ← 新建：用户列表页
+frontend/src/views/admin/AdminUserDetail.vue ← 新建：用户详情页
+frontend/src/api/admin.js                ← 修改：新增用户管理接口封装
 ```
 
 ---

@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.44 |
-| 最后更新 | 2026-06-11 |
+| 文档版本 | v0.45 |
+| 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / 限流 ⬜ / 部署 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ⬜ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -487,12 +487,94 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ⬜ | docker-compose.yml | 5 服务编排（MySQL + Redis + Backend + Celery + Nginx）+ ChromaDB 挂卷 |
 | ⬜ | nginx.conf | 反向代理 + SSL 终结 + SSE buffering 关闭 + 静态资源 SPA fallback |
 
-### 7.4 性能埋点接入（2 子任务）
+### 7.4a Trace 链路追踪（P0，v1 MVP）
+
+> **设计原则**：Trace 不承担审计职责，仅承担性能观测。完整对话内容通过 `conversation_id` JOIN 查询获取，避免重复存储。
+> **与现有埋点的关系**：Trace 整合 `chat_service.py` 和 `core/llm.py` 中已有的散落 `logger.info` 计时日志（`INTENT`/`QUERY_REWRITE`/`PREP_PERF`/`PERF`/`LLM_PERF`），将其统一为结构化 JSON 写入 `traces` 表。原有日志保留用于实时排查，Trace 用于持久化观测和统计分析。原 §7.4（性能埋点接入）已合并入本节，不再独立存在。
+
+#### 后端（3 天）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 检索耗时埋点 (U9.6) | `chat_service.py` 检索阶段：记录 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` |
-| ⬜ | LLM 调用埋点 (U9.7) | `core/llm.py` 流式调用：记录 `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms` + `total_ms` |
+| ⬜ | Trace 模型 + Alembic 迁移 | `traces` 表：trace_id / user_id / conversation_id / kb_id / question / status / intent_type / intent_method / response_mode / total_duration_ms / intent(JSON) / rewrite(JSON) / retrieve(JSON) / rerank(JSON) / generate(JSON) / error_message / created_at。索引：idx_trace_id / idx_created_at / idx_created_status / idx_created_intent / idx_created_response / idx_user_created |
+| ⬜ | `trace.record()` 上下文管理器/装饰器 | 封装 Trace 记录逻辑，支持各阶段埋点数据写入 |
+| ⬜ | `chat_service.py` 各阶段埋点 | 复用已有 `time.perf_counter()` 计时点（`t_intent`/`t_rewrite`/`t_vector`/`t_bm25`/`t_retrieval_done`/`t_first_token`/`t_stream_end`），将散落的 `logger.info`（`INTENT`/`QUERY_REWRITE`/`PREP_PERF`/`PERF`）整合为 TraceRecorder 结构化写入 |
+| ⬜ | `core/llm.py` 流式调用埋点 | 复用已有 `t0`/`t_first` 计时点（`LLM_PERF(流式) 首Token=%.3fs`），记录 `ttft_ms` + `total_ms` + `model` + `finish_reason` 到 Trace.generate；非流式 `chat_completion()` 同步记录 |
+| ⬜ | Trace API（列表 + 详情） | GET `/api/admin/traces`（分页+筛选：status/intent_type/response_mode/start_date/end_date/search）+ GET `/api/admin/traces/{trace_id}` |
+| ⬜ | 统计增强接口 | GET `/api/admin/stats/traces`（days/group_by 参数，返回 trend/latency/tokens/intent_distribution/response_distribution） |
+
+#### 前端（2 天）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | `TraceList.vue` | 列表页（/admin/traces）：搜索问题 + 状态/意图/响应模式/时间范围筛选 + 表格（Trace ID/用户/知识库/问题/耗时/意图/响应/状态）+ 分页。点击行→详情页，点击用户名→用户详情，点击 Trace ID→复制 |
+| ⬜ | `TraceDetail.vue` | 详情页（/admin/traces/{trace_id}）：基本信息卡片 + 5 阶段概览卡片（Intent/Rewrite/Retrieve/Rerank/Generate 各显示耗时+状态+查看JSON）+ JSON 展开面板（语法高亮，默认折叠） |
+| ⬜ | `api/trace.js` | 接口封装 |
+| ⬜ | `AdminLayout.vue` 导航更新 | 添加「链路追踪」菜单项（图标 `fa-search`，路由 `/admin/traces`） |
+
+#### v2 迭代（后续）
+
+| 任务 | 说明 |
+|:---|:---|
+| Trace 详情瀑布图 | 各阶段时间轴可视化 |
+| BM25 细粒度高亮 | tokenize_ms / score_ms 等指标高亮 |
+
+### 7.4b 系统统计 ECharts（P1，v1 MVP）
+
+> **设计文档**：详见 `Admin_设计补全_最终方案.md` §四。
+
+#### 后端（1 天）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 增强 `/api/admin/stats` 接口 | 响应新增 `charts` 字段：trend（问答量趋势）/ latency（响应时间 P50/P95/P99）/ tokens（Token 使用统计），数据从 `traces` 表聚合 |
+| ⬜ | P50/P95/P99 分位数计算 | 按天/小时聚合 `total_duration_ms`，计算分位数 |
+
+#### 前端（1 天）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 引入 ECharts 5 | `npm install echarts`，封装 `useECharts` 组合式函数 |
+| ⬜ | 更新 `AdminStatsPage.vue` | 新增 3 个图表组件：A. 问答量趋势（折线图，成功/失败）B. 响应时间分布（折线图，P50/P95/P99）C. Token 使用统计（堆叠柱状图，Input/Output） |
+| ⬜ | 图表配置常量文件 | `frontend/src/constants/charts.js` — 颜色/样式/tooltip 配置 |
+
+#### v2 迭代（后续）
+
+| 任务 | 说明 |
+|:---|:---|
+| 意图分类占比 | 饼图：KNOWLEDGE / CASUAL / META |
+| 响应模式分布 | 饼图：RAG / DIRECT_LLM / META / CASUAL / FALLBACK |
+| 用户活跃度 | 折线图：日活 / 周活 |
+
+### 7.4c 用户管理（P2，v1 MVP）
+
+> **设计文档**：详见 `Admin_设计补全_最终方案.md` §五。
+
+#### 后端（2 天）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 用户管理 API | GET `/api/admin/users`（分页+筛选：role/status/search）+ GET `/api/admin/users/{user_id}`（含 kb_count/doc_count/conversation_count/message_count/token 统计） |
+| ⬜ | 用户操作 API | PUT `/api/admin/users/{user_id}/role`（变更角色）+ PUT `/api/admin/users/{user_id}/status`（禁用/启用）+ POST `/api/admin/users/{user_id}/reset-password`（重置密码） |
+| ⬜ | 用户统计聚合 | 从 traces 表聚合 total_input_tokens / total_output_tokens / last_active_at |
+| ⬜ | 权限控制 | admin 专属接口，非 admin 返回 403 E5005 |
+
+#### 前端（2 天）
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | `AdminUserList.vue` | 用户列表页（/admin/users）：搜索用户名 + 角色/状态筛选 + 表格（用户名/角色/状态/KB数/文档数/会话数/最后活跃/操作）+ 分页。操作菜单：查看详情/变更角色/禁用启用/重置密码 |
+| ⬜ | `AdminUserDetail.vue` | 用户详情页（/admin/users/{user_id}）：用户信息卡片 + 统计卡片（KB/文档/会话/消息/Input Token/Output Token）+ 快捷操作（变更角色/禁用用户/重置密码） |
+| ⬜ | `api/user.js` | 接口封装 |
+| ⬜ | `AdminLayout.vue` 导航更新 | 添加「用户管理」菜单项（图标 `fa-users`，路由 `/admin/users`） |
+
+#### v2 迭代（后续）
+
+| 任务 | 说明 |
+|:---|:---|
+| `user_operations` 表 | 审计日志数据模型 |
+| 用户操作日志 API | GET `/api/admin/users/{user_id}/operations` |
+| 操作日志前端展示 | 用户详情页内嵌操作日志表格 |
 
 ### 7.5 Phase 5 测试
 
@@ -502,7 +584,10 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | sources Evidence 预览测试 | 单元测试 | Evidence 定位集成 3 + 降级 3 + 短 chunk 2 + 格式 3 + 边界 5 + Schema 5 = 21 用例（`test_sources_preview.py`）+ 句级定位 14 用例（`test_sentence_matcher.py`）= 35 用例，全部通过；前端零改动 |
 | ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
 | ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
-| ⬜ | 性能埋点验证 | 单元测试 | 检索耗时 1 + LLM 耗时 1 + 日志格式校验 2 = 4 用例 |
+| ⬜ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4）。原检索/LLM 耗时埋点已合并入 Trace 测试 |
+| ⬜ | Trace 接口测试 | 接口+单元 | Trace 记录写入 5 + 列表筛选分页 6 + 详情查询 3 + 统计聚合 6 + 埋点集成 5 + 前端 12 = 37 用例 |
+| ⬜ | ECharts 统计接口测试 | 单元测试 | trend 聚合 2 + latency 分位数 3 + tokens 聚合 2 = 7 用例 |
+| ⬜ | 用户管理接口测试 | 接口+单元 | 用户列表 4 + 详情 3 + 角色变更 3 + 禁用启用 3 + 重置密码 3 + 权限矩阵 4 = 20 用例 |
 | ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |
 | ⬜ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 两池子均超预算时各自独立截断互不侵蚀。**P0 Bug 防御** |
 | ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
@@ -516,6 +601,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | Retrieval-aware Rewrite | Phase 6 | 当前 v2 信号词策略覆盖率 95.7%，盲区仅 1 个已知案例。方案 E 需要设计检索质量判据 + 实验调参闭环，Phase 5 目标是上线，不应引入新检索链路变量 |
 | 细粒度问题类型分类 | Phase 6 | 3 类粗分类已覆盖核心场景 |
 | Loki + Grafana 部署 | Phase 6（可选） | 结构化日志已就绪，`jq` 命令行可做基本聚合分析。生产环境可视需要部署 |
+| Trace 瀑布图 | v2 | v1 先用 JSON 面板展示详情，后续迭代时间轴可视化 |
+| 意图分类/响应模式饼图 | v2 | ECharts v1 先做趋势/延迟/Token 三个核心图表 |
+| 用户审计日志 | v2 | `user_operations` 表 + 操作日志 API，v1 先做 CRUD + 角色管理 |
 
 ---
 
