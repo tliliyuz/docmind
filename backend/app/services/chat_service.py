@@ -43,9 +43,9 @@ from app.models.user import User
 from app.rag.bm25 import BM25Retriever
 from app.rag.chunker import estimate_tokens
 from app.rag.fusion import rrf_fusion
-from app.rag.intent import Intent, classify_intent, _is_casual_chat
+from app.rag.intent import Intent, IntentResult, classify_intent, _is_casual_chat
 from app.rag.prompt_builder import build_prompt, PromptBuildResult
-from app.rag.query_rewriter import _needs_rewrite, rewrite_query
+from app.rag.query_rewriter import _needs_rewrite, rewrite_query, RewriteResult
 from app.rag.reranker import NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
 from app.rag.sentence_matcher import match_sentences
@@ -327,6 +327,7 @@ async def _generate_sse_stream(
                 input_tokens=0,  # 流式 API 不返回 usage，下面估算后更新
                 output_tokens=0,
                 finish_reason="stop",
+                t_span_start=t0,
             )
 
         # DeepSeek 流式 API 不返回 usage，使用 chunker 估算
@@ -622,16 +623,19 @@ async def _validate_and_prepare(
     t_db_done = time.perf_counter()
 
     # 意图识别（Phase 5，对齐 ARCHITECTURE.md §5.1.6）
-    intent = await classify_intent(question)
+    t_intent_start = time.perf_counter()
+    intent_result = await classify_intent(question)
+    intent = intent_result.intent
     t_intent = time.perf_counter()
-    logger.info("INTENT question=%s intent=%s", question[:50], intent.value)
+    logger.info("INTENT question=%s intent=%s method=%s", question[:50], intent.value, intent_result.method)
 
     # Trace: 记录意图识别阶段
     if recorder:
         recorder.record_intent(
             intent_type=intent.value,
-            method="rule",  # classify_intent 内部使用规则+flash，简化记录
-            duration_ms=(t_intent - t_db_done) * 1000,
+            method=intent_result.method,
+            duration_ms=(t_intent - t_intent_start) * 1000,
+            metadata=intent_result.metadata,
         )
 
     if intent == Intent.META:
@@ -641,9 +645,11 @@ async def _validate_and_prepare(
 
     # 问题重写：仅 KNOWLEDGE 路径触发（对齐 ARCHITECTURE.md §5.1.5）
     _original_question = question
+    t_rewrite_start = t_intent
     t_rewrite = t_intent  # 默认值，未触发重写时复用
     if not skip_retrieval and _needs_rewrite(question, history_messages):
-        question = await rewrite_query(question, history_messages)
+        rewrite_result = await rewrite_query(question, history_messages)
+        question = rewrite_result.rewritten
         t_rewrite = time.perf_counter()
         logger.info(
             "QUERY_REWRITE original=%s rewritten=%s triggered=True",
@@ -654,7 +660,9 @@ async def _validate_and_prepare(
             recorder.record_rewrite(
                 original_question=_original_question,
                 rewritten_question=question,
-                duration_ms=(t_rewrite - t_intent) * 1000,
+                duration_ms=(t_rewrite - t_rewrite_start) * 1000,
+                t_span_start=t_rewrite_start,
+                metadata=rewrite_result.metadata,
             )
     else:
         logger.info(
@@ -667,6 +675,8 @@ async def _validate_and_prepare(
                 original_question=_original_question,
                 rewritten_question=None,
                 duration_ms=0,
+                t_span_start=t_rewrite_start,
+                metadata={"model": None, "input_tokens": 0, "output_tokens": 0},
             )
 
     if skip_retrieval:
@@ -700,6 +710,7 @@ async def _validate_and_prepare(
 
         # 多路检索（失败包装为 E4003）
         try:
+            t_retrieve_start = t_rewrite
             vector_output = await _vector_retriever.search(question, kb_id)
             t_vector = time.perf_counter()
             bm25_retriever = await _get_bm25_retriever()
@@ -717,18 +728,22 @@ async def _validate_and_prepare(
             # Trace: 记录检索阶段
             if recorder:
                 recorder.record_retrieve(
-                    vector_ms=(t_vector - t_rewrite) * 1000,
+                    vector_ms=(t_vector - t_retrieve_start) * 1000,
                     vector_count=len(vector_output.results),
                     bm25_ms=(t_bm25 - t_vector) * 1000,
+                    bm25_stats=bm25_output.stats,
                     fusion_ms=(t_fusion - t_bm25) * 1000,
                     fusion_count=len(fused_output.results),
+                    fusion_method=fused_output.fusion_method,
                     match_sentence_ms=(t_retrieval_done - t_rerank) * 1000,
-                    total_ms=(t_retrieval_done - t_rewrite) * 1000,
+                    total_ms=(t_retrieval_done - t_retrieve_start) * 1000,
+                    t_span_start=t_retrieve_start,
                 )
                 recorder.record_rerank(
                     input_count=len(fused_output.results),
                     output_count=len(reranked_output.results),
                     duration_ms=(t_rerank - t_fusion) * 1000,
+                    t_span_start=t_fusion,
                 )
         except Exception as e:
             logger.exception("检索链路异常")

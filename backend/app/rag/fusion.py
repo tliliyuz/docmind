@@ -49,7 +49,9 @@ def rrf_fusion(
     # 单路非空：直接返回该路结果
     if len(non_empty_outputs) == 1:
         logger.info("仅单路有结果，直接返回")
-        return non_empty_outputs[0]
+        output = non_empty_outputs[0]
+        output.fusion_method = "rrf"
+        return output
 
     # 多路非空：执行 RRF 融合
     return _do_rrf_fusion(non_empty_outputs, k)
@@ -111,4 +113,4 @@ def _do_rrf_fusion(
         len(outputs), len(results), k,
     )
 
-    return RetrievalOutput(results=results, total=len(results))
+    return RetrievalOutput(results=results, total=len(results), fusion_method="rrf")

@@ -28,7 +28,7 @@ from app.core.exceptions import (
     PermissionDeniedException,
     RetrievalServiceException,
 )
-from app.rag.intent import Intent
+from app.rag.intent import Intent, IntentResult
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
 
@@ -184,7 +184,10 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
                   side_effect=lambda g, **kw: g))
         mocks['intent'] = stack.enter_context(
             patch("app.services.chat_service.classify_intent", new_callable=AsyncMock))
-        mocks['intent'].return_value = Intent.KNOWLEDGE
+        mocks['intent'].return_value = IntentResult(
+            intent=Intent.KNOWLEDGE, method="llm_flash",
+            metadata={"model": "deepseek-v4-flash", "confidence": None},
+        )
 
         # 默认行为配置
         mocks['vec'].search = AsyncMock(return_value=retrieval_output)
@@ -447,7 +450,10 @@ class TestChatKBEmpty:
 
         with patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g), \
              patch("app.services.chat_service.classify_intent", new_callable=AsyncMock,
-                   return_value=Intent.KNOWLEDGE), \
+                   return_value=IntentResult(
+                       intent=Intent.KNOWLEDGE, method="llm_flash",
+                       metadata={"model": "deepseek-v4-flash", "confidence": None},
+                   )), \
              patch("app.services.chat_service.Conversation", return_value=conv), \
              patch("app.services.chat_service.Message", return_value=MagicMock(id=10, role="user", content="测试问题")):
             with pytest.raises(KnowledgeBaseEmptyException):

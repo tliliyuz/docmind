@@ -1,40 +1,17 @@
 """Redis 客户端 — 同步/异步双客户端，供锁/缓存/会话等模块复用
 
-对齐 .claude/plans/001-intent-optimization.md P0-2：
-- 同步客户端：Celery 任务使用（lock.py / tasks.py）
+- 同步客户端：Celery 任务使用（lock.py / tasks.py），全平台统一
 - 异步客户端：FastAPI 路由/Service 使用（bm25.py 等），避免阻塞事件循环
 
-实现说明：
-- **开发环境（Windows）**：`redis.Redis` 同步客户端 + `asyncio.to_thread()` 线程池包装
-- **生产环境（Linux）**：建议切换到原生 `redis.asyncio.Redis` + `ConnectionPool`
-
-生产环境切换参考代码（保留在此供参考）：
-```python
-import redis.asyncio as aioredis
-
-_async_client: Optional[aioredis.Redis] = None
-_async_pool: Optional[aioredis.ConnectionPool] = None
-
-async def get_async_redis() -> aioredis.Redis:
-    global _async_client, _async_pool
-    if _async_client is None:
-        _async_pool = aioredis.ConnectionPool.from_url(
-            settings.REDIS_URL,
-            decode_responses=True,
-            max_connections=20,
-            socket_connect_timeout=5.0,
-            socket_timeout=10.0,
-            retry_on_timeout=True,
-            health_check_interval=30,
-        )
-        _async_client = aioredis.Redis(connection_pool=_async_pool)
-        await _async_client.ping()
-    return _async_client
-```
+异步客户端根据运行环境自动选择实现：
+- **Linux（Docker 容器）**：原生 `redis.asyncio.Redis` + `ConnectionPool`，性能最优
+- **Windows（开发环境）**：`redis.Redis` 同步客户端 + `asyncio.to_thread()` 线程池包装，
+  规避 `redis.asyncio` 在 Windows 下的连接超时和稳定性问题
 """
 
 import asyncio
 import logging
+import sys
 import redis
 from typing import Any, Optional
 
@@ -42,11 +19,21 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# 同步客户端：Celery 任务使用（lock.py / tasks.py）
-_sync_client: redis.Redis | None = None
+# ── 异步客户端：根据平台自动选择实现 ──
+_IS_LINUX = sys.platform != "win32"
 
-# 包装后的异步客户端：同步客户端 + 线程池
-_threaded_client: Optional["ThreadedRedisClient"] = None
+if _IS_LINUX:
+    # Linux（Docker 生产环境）：原生 redis.asyncio
+    import redis.asyncio as aioredis
+
+    _async_client: aioredis.Redis | None = None
+    _async_pool: aioredis.ConnectionPool | None = None
+else:
+    # Windows（开发环境）：线程池包装
+    _threaded_client: Optional["ThreadedRedisClient"] = None
+
+# ── 同步客户端：Celery 任务使用（lock.py / tasks.py），全平台统一 ──
+_sync_client: redis.Redis | None = None
 
 
 def get_redis() -> redis.Redis:
@@ -104,31 +91,61 @@ class ThreadedRedisClient:
         pass
 
 
-async def get_async_redis() -> ThreadedRedisClient:
+async def get_async_redis():
     """获取 Redis 异步客户端（懒加载单例）。
 
-    实际上是「同步客户端 + 线程池」的包装，Windows 兼容性更好。
+    - Linux（Docker 生产环境）：原生 redis.asyncio + ConnectionPool，性能最优
+    - Windows（开发环境）：同步客户端 + asyncio.to_thread() 线程池包装，
+      规避 redis.asyncio 在 Windows 下的连接稳定性问题
     """
-    global _threaded_client
-    if _threaded_client is None:
-        logger.info("ASYNC_REDIS: 创建新的异步客户端实例（线程池包装）")
-
-        # 获取同步客户端
-        sync_client = get_redis()
-
-        # 包装为异步接口
-        _threaded_client = ThreadedRedisClient(sync_client)
-
-        logger.info("ASYNC_REDIS: 客户端创建成功")
+    if _IS_LINUX:
+        global _async_client, _async_pool
+        if _async_client is None:
+            logger.info("ASYNC_REDIS: 创建原生 redis.asyncio 客户端（Linux 生产模式）")
+            _async_pool = aioredis.ConnectionPool.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                max_connections=20,
+                socket_connect_timeout=5.0,
+                socket_timeout=10.0,
+                retry_on_timeout=True,
+                health_check_interval=30,
+            )
+            _async_client = aioredis.Redis(connection_pool=_async_pool)
+            try:
+                await _async_client.ping()
+                logger.info("ASYNC_REDIS: 原生 async 客户端连接验证成功")
+            except Exception as e:
+                logger.warning("ASYNC_REDIS: 原生 async 客户端连接验证失败: %s", e)
+        else:
+            logger.debug("ASYNC_REDIS: 复用现有原生 async 客户端")
+        return _async_client
     else:
-        logger.debug("ASYNC_REDIS: 复用现有异步客户端实例")
-    return _threaded_client
+        global _threaded_client
+        if _threaded_client is None:
+            logger.info("ASYNC_REDIS: 创建线程池包装客户端（Windows 开发模式）")
+            sync_client = get_redis()
+            _threaded_client = ThreadedRedisClient(sync_client)
+            logger.info("ASYNC_REDIS: 线程池包装客户端创建成功")
+        else:
+            logger.debug("ASYNC_REDIS: 复用现有线程池包装客户端")
+        return _threaded_client
 
 
 async def close_async_redis() -> None:
     """优雅关闭异步 Redis 客户端（应用退出时调用）。"""
-    global _threaded_client
-    if _threaded_client is not None:
-        logger.info("ASYNC_REDIS: 关闭异步客户端")
-        await _threaded_client.close()
-        _threaded_client = None
+    if _IS_LINUX:
+        global _async_client, _async_pool
+        if _async_client is not None:
+            logger.info("ASYNC_REDIS: 关闭原生 redis.asyncio 客户端")
+            await _async_client.aclose()
+            if _async_pool is not None:
+                await _async_pool.aclose()
+            _async_client = None
+            _async_pool = None
+    else:
+        global _threaded_client
+        if _threaded_client is not None:
+            logger.info("ASYNC_REDIS: 关闭线程池包装客户端")
+            await _threaded_client.close()
+            _threaded_client = None

@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.16 |
-| 最后更新 | 2026-06-11 |
+| 文档版本 | v0.17 |
+| 最后更新 | 2026-06-12 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 5 Docker 部署命令已补充） |
 
@@ -487,7 +487,7 @@ docker-compose ps
 # 4. 查看日志
 docker-compose logs -f backend      # 后端日志
 docker-compose logs -f celery       # Celery Worker 日志
-docker-compose logs -f frontend     # Nginx 日志
+docker-compose logs -f nginx      # Nginx 日志
 docker-compose logs -f              # 所有服务日志
 
 # 5. 执行数据库迁移
@@ -538,20 +538,20 @@ docker stats
 
 `docker-compose.yml` 通过 `env_file: backend/.env` 统一注入环境变量。以下变量**必须**在生产环境修改：
 
-| 变量 | 默认值 | 生产环境要求 |
+| 变量 | .env.example 默认值 | 生产环境要求 |
 |:---|:---|:---|
-| `JWT_SECRET_KEY` | `dev-secret-key` | 更换为 64 字符随机字符串 |
+| `JWT_SECRET_KEY` | `change-me` | 更换为 64 字符随机字符串 |
 | `LLM_API_KEY` | `sk-xxx` | 填入真实 API Key |
 | `EMBEDDING_API_KEY` | `sk-xxx` | 填入真实 API Key |
-| `MYSQL_PASSWORD` | `docmind` | 更换为强密码 |
-| `DEBUG` | `true` | 设为 `false` |
-| `CORS_ORIGINS` | `*` | 设为实际前端域名 |
+| `MYSQL_PASSWORD` | `your_strong_password` | 更换为强密码 |
+| `DEBUG` | `false` | 确认保持 `false` |
+| `CORS_ORIGINS` | `http://localhost` | 设为实际前端域名 |
 
 ### 9.6 Windows 注意事项
 
 - Docker Desktop 使用 WSL2 后端，Celery Worker 以 Linux 容器运行，无需 `--pool=solo`（Windows 限制仅影响原生运行）
 - `docker-compose.yml` 中 Celery command 不加 `--pool=solo`，使用默认 prefork pool
-- 挂卷路径使用相对路径（`./chroma_data`），Docker Compose 自动转换为容器内路径
+- 持久化数据使用 Docker 命名卷（`mysql_data` / `redis_data` / `chroma_data` / `upload_data`），由 Docker 引擎管理生命周期，`docker-compose down -v` 会删除所有卷数据
 
 ---
 

@@ -1388,16 +1388,16 @@ backend/app/main.py                    ← 修改：注册 admin_router
     "total_duration_ms": 2892,
     "intent": {
       "span_name": "intent",
-      "start_time": "2026-06-12T10:30:00.000Z",
-      "duration_ms": 12,
+      "start_time": "2026-06-12T10:30:00.000+00:00",
+      "duration_ms": 1200,
       "status": "success",
       "intent_type": "KNOWLEDGE",
-      "method": "regex",
-      "metadata": {"model": null, "confidence": null}
+      "method": "llm_flash",
+      "metadata": {"model": "deepseek-v4-flash", "confidence": null}
     },
     "rewrite": {
       "span_name": "rewrite",
-      "start_time": "2026-06-12T10:30:00.120Z",
+      "start_time": "2026-06-12T10:30:00.012+00:00",
       "duration_ms": 320,
       "status": "success",
       "original_question": "报销流程是怎样的？",
@@ -1406,18 +1406,18 @@ backend/app/main.py                    ← 修改：注册 admin_router
     },
     "retrieve": {
       "span_name": "retrieve",
-      "start_time": "2026-06-12T10:30:00.440Z",
-      "duration_ms": 3812,
+      "start_time": "2026-06-12T10:30:00.332+00:00",
+      "duration_ms": 1812,
       "status": "success",
       "vector": {"duration_ms": 874, "result_count": 12},
-      "bm25": {"duration_ms": 2912, "redis_cache": "miss", "load_chunks_ms": 102, "tokenize_ms": 1860, "score_ms": 920, "candidate_count": 52, "result_count": 12},
+      "bm25": {"duration_ms": 920, "redis_cache": "local_hit", "tokenize_ms": 5, "score_ms": 120, "candidate_count": 52, "result_count": 12},
       "fusion": {"duration_ms": 14, "method": "rrf", "result_count": 8},
       "match_sentence": {"duration_ms": 12}
     },
     "rerank": {
       "span_name": "rerank",
-      "start_time": "2026-06-12T10:30:00.620Z",
-      "duration_ms": 45,
+      "start_time": "2026-06-12T10:30:00.244+00:00",
+      "duration_ms": 0,
       "status": "success",
       "input_count": 8,
       "output_count": 5,
@@ -1425,10 +1425,10 @@ backend/app/main.py                    ← 修改：注册 admin_router
     },
     "generate": {
       "span_name": "generate",
-      "start_time": "2026-06-12T10:30:00.665Z",
+      "start_time": "2026-06-12T10:30:00.244+00:00",
       "duration_ms": 2340,
       "status": "success",
-      "model": "deepseek-v4",
+      "model": "deepseek-v4-pro",
       "ttft_ms": 120,
       "input_tokens": 1520,
       "output_tokens": 421,
@@ -1440,7 +1440,14 @@ backend/app/main.py                    ← 修改：注册 admin_router
 }
 ```
 
-> **注意**：`generate` 阶段不存储 `output`（LLM 回答内容），完整对话内容通过 `conversation_id` JOIN `messages` 表获取。
+> **字段说明**：
+> - `generate` 阶段不存储 `output`（LLM 回答内容），完整对话内容通过 `conversation_id` JOIN `messages` 表获取
+> - `intent.metadata.model`：规则路径为 `null`，LLM 路径为实际模型名（如 `"deepseek-v4-flash"`）
+> - `intent.metadata.confidence`：当前始终为 `null`（模型不返回置信度），预留字段
+> - `rewrite.metadata.model`：未触发重写时为 `null`，触发时为实际模型名
+> - `bm25.redis_cache`：缓存命中类型（`local_hit` / `redis_hit` / `miss`）
+> - `bm25.tokenize_ms`：jieba 分词耗时（仅 `miss` 时有值，缓存命中时接近 0）
+> - `fusion.method`：融合算法名称，由融合函数自身设置（当前为 `"rrf"`）
 
 ---
 

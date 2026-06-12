@@ -96,31 +96,40 @@ class BM25Retriever:
             min_score: 最低分数阈值，低于此值的 chunk 不进入召回结果
 
         Returns:
-            RetrievalOutput: 标准化检索结果
+            RetrievalOutput: 标准化检索结果（含 stats 性能统计）
         """
         if not query or not query.strip():
             logger.warning("查询内容为空，跳过 BM25 检索")
             return RetrievalOutput()
 
         try:
+            t0 = time.perf_counter()
+
             # 1. 查询分词
             query_tokens = _tokenize(query)
+            t_tokenize = time.perf_counter()
 
             # 2. 获取 BM25 索引（进程内缓存 → Redis 缓存 → MySQL 懒加载）
-            bm25, doc_ids, chunk_contents = await self._get_bm25_index(kb_id)
+            bm25, doc_ids, chunk_contents, cache_type = await self._get_bm25_index(kb_id)
+            t_index = time.perf_counter()
 
             if not doc_ids or bm25 is None:
                 logger.info("KB %d 无文档数据，BM25 检索返回空", kb_id)
-                return RetrievalOutput()
+                return RetrievalOutput(stats={
+                    "redis_cache": cache_type,
+                    "tokenize_ms": int((t_tokenize - t0) * 1000),
+                })
 
             # 3. BM25 评分
             scores = bm25.get_scores(query_tokens)
+            t_score = time.perf_counter()
 
             # 4. 按分数降序排列
             ranked_indices = sorted(
                 range(len(scores)), key=lambda i: scores[i], reverse=True
             )
 
+            candidate_count = len(scores)
             results: list[RetrievalResult] = []
             for idx in ranked_indices:
                 score = float(scores[idx])
@@ -139,7 +148,17 @@ class BM25Retriever:
             results = results[:top_k]
 
             logger.info("BM25 检索完成: kb_id=%d, %d 条结果", kb_id, len(results))
-            return RetrievalOutput(results=results, total=len(results))
+            return RetrievalOutput(
+                results=results,
+                total=len(results),
+                stats={
+                    "redis_cache": cache_type,
+                    "tokenize_ms": int((t_tokenize - t0) * 1000),
+                    "score_ms": int((t_score - t_index) * 1000),
+                    "candidate_count": candidate_count,
+                    "result_count": len(results),
+                },
+            )
 
         except RetrievalServiceException:
             raise
@@ -149,13 +168,13 @@ class BM25Retriever:
 
     async def _get_bm25_index(
         self, kb_id: int
-    ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[str]]:
+    ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[str], str]:
         """获取 BM25Okapi 实例 + 文档元数据。
 
         优先级：进程内缓存 → Redis 缓存 → MySQL 懒加载。
 
         Returns:
-            (bm25实例|None(空语料), [(doc_id, chunk_index), ...], [chunk_content, ...])
+            (bm25实例|None(空语料), [(doc_id, chunk_index), ...], [chunk_content, ...], cache_type)
         """
         t0 = time.perf_counter()
 
@@ -168,7 +187,7 @@ class BM25Retriever:
                 "BM25_PERF cache=local_hit chunks=%d cost=%.3fms",
                 len(doc_ids), (t_local - t0) * 1000,
             )
-            return bm25, doc_ids, contents
+            return bm25, doc_ids, contents, "local_hit"
 
         # 2. 尝试 Redis 缓存
         cache_key = _build_cache_key(kb_id)
@@ -202,7 +221,7 @@ class BM25Retriever:
                     t_build - t_deserialize,
                     t_build - t0,
                 )
-                return bm25, doc_ids, contents
+                return bm25, doc_ids, contents, "redis_hit"
         except Exception as e:
             logger.warning("Redis 读取 BM25 缓存失败（降级为直查）: %s", e)
 
@@ -210,7 +229,7 @@ class BM25Retriever:
         result = await self._load_and_cache(kb_id, cache_key)
         t_end = time.perf_counter()
         logger.info("BM25_PERF cache=miss total=%.3fs", t_end - t0)
-        return result
+        return (*result, "miss")
 
     async def _load_and_cache(
         self, kb_id: int, cache_key: str

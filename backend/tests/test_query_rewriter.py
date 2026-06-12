@@ -15,6 +15,7 @@ import pytest
 from app.rag.query_rewriter import (
     _needs_rewrite,
     rewrite_query,
+    RewriteResult,
     AMBIGUOUS_SIGNALS,
     MIN_REWRITE_LENGTH,
     REWRITE_SYSTEM_PROMPT,
@@ -191,13 +192,19 @@ class TestRewriteQueryCorrectness:
         ])
         mock_result = MagicMock()
         mock_result.content = "代码评审需要几个人参加？"
+        mock_result.prompt_tokens = 87
+        mock_result.completion_tokens = 23
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             result = await rewrite_query("它需要几个人参加？", history)
 
-        assert "代码评审" in result
-        assert "需要几个人参加" in result
+        assert isinstance(result, RewriteResult)
+        assert "代码评审" in result.rewritten
+        assert "需要几个人参加" in result.rewritten
+        assert result.metadata["model"] is not None
+        assert result.metadata["input_tokens"] == 87
+        assert result.metadata["output_tokens"] == 23
 
     @pytest.mark.asyncio
     async def test_U831_省略补全(self):
@@ -208,13 +215,15 @@ class TestRewriteQueryCorrectness:
         ])
         mock_result = MagicMock()
         mock_result.content = "代码评审不通过怎么办？"
+        mock_result.prompt_tokens = 80
+        mock_result.completion_tokens = 20
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             result = await rewrite_query("不通过的话怎么办？", history)
 
-        assert "代码评审" in result
-        assert "不通过" in result
+        assert "代码评审" in result.rewritten
+        assert "不通过" in result.rewritten
 
     @pytest.mark.asyncio
     async def test_U832_指代消解(self):
@@ -225,13 +234,15 @@ class TestRewriteQueryCorrectness:
         ])
         mock_result = MagicMock()
         mock_result.content = "报销制度的金额限制是多少？"
+        mock_result.prompt_tokens = 90
+        mock_result.completion_tokens = 15
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             result = await rewrite_query("金额限制具体是多少？", history)
 
-        assert "报销制度" in result
-        assert "金额限制" in result
+        assert "报销制度" in result.rewritten
+        assert "金额限制" in result.rewritten
 
     @pytest.mark.asyncio
     async def test_U833_recent_4_truncation(self):
@@ -246,6 +257,8 @@ class TestRewriteQueryCorrectness:
         ])
         mock_result = MagicMock()
         mock_result.content = "代码评审需要几个人参加？"
+        mock_result.prompt_tokens = 50
+        mock_result.completion_tokens = 10
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
@@ -284,7 +297,11 @@ class TestRewriteQueryDegradation:
             mock_llm.side_effect = Exception("LLM API 不可用")
             result = await rewrite_query(original, history)
 
-        assert result == original
+        assert isinstance(result, RewriteResult)
+        assert result.rewritten == original
+        assert result.metadata["model"] is None
+        assert result.metadata["input_tokens"] == 0
+        assert result.metadata["output_tokens"] == 0
 
     @pytest.mark.asyncio
     async def test_U841_LLM_空字符串降级(self):
@@ -296,12 +313,14 @@ class TestRewriteQueryDegradation:
         original = "它需要几个人参加？"
         mock_result = MagicMock()
         mock_result.content = ""
+        mock_result.prompt_tokens = 50
+        mock_result.completion_tokens = 0
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             result = await rewrite_query(original, history)
 
-        assert result == original
+        assert result.rewritten == original
 
     @pytest.mark.asyncio
     async def test_U842_LLM_解释性文本处理(self):
@@ -313,15 +332,17 @@ class TestRewriteQueryDegradation:
         mock_result = MagicMock()
         # 中文双引号包裹
         mock_result.content = "“代码评审需要几个人参加？”"
+        mock_result.prompt_tokens = 50
+        mock_result.completion_tokens = 15
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             result = await rewrite_query("它需要几个人参加？", history)
 
         # 中文引号被 strip 掉，采用有效内容
-        assert "“" not in result
-        assert "”" not in result
-        assert "代码评审需要几个人参加" in result
+        assert "“" not in result.rewritten
+        assert "”" not in result.rewritten
+        assert "代码评审需要几个人参加" in result.rewritten
 
     @pytest.mark.asyncio
     async def test_U843_LLM_单字符降级(self):
@@ -333,12 +354,14 @@ class TestRewriteQueryDegradation:
         original = "它需要几个人参加？"
         mock_result = MagicMock()
         mock_result.content = "。"
+        mock_result.prompt_tokens = 50
+        mock_result.completion_tokens = 1
 
         with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             result = await rewrite_query(original, history)
 
-        assert result == original
+        assert result.rewritten == original
 
 
 # ===== 常量验证 =====

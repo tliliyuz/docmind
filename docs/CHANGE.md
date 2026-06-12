@@ -1,5 +1,100 @@
 # DocMind 变更日志
 
+## 2026-06-12 — Trace 链路追踪修复：intent_method / metadata / fusion.method 对齐架构文档
+
+### 修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/rag/intent.py` | `classify_intent()` 返回 `IntentResult` 数据类，携带实际 method（`regex` / `llm_flash`）和 metadata（model / confidence），不再由调用方硬编码 |
+| `backend/app/rag/query_rewriter.py` | `rewrite_query()` 返回 `RewriteResult` 数据类，携带 LLM 调用元数据（model / input_tokens / output_tokens） |
+| `backend/app/rag/retriever.py` | `RetrievalOutput` 新增 `fusion_method` 字段，由融合函数自身设置 |
+| `backend/app/rag/fusion.py` | `rrf_fusion()` 在返回的 `RetrievalOutput` 上设置 `fusion_method="rrf"`，不再由调用方硬编码 |
+| `backend/app/rag/trace_recorder.py` | `timedelta` 从局部导入移至顶部；`fusion_method` 去掉 `or "rrf"` 硬编码兜底 |
+| `backend/app/services/chat_service.py` | 使用 `IntentResult.method` / `IntentResult.metadata` / `RewriteResult.metadata` / `fused_output.fusion_method` 替代硬编码值 |
+| `backend/app/schemas/trace.py` | `start_time` 描述从"始终为 null"修正为实际已实现 |
+
+### 文档修正
+
+| 文档 | 说明 |
+|:---|:---|
+| `backend/docs/API.md` | 恢复 `intent.metadata` 为 `{"model": ..., "confidence": null}`；恢复 `rewrite.metadata` 为 `{"model": ..., "input_tokens": ..., "output_tokens": ...}`；`intent_method` 示例改为 `"llm_flash"`；`fusion.method` 说明从"固定 rrf"改为"由融合函数自身设置"；补充 metadata 各字段说明 |
+
+### 原因
+
+上次提交"Trace 实现对齐设计文档"实际只对齐了字段存在性（start_time / bm25_stats / fusion.method 有值），但核心语义未对齐：
+1. `intent_method` 硬编码 `"rule"`，LLM 兜底分类时记录了错误的 method
+2. `metadata` 字段为空 `{}`，且 API.md 被改为空对象迁就代码缺失——违反"文档是真理源"原则
+3. `fusion.method` 硬编码 `"rrf"`，无观测意义
+4. `schemas/trace.py` 描述 `start_time` "始终为 null"与实际代码矛盾
+
+---
+
+## 2026-06-12 — Trace 实现对齐设计文档（start_time / bm25_stats / fusion.method）
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/rag/trace_recorder.py` | 新增 `_utc_now_iso()` / `_span_start_iso()` 辅助函数；各 `record_*` 方法新增 `start_time` 字段；`record_retrieve` 支持 `bm25_stats` 和 `fusion_method` 参数 |
+| `backend/app/rag/retriever.py` | `RetrievalOutput` 新增 `stats: dict` 字段，用于携带检索性能统计 |
+| `backend/app/rag/bm25.py` | `search()` 返回 `RetrievalOutput` 填充 `stats`（redis_cache/tokenize_ms/score_ms/candidate_count/result_count）；`_get_bm25_index()` 返回值新增 cache_type |
+| `backend/app/services/chat_service.py` | 调用 `record_*` 时传递 `t_span_start` 参数；`record_retrieve` 传入 `bm25_output.stats` 和 `fusion_method="rrf"` |
+
+### 原因
+
+代码实现与 ARCHITECTURE.md §5.1.8 设计文档对齐：
+- `start_time`：各阶段 JSON 现在包含 ISO 8601 格式的开始时间
+- `bm25`：包含 `redis_cache`/`tokenize_ms`/`score_ms`/`candidate_count`/`result_count` 细粒度指标
+- `fusion`：包含 `method: "rrf"` 字段
+
+### 测试结果
+
+- 全量后端测试：827 passed ✅
+
+### 原因
+
+文档中的 Trace 详情示例包含未实现的字段（`start_time` 时间戳、`bm25` 细粒度指标、`fusion.method`），与实际接口返回不一致。本次修正使文档与代码实现对齐。
+
+---
+
+## 2026-06-12 — Phase 5：Docker 部署方案（7.3.2 子任务 3/4）
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `Dockerfile.backend` | 后端镜像（Python 3.11-slim + 系统编译依赖 + requirements.txt），同一镜像供 FastAPI 和 Celery Worker 使用 |
+| `Dockerfile.frontend` | 前端镜像（多阶段构建：Node 18 编译 Vite 产物 → Nginx 1.27-alpine 托管静态资源） |
+| `docker-compose.yml` | 5 服务编排：MySQL 8.0（utf8mb4 + UTC 时区 + healthcheck）+ Redis 7.0-alpine（healthcheck）+ Backend + Celery（prefork pool, concurrency=4）+ Nginx；4 个持久化卷（mysql_data / redis_data / chroma_data / upload_data） |
+| `nginx.conf` | 反向代理 `/api/` → backend:8000 + SSE 支持（proxy_buffering off / chunked_transfer_encoding off / 300s 超时）+ 静态资源 1 年缓存 + SPA fallback + index.html 不缓存 |
+| `backend/.env.example` | 环境变量模板，Docker 部署默认值（mysql/redis 服务名作为 host、CORS 设为 localhost） |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/core/redis_client.py` | 异步客户端自动切换：Linux（Docker 容器）使用原生 `redis.asyncio.Redis` + `ConnectionPool`（性能最优）；Windows（开发环境）保持 `ThreadedRedisClient` 线程池包装（稳定性优先）。通过 `sys.platform` 自动判断，无需配置 |
+
+### 设计决策
+
+| 决策 | 说明 |
+|:---|:---|
+| 同一镜像双用途 | Backend 和 Celery 共用 `Dockerfile.backend`，docker-compose 中通过 `command` 区分启动方式，减少镜像维护成本 |
+| Celery prefork pool | Linux 容器使用默认 prefork pool（`--concurrency=4`），不传 `--pool=solo`（Windows 限制仅影响原生运行，Docker 内为 Linux） |
+| MySQL/Redis 端口暴露 | docker-compose 中保留了 3306 和 6379 端口映射，方便本地调试；生产环境建议注释掉 |
+| Redis 客户端自动切换 | `sys.platform != "win32"` 判断，Linux 走原生 async，Windows 走线程池包装。零配置，开发者本地 Windows 和 Docker 生产均无需手动干预 |
+
+### 文档更新
+
+| 文档 | 修改内容 |
+|:---|:---|
+| `docs/ROADMAP.md` | v0.47：§7.3.2 Dockerfile × 2 / docker-compose.yml / nginx.conf 三项 ⬜→✅，状态行"部署 ⬜"→"Docker 部署 ✅" |
+| `docs/ARCHITECTURE.md` | v0.41：状态行"部署 ⬜"→"部署 ✅" |
+| `docs/DEVELOPMENT.md` | v0.17：§9.5 环境变量默认值表修正、§9.6 挂卷描述修正、§9.2 日志命令修正 |
+
+---
+
 ## 2026-06-12 — Phase 5：ECharts 统计后端实现
 
 ### 修改

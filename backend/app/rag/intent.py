@@ -13,6 +13,7 @@
 import logging
 import re
 import time
+from dataclasses import dataclass
 from enum import Enum
 
 from app.config import settings
@@ -27,6 +28,20 @@ class Intent(str, Enum):
     KNOWLEDGE = "KNOWLEDGE"  # 知识查询：走完整 RAG 链路
     CASUAL = "CASUAL"        # 闲谈：跳过检索，LLM 直接回复
     META = "META"            # 元问题：固定模板响应
+
+
+@dataclass
+class IntentResult:
+    """意图识别结果 — 携带分类结果和实际使用的方法。
+
+    对齐 ARCHITECTURE.md §5.1.8：
+    - method: regex / llm_flash / llm_pro
+    - metadata.model: 规则路径为 None，LLM 路径为实际模型名
+    - metadata.confidence: 规则路径为 None，LLM 路径暂为 None（模型不返回置信度）
+    """
+    intent: Intent
+    method: str  # "regex" / "llm_flash" / "llm_pro"
+    metadata: dict  # {"model": str|None, "confidence": float|None}
 
 
 # ========== Stage 1: 规则快速通道（<1ms） ==========
@@ -107,15 +122,16 @@ Q: VPN 密码忘了怎么办？ → KNOWLEDGE
 _VALID_INTENTS = {v.value for v in Intent}
 
 
-async def _llm_classify(question: str) -> Intent:
+async def _llm_classify(question: str) -> IntentResult:
     """LLM 兜底分类（deepseek-v4-flash，~10% 流量）。
 
     Args:
         question: 用户问题
 
     Returns:
-        Intent 枚举值。LLM 失败或返回无效标签时降级回退 _is_casual_chat()。
+        IntentResult。LLM 失败或返回无效标签时降级回退 _fallback_classify()。
     """
+    llm_model = settings.LLM_FLASH_MODEL
     try:
         result = await chat_completion(
             messages=[
@@ -124,12 +140,16 @@ async def _llm_classify(question: str) -> Intent:
             ],
             deep_thinking=False,
             max_tokens=10,
-            model=settings.LLM_FLASH_MODEL,
+            model=llm_model,
         )
         label = result.content.strip().upper()
 
         if label in _VALID_INTENTS:
-            return Intent(label)
+            return IntentResult(
+                intent=Intent(label),
+                method="llm_flash",
+                metadata={"model": llm_model, "confidence": None},
+            )
         else:
             logger.warning(
                 "INTENT_CLASSIFY 无效标签 '%s'，降级回退正则", result.content.strip(),
@@ -141,7 +161,7 @@ async def _llm_classify(question: str) -> Intent:
         return _fallback_classify(question)
 
 
-def _fallback_classify(question: str) -> Intent:
+def _fallback_classify(question: str) -> IntentResult:
     """降级分类：正则 stopgap。
 
     保守策略：正则命中 → CASUAL，否则 → KNOWLEDGE。
@@ -152,17 +172,25 @@ def _fallback_classify(question: str) -> Intent:
         question: 用户问题
 
     Returns:
-        Intent.CASUAL 或 Intent.KNOWLEDGE
+        IntentResult（method 为 "regex"）
     """
     if _is_casual_chat(question):
         logger.info("INTENT_FALLBACK question=%s intent=CASUAL (regex)", question[:50])
-        return Intent.CASUAL
+        return IntentResult(
+            intent=Intent.CASUAL,
+            method="regex",
+            metadata={"model": None, "confidence": None},
+        )
     else:
         logger.info("INTENT_FALLBACK question=%s intent=KNOWLEDGE (conservative)", question[:50])
-        return Intent.KNOWLEDGE
+        return IntentResult(
+            intent=Intent.KNOWLEDGE,
+            method="regex",
+            metadata={"model": None, "confidence": None},
+        )
 
 
-async def classify_intent(question: str) -> Intent:
+async def classify_intent(question: str) -> IntentResult:
     """意图分类入口 — 规则优先 + Flash 模型兜底。
 
     Stage 1: 规则分类（<1ms）
@@ -176,7 +204,7 @@ async def classify_intent(question: str) -> Intent:
         question: 用户问题
 
     Returns:
-        Intent 枚举值
+        IntentResult（含 intent、method、metadata）
     """
     t0 = time.perf_counter()
 
@@ -186,19 +214,27 @@ async def classify_intent(question: str) -> Intent:
             "INTENT_CLASSIFY question=%s intent=META rule=True cost=%.3fms",
             question[:50], (time.perf_counter() - t0) * 1000,
         )
-        return Intent.META
+        return IntentResult(
+            intent=Intent.META,
+            method="regex",
+            metadata={"model": None, "confidence": None},
+        )
 
     if _is_casual_chat(question):
         logger.info(
             "INTENT_CLASSIFY question=%s intent=CASUAL rule=True cost=%.3fms",
             question[:50], (time.perf_counter() - t0) * 1000,
         )
-        return Intent.CASUAL
+        return IntentResult(
+            intent=Intent.CASUAL,
+            method="regex",
+            metadata={"model": None, "confidence": None},
+        )
 
     # Stage 2: LLM 兜底
-    intent = await _llm_classify(question)
+    result = await _llm_classify(question)
     logger.info(
-        "INTENT_CLASSIFY question=%s intent=%s rule=False cost=%.3fs",
-        question[:50], intent.value, time.perf_counter() - t0,
+        "INTENT_CLASSIFY question=%s intent=%s method=%s rule=False cost=%.3fs",
+        question[:50], result.intent.value, result.method, time.perf_counter() - t0,
     )
-    return intent
+    return result

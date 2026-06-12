@@ -42,6 +42,8 @@ class RetrievalOutput:
     """检索输出聚合"""
     results: list[RetrievalResult] = field(default_factory=list)
     total: int = 0
+    stats: dict = field(default_factory=dict)  # 检索性能统计（bm25 等）
+    fusion_method: str | None = None  # 融合算法名称（如 "rrf"），由融合函数设置
 
 
 class VectorRetriever:

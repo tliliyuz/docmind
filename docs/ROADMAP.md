@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.46 |
+| 文档版本 | v0.47 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts 后端 ✅ / Docker 部署 ✅ / 用户管理 ⬜ / 限流 ⬜） |
 
 ---
 
@@ -483,9 +483,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
 | ⬜ | README.md 部署章节 | 项目简介 + 快速开始（Docker Compose）+ 文档索引 |
-| ⬜ | Dockerfile × 2 | `Dockerfile.backend`（FastAPI + Celery Worker）+ `Dockerfile.frontend`（Nginx + 静态资源） |
-| ⬜ | docker-compose.yml | 5 服务编排（MySQL + Redis + Backend + Celery + Nginx）+ ChromaDB 挂卷 |
-| ⬜ | nginx.conf | 反向代理 + SSL 终结 + SSE buffering 关闭 + 静态资源 SPA fallback |
+| ✅ | Dockerfile × 2 | `Dockerfile.backend`（FastAPI + Celery Worker）+ `Dockerfile.frontend`（Nginx + 静态资源） |
+| ✅ | docker-compose.yml | 5 服务编排（MySQL + Redis + Backend + Celery + Nginx）+ ChromaDB 挂卷 |
+| ✅ | nginx.conf | 反向代理 + SSL 终结 + SSE buffering 关闭 + 静态资源 SPA fallback |
 
 ### 7.4a Trace 链路追踪（P0，v1 MVP）
 

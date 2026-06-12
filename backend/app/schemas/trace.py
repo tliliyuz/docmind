@@ -40,7 +40,7 @@ class TraceListResponse(BaseModel):
 class TraceSpanBase(BaseModel):
     """各阶段 JSON 通用字段"""
     span_name: str
-    start_time: str | None = None
+    start_time: str | None = Field(None, description="阶段开始时间（ISO 8601，由 TraceRecorder 从 perf_counter 推算）")
     duration_ms: int | None = None
     status: str = "success"
 

@@ -9,13 +9,18 @@
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.trace_service import record_trace
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now_iso() -> str:
+    """返回当前 UTC 时间的 ISO 8601 字符串（用于 start_time）"""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 class TraceRecorder:
@@ -48,6 +53,7 @@ class TraceRecorder:
         self.question = question
 
         self._t_start = time.perf_counter()
+        self._created_at = _utc_now_iso()
         self._status = "success"
         self._error_message: str | None = None
 
@@ -75,6 +81,7 @@ class TraceRecorder:
         self._intent_method = method
         self._intent_data = {
             "span_name": "intent",
+            "start_time": self._created_at,
             "duration_ms": int(duration_ms),
             "status": "success",
             "intent_type": intent_type,
@@ -82,16 +89,28 @@ class TraceRecorder:
             "metadata": metadata or {},
         }
 
+    def _span_start_iso(self, t_span_start: float) -> str:
+        """将 perf_counter 时间戳转换为 ISO 8601 字符串。
+
+        Args:
+            t_span_start: time.perf_counter() 记录的阶段开始时间
+        """
+        offset_ms = (t_span_start - self._t_start) * 1000
+        dt = datetime.fromisoformat(self._created_at) + timedelta(milliseconds=offset_ms)
+        return dt.isoformat(timespec="milliseconds")
+
     def record_rewrite(
         self,
         original_question: str,
         rewritten_question: str | None,
         duration_ms: float,
+        t_span_start: float | None = None,
         metadata: dict | None = None,
     ) -> None:
         """记录问题重写阶段。"""
         self._rewrite_data = {
             "span_name": "rewrite",
+            "start_time": self._span_start_iso(t_span_start) if t_span_start else None,
             "duration_ms": int(duration_ms),
             "status": "success",
             "original_question": original_question,
@@ -107,15 +126,25 @@ class TraceRecorder:
         bm25_stats: dict | None = None,
         fusion_ms: float | None = None,
         fusion_count: int = 0,
+        fusion_method: str | None = None,
         match_sentence_ms: float | None = None,
         total_ms: float | None = None,
+        t_span_start: float | None = None,
     ) -> None:
-        """记录检索阶段 — 细粒度拆分。"""
+        """记录检索阶段 — 细粒度拆分。
+
+        对齐 ARCHITECTURE.md §5.1.8：
+        - vector: duration_ms, result_count
+        - bm25: duration_ms, redis_cache, tokenize_ms, score_ms, candidate_count, result_count
+        - fusion: duration_ms, method, result_count
+        - match_sentence: duration_ms
+        """
         retrieve_total = total_ms or (
             (vector_ms or 0) + (bm25_ms or 0) + (fusion_ms or 0) + (match_sentence_ms or 0)
         )
         self._retrieve_data = {
             "span_name": "retrieve",
+            "start_time": self._span_start_iso(t_span_start) if t_span_start else None,
             "duration_ms": int(retrieve_total),
             "status": "success",
             "vector": {
@@ -128,6 +157,7 @@ class TraceRecorder:
             },
             "fusion": {
                 "duration_ms": int(fusion_ms) if fusion_ms is not None else 0,
+                "method": fusion_method,
                 "result_count": fusion_count,
             },
             "match_sentence": {
@@ -141,10 +171,12 @@ class TraceRecorder:
         output_count: int,
         duration_ms: float | None = None,
         reranker: str = "noop",
+        t_span_start: float | None = None,
     ) -> None:
         """记录 Rerank 阶段。"""
         self._rerank_data = {
             "span_name": "rerank",
+            "start_time": self._span_start_iso(t_span_start) if t_span_start else None,
             "duration_ms": int(duration_ms) if duration_ms is not None else 0,
             "status": "success",
             "input_count": input_count,
@@ -160,10 +192,12 @@ class TraceRecorder:
         input_tokens: int,
         output_tokens: int,
         finish_reason: str | None = None,
+        t_span_start: float | None = None,
     ) -> None:
         """记录 LLM 生成阶段（不存 output）。"""
         self._generate_data = {
             "span_name": "generate",
+            "start_time": self._span_start_iso(t_span_start) if t_span_start else None,
             "duration_ms": int(total_ms),
             "status": "success",
             "model": model,
