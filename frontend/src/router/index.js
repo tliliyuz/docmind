@@ -57,6 +57,16 @@ const routes = [
         name: 'AdminDocuments',
         component: () => import('@/views/admin/DocumentList.vue'),
       },
+      {
+        path: 'traces',
+        name: 'AdminTraces',
+        component: () => import('@/views/admin/TraceList.vue'),
+      },
+      {
+        path: 'traces/:trace_id',
+        name: 'AdminTraceDetail',
+        component: () => import('@/views/admin/TraceDetail.vue'),
+      },
     ],
   },
   {

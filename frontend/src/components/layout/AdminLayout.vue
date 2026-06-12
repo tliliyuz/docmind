@@ -24,6 +24,14 @@
           <span>系统统计</span>
         </router-link>
         <router-link
+          to="/admin/traces"
+          class="admin-nav-item"
+          :class="{ active: isTraceActive }"
+        >
+          <i class="fas fa-search"></i>
+          <span>链路追踪</span>
+        </router-link>
+        <router-link
           to="/admin/knowledge"
           class="admin-nav-item"
           active-class="active"
@@ -71,10 +79,17 @@ const route = useRoute()
 const pageTitle = computed(() => {
   const titles = {
     AdminStats: '系统统计',
+    AdminTraces: '链路追踪',
+    AdminTraceDetail: 'Trace 详情',
     AdminKnowledge: '知识库管理',
     AdminDocuments: '文档管理',
   }
   return titles[route.name] || '管理后台'
+})
+
+/** Trace 菜单高亮：列表页和详情页都激活 */
+const isTraceActive = computed(() => {
+  return route.name === 'AdminTraces' || route.name === 'AdminTraceDetail'
 })
 </script>
 

@@ -1,5 +1,36 @@
 # DocMind 变更日志
 
+## 2026-06-12 — Phase 5：Trace 链路追踪前端实现
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/api/trace.js` | Trace 接口封装（`getTraceList` + `getTraceDetail`） |
+| `frontend/src/views/admin/TraceList.vue` | Trace 列表页：概览卡片（成功/失败/运行中、成功率、平均耗时、P95 耗时）+ 搜索+筛选栏（中文标签）+ 表格+分页 |
+| `frontend/src/views/admin/TraceDetail.vue` | Trace 详情页：基本信息卡片 + 5 阶段概览卡片 + JSON 展开面板（highlight.js 语法高亮）+ 错误信息面板 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/router/index.js` | 新增 `AdminTraces` 和 `AdminTraceDetail` 两个路由 |
+| `frontend/src/components/layout/AdminLayout.vue` | 新增「链路追踪」菜单项（图标 `fa-search`）+ 页标题映射 + 详情页高亮逻辑 |
+| `frontend/src/main.js` | Element Plus 全局注册中文语言包（`zh-cn`），日期选择器/分页器等组件自动中文显示 |
+| `frontend/docs/FRONTEND.md` | §7.6.1 页面布局图更新：新增概览卡片行 + 表格意图列中文标签 |
+| `docs/ROADMAP.md` | §7.4a 前端 4 项任务 ⬜→✅ |
+
+### 设计要点
+
+| 要点 | 说明 |
+|:---|:---|
+| 概览统计 | 基于当前页数据计算（success/error/partial 计数、成功率、平均耗时、P95 耗时），切换筛选时自动更新 |
+| 下拉框中文化 | 意图：知识问答/闲聊/元查询；响应模式：RAG/直接 LLM 回答/元查询/闲聊/兜底回复 |
+| 侧边栏高亮 | `isTraceActive` computed 属性同时匹配 `AdminTraces` 和 `AdminTraceDetail`，详情页保持高亮 |
+| JSON 语法高亮 | 使用 `highlight.js/lib/core` + `json` 语言模块（轻量导入），复用全局 `github-dark.css` 主题 |
+
+---
+
 ## 2026-06-12 — Trace 链路追踪修复：intent_method / metadata / fusion.method 对齐架构文档
 
 ### 修复

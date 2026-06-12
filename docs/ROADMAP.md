@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.47 |
+| 文档版本 | v0.48 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts 后端 ✅ / Docker 部署 ✅ / 用户管理 ⬜ / 限流 ⬜） |
@@ -503,14 +503,14 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Trace API（列表 + 详情） | GET `/api/admin/traces`（分页+筛选：status/intent_type/response_mode/start_date/end_date/search）+ GET `/api/admin/traces/{trace_id}` |
 | ✅ | 统计增强接口 | GET `/api/admin/stats/traces`（days/group_by 参数，返回 trend/latency/tokens/intent_distribution/response_distribution） |
 
-#### 前端（2 天）
+#### 前端（2 天）✅
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `TraceList.vue` | 列表页（/admin/traces）：搜索问题 + 状态/意图/响应模式/时间范围筛选 + 表格（Trace ID/用户/知识库/问题/耗时/意图/响应/状态）+ 分页。点击行→详情页，点击用户名→用户详情，点击 Trace ID→复制 |
-| ⬜ | `TraceDetail.vue` | 详情页（/admin/traces/{trace_id}）：基本信息卡片 + 5 阶段概览卡片（Intent/Rewrite/Retrieve/Rerank/Generate 各显示耗时+状态+查看JSON）+ JSON 展开面板（语法高亮，默认折叠） |
-| ⬜ | `api/trace.js` | 接口封装 |
-| ⬜ | `AdminLayout.vue` 导航更新 | 添加「链路追踪」菜单项（图标 `fa-search`，路由 `/admin/traces`） |
+| ✅ | `TraceList.vue` | 列表页（/admin/traces）：概览卡片（成功/失败/运行中、成功率、平均耗时、P95 耗时）+ 搜索问题 + 状态/意图/响应模式/时间范围筛选（中文标签）+ 表格（Trace ID/用户/知识库/问题/耗时/意图/响应/状态）+ 分页。点击行→详情页，点击用户名→用户详情，点击 Trace ID→复制 |
+| ✅ | `TraceDetail.vue` | 详情页（/admin/traces/{trace_id}）：基本信息卡片（中文标签）+ 5 阶段概览卡片（Intent/Rewrite/Retrieve/Rerank/Generate 各显示耗时+状态+元信息+查看JSON）+ JSON 展开面板（highlight.js 语法高亮，默认折叠）+ 错误信息面板 |
+| ✅ | `api/trace.js` | 接口封装（getTraceList + getTraceDetail） |
+| ✅ | `AdminLayout.vue` 导航更新 | 添加「链路追踪」菜单项（图标 `fa-search`，路由 `/admin/traces`，详情页高亮） |
 
 #### v2 迭代（后续）
 
