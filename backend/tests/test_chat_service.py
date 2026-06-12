@@ -200,6 +200,19 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
         )
         mocks['llm'].return_value = _async_gen(llm_chunks)
 
+        # Mock TraceRecorder，避免真实的 db.add 调用
+        mock_recorder = MagicMock()
+        mock_recorder.finish = AsyncMock()
+        mock_recorder.record_intent = MagicMock()
+        mock_recorder.record_rewrite = MagicMock()
+        mock_recorder.record_retrieve = MagicMock()
+        mock_recorder.record_rerank = MagicMock()
+        mock_recorder.record_generate = MagicMock()
+        mock_recorder.set_response_mode = MagicMock()
+        mock_recorder.record_error = MagicMock()
+        mocks['recorder'] = stack.enter_context(
+            patch("app.services.chat_service.TraceRecorder", return_value=mock_recorder))
+
         # 便捷访问别名
         mocks['conv'] = mock_conv
         mocks['user_msg'] = mock_user_msg

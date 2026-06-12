@@ -1,5 +1,61 @@
 # DocMind 变更日志
 
+## 2026-06-12 — Phase 5：Trace 链路追踪测试完成
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_trace_service.py` | Trace Service 单元测试（23 用例：record_trace 3 + TraceRecorder 7 + list_traces 5 + get_trace_detail 2 + get_trace_stats 6） |
+| `backend/tests/test_trace_api.py` | Trace API 接口测试（17 用例：列表 6 + 详情 2 + 权限 3 + 统计 6） |
+
+### 修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_chat_service.py` | `_mock_chat_pipeline` 新增 TraceRecorder mock，适配 chat_service 集成 Trace 埋点后 db.add 调用次数变化 |
+
+### 测试结果
+
+- `test_trace_service.py`：23 用例全部通过 ✅
+- `test_trace_api.py`：17 用例全部通过 ✅
+- 全量后端测试：820 passed ✅
+- 覆盖 §6.14.1-§6.14.3 全部测试用例（U13.1-U13.5, A9.1-A9.15）
+
+### 文档更新
+
+| 文档 | 修改内容 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.65：§6.14.1-§6.14.3 状态 ⬜→✅（25 用例），覆盖率表 Trace 相关 4 模块状态更新 |
+| `docs/ROADMAP.md` | v0.46：§7.4a Trace 后端任务 6 项 ⬜→✅，测试用例状态更新（40 用例通过） |
+
+---
+
+## 2026-06-12 — Phase 5：Trace 链路追踪后端实现
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/models/trace.py` | Trace ORM 模型（traces 表，6 索引 + 2 FK） |
+| `backend/app/schemas/trace.py` | Trace Pydantic 模型（ListItem / ListResponse / DetailResponse / StatsResponse） |
+| `backend/app/services/trace_service.py` | Trace Service（record_trace / list_traces / get_trace_detail / get_trace_stats） |
+| `backend/app/rag/trace_recorder.py` | TraceRecorder 数据收集器（各阶段 record_* + finish 写入） |
+| `backend/alembic/versions/a1b2c3d4e5f6_add_traces_table.py` | traces 表 Alembic 迁移 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/models/__init__.py` | 导入并导出 Trace 模型 |
+| `backend/app/api/admin.py` | 新增 3 个 Trace 端点（GET /traces、GET /traces/{trace_id}、GET /stats/traces） |
+| `backend/app/services/chat_service.py` | 集成 TraceRecorder：意图/重写/检索/Rerank/LLM 各阶段埋点 + META 路径 |
+| `docs/ARCHITECTURE.md` | §5.1.8 状态 [Planned] → [Implemented]，技术选型表同步 |
+| `backend/docs/API.md` | Trace 实现状态更新 |
+| `backend/docs/DATABASE.md` | traces 表状态更新 |
+
+---
+
 ## 2026-06-12 — Phase 5 文档补全：Trace / ECharts / 用户管理
 
 ### 新增

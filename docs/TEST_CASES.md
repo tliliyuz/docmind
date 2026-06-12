@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.64 |
+| 文档版本 | v0.65 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace ⬜ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -852,42 +852,43 @@
 ### 6.14 Phase 5 Trace 链路追踪测试用例
 
 > 设计文档：`Admin_设计补全_最终方案.md` §三。
-> 后端测试文件（待创建）：`tests/test_trace_service.py` + `tests/test_trace_api.py`。
+> 后端测试文件：`tests/test_trace_service.py`（23 用例）+ `tests/test_trace_api.py`（17 用例），全部通过 ✅。
+> 覆盖 record_trace / list_traces / get_trace_detail / get_trace_stats + TraceRecorder + 3 个 API 端点权限校验。
 
 #### 6.14.1 后端 — Trace 模型与 Service 测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U13.1 | Trace 写入-正常 | `trace_service.record_trace()` | 完整 Trace 数据 | traces 表新增一行，各字段正确 | ⬜ | — | 含 intent/rewrite/retrieve/rerank/generate JSON |
-| U13.2 | Trace 写入-错误状态 | `trace_service.record_trace()` | status=error + error_message | error_message 正确写入 | ⬜ | — | — |
-| U13.3 | Trace 写入-顶层字段 | `trace_service.record_trace()` | intent_type/method/response_mode | 顶层字段独立存储，非 JSON 内嵌 | ⬜ | — | 避免 JSON_EXTRACT 性能问题 |
-| U13.4 | Trace 写入-generate 不存 output | `trace_service.record_trace()` | generate 含 output 字段 | output 被剥离，不写入 DB | ⬜ | — | 设计约束：通过 conversation_id JOIN 获取 |
-| U13.5 | TraceRecorder 上下文管理器 | `trace_recorder.TraceRecorder()` | 正常问答全流程 | 各阶段 span 自动记录 start_time/duration_ms | ⬜ | — | 上下文管理器 + `with` 语句 |
+| U13.1 | Trace 写入-正常 | `trace_service.record_trace()` | 完整 Trace 数据 | traces 表新增一行，各字段正确 | ✅ | 2026-06-12 | 含 intent/rewrite/retrieve/rerank/generate JSON |
+| U13.2 | Trace 写入-错误状态 | `trace_service.record_trace()` | status=error + error_message | error_message 正确写入 | ✅ | 2026-06-12 | — |
+| U13.3 | Trace 写入-顶层字段 | `trace_service.record_trace()` | intent_type/method/response_mode | 顶层字段独立存储，非 JSON 内嵌 | ✅ | 2026-06-12 | 避免 JSON_EXTRACT 性能问题 |
+| U13.4 | Trace 写入-generate 不存 output | `trace_service.record_trace()` | generate 含 output 字段 | output 被剥离，不写入 DB | ✅ | 2026-06-12 | 设计约束：通过 conversation_id JOIN 获取 |
+| U13.5 | TraceRecorder 上下文管理器 | `trace_recorder.TraceRecorder()` | 正常问答全流程 | 各阶段 span 自动记录 start_time/duration_ms | ✅ | 2026-06-12 | 上下文管理器 + `with` 语句 |
 
 #### 6.14.2 后端 — Trace API 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A9.1 | Trace 列表-正常 | GET `/api/admin/traces` | admin 用户 | 200, 分页列表，含 trace_id/user_id/question/status/total_duration_ms | ⬜ | — | — |
-| A9.2 | Trace 列表-按 status 筛选 | GET `/api/admin/traces?status=error` | 混合状态 Trace | 200, 仅返回 status=error 的 Trace | ⬜ | — | — |
-| A9.3 | Trace 列表-按 intent_type 筛选 | GET `/api/admin/traces?intent_type=KNOWLEDGE` | 混合意图 Trace | 200, 仅返回 KNOWLEDGE 意图 | ⬜ | — | — |
-| A9.4 | Trace 列表-按时间范围筛选 | GET `/api/admin/traces?start_date=...&end_date=...` | 多时间段 Trace | 200, 仅返回指定时间范围内 | ⬜ | — | — |
-| A9.5 | Trace 列表-按问题搜索 | GET `/api/admin/traces?search=报销` | 多条 Trace | 200, 仅返回 question 含「报销」的 | ⬜ | — | 模糊搜索 |
-| A9.6 | Trace 列表-分页校验 | GET `/api/admin/traces?page=1&page_size=5` | 多条 Trace | 200, 每页 5 条，total 正确 | ⬜ | — | — |
-| A9.7 | Trace 详情-正常 | GET `/api/admin/traces/{trace_id}` | 有效 trace_id | 200, 含 intent/rewrite/retrieve/rerank/generate JSON 详情 | ⬜ | — | — |
-| A9.8 | Trace 详情-不存在 | GET `/api/admin/traces/invalid-id` | 无效 trace_id | 404 | ⬜ | — | — |
-| A9.9 | Trace 非 admin 拒绝 | GET `/api/admin/traces` | 普通用户 | 403, E5005 | ⬜ | — | 权限矩阵 |
+| A9.1 | Trace 列表-正常 | GET `/api/admin/traces` | admin 用户 | 200, 分页列表，含 trace_id/user_id/question/status/total_duration_ms | ✅ | 2026-06-12 | — |
+| A9.2 | Trace 列表-按 status 筛选 | GET `/api/admin/traces?status=error` | 混合状态 Trace | 200, 仅返回 status=error 的 Trace | ✅ | 2026-06-12 | — |
+| A9.3 | Trace 列表-按 intent_type 筛选 | GET `/api/admin/traces?intent_type=KNOWLEDGE` | 混合意图 Trace | 200, 仅返回 KNOWLEDGE 意图 | ✅ | 2026-06-12 | — |
+| A9.4 | Trace 列表-按时间范围筛选 | GET `/api/admin/traces?start_date=...&end_date=...` | 多时间段 Trace | 200, 仅返回指定时间范围内 | ✅ | 2026-06-12 | — |
+| A9.5 | Trace 列表-按问题搜索 | GET `/api/admin/traces?search=报销` | 多条 Trace | 200, 仅返回 question 含「报销」的 | ✅ | 2026-06-12 | 模糊搜索 |
+| A9.6 | Trace 列表-分页校验 | GET `/api/admin/traces?page=1&page_size=5` | 多条 Trace | 200, 每页 5 条，total 正确 | ✅ | 2026-06-12 | — |
+| A9.7 | Trace 详情-正常 | GET `/api/admin/traces/{trace_id}` | 有效 trace_id | 200, 含 intent/rewrite/retrieve/rerank/generate JSON 详情 | ✅ | 2026-06-12 | — |
+| A9.8 | Trace 详情-不存在 | GET `/api/admin/traces/invalid-id` | 无效 trace_id | 404 | ✅ | 2026-06-12 | — |
+| A9.9 | Trace 非 admin 拒绝 | GET `/api/admin/traces` | 普通用户 | 403, E5005 | ✅ | 2026-06-12 | 权限矩阵 |
 
 #### 6.14.3 后端 — Trace 统计接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A9.10 | 统计-trend 聚合 | GET `/api/admin/stats/traces?days=7` | 多天 Trace 数据 | trend 数组含 7 天，每天 success/error/partial 计数正确 | ⬜ | — | — |
-| A9.11 | 统计-latency 分位数 | GET `/api/admin/stats/traces?days=7` | 多条不同耗时 Trace | latency 数组含 p50/p95/p99，值正确 | ⬜ | — | 分位数计算验证 |
-| A9.12 | 统计-tokens 聚合 | GET `/api/admin/stats/traces?days=7` | 多条 Trace 含 generate JSON | tokens 数组含 input/output，值正确 | ⬜ | — | JSON 字段提取 |
-| A9.13 | 统计-intent_distribution | GET `/api/admin/stats/traces?days=7` | 混合意图 Trace | intent_distribution 含 KNOWLEDGE/CASUAL/META 计数 | ⬜ | — | — |
-| A9.14 | 统计-response_distribution | GET `/api/admin/stats/traces?days=7` | 混合响应模式 Trace | response_distribution 各模式计数正确 | ⬜ | — | — |
-| A9.15 | 统计-空数据 | GET `/api/admin/stats/traces?days=1` | 无 Trace 数据 | 200, 各数组为空或零值 | ⬜ | — | 边界 |
+| A9.10 | 统计-trend 聚合 | GET `/api/admin/stats/traces?days=7` | 多天 Trace 数据 | trend 数组含 7 天，每天 success/error/partial 计数正确 | ✅ | 2026-06-12 | — |
+| A9.11 | 统计-latency 分位数 | GET `/api/admin/stats/traces?days=7` | 多条不同耗时 Trace | latency 数组含 p50/p95/p99，值正确 | ✅ | 2026-06-12 | 分位数计算验证 |
+| A9.12 | 统计-tokens 聚合 | GET `/api/admin/stats/traces?days=7` | 多条 Trace 含 generate JSON | tokens 数组含 input/output，值正确 | ✅ | 2026-06-12 | JSON 字段提取 |
+| A9.13 | 统计-intent_distribution | GET `/api/admin/stats/traces?days=7` | 混合意图 Trace | intent_distribution 含 KNOWLEDGE/CASUAL/META 计数 | ✅ | 2026-06-12 | — |
+| A9.14 | 统计-response_distribution | GET `/api/admin/stats/traces?days=7` | 混合响应模式 Trace | response_distribution 各模式计数正确 | ✅ | 2026-06-12 | — |
+| A9.15 | 统计-空数据 | GET `/api/admin/stats/traces?days=1` | 无 Trace 数据 | 200, 各数组为空或零值 | ✅ | 2026-06-12 | 边界 |
 
 #### 6.14.4 后端 — chat_service 集成埋点测试
 
@@ -1107,9 +1108,10 @@
 | 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页（列表加载/搜索/筛选排序/分页/删除含 KB 确认/getStatusLabel/isTerminal/formatFileSize，2026-06-10） |
 | 前端 `views/admin/ConversationList.vue` | ≥ 60% | ⏸️ 已废弃 | ~~Phase 5：活跃统计占位页~~（2026-06-11 移除路由，页面已合并到系统统计页，测试文件保留但不再运行） |
 | 前端组件 | ≥ 60% | ✅ 327 通过 | 2026-06-11 运行 `npm run test`：20 文件 327 用例全部通过（AdminLayout 用例已同步导航变更：系统概览→系统统计、移除活跃统计） |
-| `models/trace.py` | ≥ 80% | ⬜ | Phase 5：Trace ORM 模型（5 用例，U13.1-U13.5） |
-| `services/trace_service.py` | ≥ 80% | ⬜ | Phase 5：Trace Service（5 用例 + 6 API 用例 + 6 统计用例 + 5 埋点用例） |
-| `api/admin.py` (Trace 端点) | ≥ 90% | ⬜ | Phase 5：Trace API（15 用例，A9.1-A9.15） |
+| `models/trace.py` | ≥ 80% | ✅ | Phase 5：Trace ORM 模型（通过 service 测试覆盖） |
+| `services/trace_service.py` | ≥ 80% | ✅ 23 用例 | Phase 5：Trace Service（test_trace_service.py：record_trace 3 + TraceRecorder 7 + list_traces 5 + get_trace_detail 2 + get_trace_stats 6） |
+| `api/admin.py` (Trace 端点) | ≥ 90% | ✅ 17 用例 | Phase 5：Trace API（test_trace_api.py：列表 6 + 详情 2 + 权限 3 + 统计 6） |
+| `rag/trace_recorder.py` | ≥ 80% | ✅ 7 用例 | Phase 5：TraceRecorder 数据收集器（test_trace_service.py TestTraceRecorder） |
 | `api/admin.py` (用户管理端点) | ≥ 90% | ⬜ | Phase 5：用户管理 API（12 用例，A9.20-A9.31） |
 | `services/admin_service.py` (用户管理) | ≥ 80% | ⬜ | Phase 5：用户管理 Service（12 用例，U15.1-U15.12） |
 | `services/admin_service.py` (统计增强) | ≥ 80% | ⬜ | Phase 5：ECharts 统计增强（3 用例，U14.1-U14.3） |

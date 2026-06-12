@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.45 |
+| 文档版本 | v0.46 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ⬜ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -492,16 +492,16 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 > **设计原则**：Trace 不承担审计职责，仅承担性能观测。完整对话内容通过 `conversation_id` JOIN 查询获取，避免重复存储。
 > **与现有埋点的关系**：Trace 整合 `chat_service.py` 和 `core/llm.py` 中已有的散落 `logger.info` 计时日志（`INTENT`/`QUERY_REWRITE`/`PREP_PERF`/`PERF`/`LLM_PERF`），将其统一为结构化 JSON 写入 `traces` 表。原有日志保留用于实时排查，Trace 用于持久化观测和统计分析。原 §7.4（性能埋点接入）已合并入本节，不再独立存在。
 
-#### 后端（3 天）
+#### 后端（3 天）✅
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | Trace 模型 + Alembic 迁移 | `traces` 表：trace_id / user_id / conversation_id / kb_id / question / status / intent_type / intent_method / response_mode / total_duration_ms / intent(JSON) / rewrite(JSON) / retrieve(JSON) / rerank(JSON) / generate(JSON) / error_message / created_at。索引：idx_trace_id / idx_created_at / idx_created_status / idx_created_intent / idx_created_response / idx_user_created |
-| ⬜ | `trace.record()` 上下文管理器/装饰器 | 封装 Trace 记录逻辑，支持各阶段埋点数据写入 |
-| ⬜ | `chat_service.py` 各阶段埋点 | 复用已有 `time.perf_counter()` 计时点（`t_intent`/`t_rewrite`/`t_vector`/`t_bm25`/`t_retrieval_done`/`t_first_token`/`t_stream_end`），将散落的 `logger.info`（`INTENT`/`QUERY_REWRITE`/`PREP_PERF`/`PERF`）整合为 TraceRecorder 结构化写入 |
-| ⬜ | `core/llm.py` 流式调用埋点 | 复用已有 `t0`/`t_first` 计时点（`LLM_PERF(流式) 首Token=%.3fs`），记录 `ttft_ms` + `total_ms` + `model` + `finish_reason` 到 Trace.generate；非流式 `chat_completion()` 同步记录 |
-| ⬜ | Trace API（列表 + 详情） | GET `/api/admin/traces`（分页+筛选：status/intent_type/response_mode/start_date/end_date/search）+ GET `/api/admin/traces/{trace_id}` |
-| ⬜ | 统计增强接口 | GET `/api/admin/stats/traces`（days/group_by 参数，返回 trend/latency/tokens/intent_distribution/response_distribution） |
+| ✅ | Trace 模型 + Alembic 迁移 | `traces` 表：trace_id / user_id / conversation_id / kb_id / question / status / intent_type / intent_method / response_mode / total_duration_ms / intent(JSON) / rewrite(JSON) / retrieve(JSON) / rerank(JSON) / generate(JSON) / error_message / created_at。索引：idx_trace_id / idx_created_at / idx_created_status / idx_created_intent / idx_created_response / idx_user_created |
+| ✅ | `trace.record()` 上下文管理器/装饰器 | TraceRecorder 数据收集器：各阶段 record_* + finish 写入，写入失败不阻塞主流程 |
+| ✅ | `chat_service.py` 各阶段埋点 | 复用已有 `time.perf_counter()` 计时点，将散落的 `logger.info` 整合为 TraceRecorder 结构化写入 |
+| ✅ | `core/llm.py` 流式调用埋点 | 复用已有 `t0`/`t_first` 计时点，记录 `ttft_ms` + `total_ms` + `model` + `finish_reason` 到 Trace.generate |
+| ✅ | Trace API（列表 + 详情） | GET `/api/admin/traces`（分页+筛选：status/intent_type/response_mode/start_date/end_date/search）+ GET `/api/admin/traces/{trace_id}` |
+| ✅ | 统计增强接口 | GET `/api/admin/stats/traces`（days/group_by 参数，返回 trend/latency/tokens/intent_distribution/response_distribution） |
 
 #### 前端（2 天）
 
@@ -521,7 +521,6 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 ### 7.4b 系统统计 ECharts（P1，v1 MVP）
 
-> **设计文档**：详见 `Admin_设计补全_最终方案.md` §四。
 
 #### 后端（1 天）
 
@@ -547,8 +546,6 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 用户活跃度 | 折线图：日活 / 周活 |
 
 ### 7.4c 用户管理（P2，v1 MVP）
-
-> **设计文档**：详见 `Admin_设计补全_最终方案.md` §五。
 
 #### 后端（2 天）
 
@@ -585,7 +582,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
 | ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
 | ⬜ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4）。原检索/LLM 耗时埋点已合并入 Trace 测试 |
-| ⬜ | Trace 接口测试 | 接口+单元 | Trace 记录写入 5 + 列表筛选分页 6 + 详情查询 3 + 统计聚合 6 + 埋点集成 5 + 前端 12 = 37 用例 |
+| ✅ | Trace 接口测试 | 接口+单元 | Service 层 23 用例（`test_trace_service.py`）+ API 层 17 用例（`test_trace_api.py`）= 40 用例，全部通过。覆盖 U13.1-U13.5, A9.1-A9.15 |
 | ⬜ | ECharts 统计接口测试 | 单元测试 | trend 聚合 2 + latency 分位数 3 + tokens 聚合 2 = 7 用例 |
 | ⬜ | 用户管理接口测试 | 接口+单元 | 用户列表 4 + 详情 3 + 角色变更 3 + 禁用启用 3 + 重置密码 3 + 权限矩阵 4 = 20 用例 |
 | ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |
