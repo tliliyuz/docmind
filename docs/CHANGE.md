@@ -1,5 +1,30 @@
 # DocMind 变更日志
 
+## 2026-06-12 — Phase 5：ECharts 统计后端实现
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/schemas/admin.py` | 新增 `StatsChartsData` Schema；`AdminStatsResponse` 新增 `charts` 字段 |
+| `backend/app/services/admin_service.py` | `get_stats()` 调用 `get_trace_stats()` 嵌入 charts 数据（trend/latency/tokens） |
+| `backend/tests/test_admin_api.py` | 新增 `TestAdminStatsChartsAPI` 类（7 用例：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
+
+### 测试结果
+
+- `test_admin_api.py`：34 用例全部通过 ✅（原 27 + 新增 7）
+- `test_trace_service.py` + `test_trace_api.py`：40 用例全部通过 ✅（回归验证）
+
+### 文档更新
+
+| 文档 | 修改内容 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.65：§6.15.1 ECharts 后端测试用例 7 项 ⬜→✅，覆盖率表更新 |
+| `docs/ROADMAP.md` | v0.46：§7.4b ECharts 后端任务 2 项 ⬜→✅，测试用例状态更新 |
+| `backend/docs/API.md` | 状态行更新：ECharts 后端 ✅ |
+
+---
+
 ## 2026-06-12 — Phase 5：Trace 链路追踪测试完成
 
 ### 新增

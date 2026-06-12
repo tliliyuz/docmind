@@ -22,17 +22,22 @@ from app.schemas.admin import (
     AdminKBItem,
     AdminKBListResponse,
     AdminStatsResponse,
+    StatsChartsData,
 )
 
 logger = logging.getLogger(__name__)
 
 
 async def get_stats(db: AsyncSession) -> AdminStatsResponse:
-    """获取系统全局统计概览。
+    """获取系统全局统计概览 + ECharts 图表数据。
 
-    对齐 API.md §7.1：单次聚合查询，当前规模（<100K 行）直接 SQL。
-    storage_bytes 使用 SUM(documents.file_size) 而非扫描磁盘目录。
+    对齐 API.md §7.1 / §7.6：
+    - 基础统计：单次聚合查询，当前规模（<100K 行）直接 SQL
+    - charts：从 traces 表聚合 trend/latency/tokens，复用 get_trace_stats()
+    - storage_bytes 使用 SUM(documents.file_size) 而非扫描磁盘目录
     """
+    from app.services.trace_service import get_trace_stats
+
     user_count = (await db.execute(
         select(func.count()).select_from(User)
     )).scalar() or 0
@@ -61,6 +66,14 @@ async def get_stats(db: AsyncSession) -> AdminStatsResponse:
         select(func.coalesce(func.sum(Document.file_size), 0))
     )).scalar()
 
+    # ECharts 图表数据：默认取最近 7 天，按天聚合
+    trace_stats = await get_trace_stats(db, days=7, group_by="day")
+    charts = StatsChartsData(
+        trend=trace_stats.trend,
+        latency=trace_stats.latency,
+        tokens=trace_stats.tokens,
+    )
+
     return AdminStatsResponse(
         user_count=user_count,
         kb_count=kb_count,
@@ -69,6 +82,7 @@ async def get_stats(db: AsyncSession) -> AdminStatsResponse:
         conversation_count=conversation_count,
         message_count=message_count,
         storage_bytes=storage_bytes or 0,
+        charts=charts,
     )
 
 

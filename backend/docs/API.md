@@ -5,7 +5,7 @@
 | 文档版本 | v0.27 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / 用户管理 ⬜ / ECharts ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ⬜） |
 
 ---
 

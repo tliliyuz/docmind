@@ -5,7 +5,7 @@
 | 文档版本 | v0.46 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ⬜ / 限流 ⬜ / 部署 ⬜） |
 
 ---
 
@@ -521,13 +521,12 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 ### 7.4b 系统统计 ECharts（P1，v1 MVP）
 
-
-#### 后端（1 天）
+#### 后端（1 天）✅
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 增强 `/api/admin/stats` 接口 | 响应新增 `charts` 字段：trend（问答量趋势）/ latency（响应时间 P50/P95/P99）/ tokens（Token 使用统计），数据从 `traces` 表聚合 |
-| ⬜ | P50/P95/P99 分位数计算 | 按天/小时聚合 `total_duration_ms`，计算分位数 |
+| ✅ | 增强 `/api/admin/stats` 接口 | 响应新增 `charts` 字段：trend（问答量趋势）/ latency（响应时间 P50/P95/P99）/ tokens（Token 使用统计），数据从 `traces` 表聚合 |
+| ✅ | P50/P95/P99 分位数计算 | 按天/小时聚合 `total_duration_ms`，计算分位数 |
 
 #### 前端（1 天）
 
@@ -583,7 +582,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
 | ⬜ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4）。原检索/LLM 耗时埋点已合并入 Trace 测试 |
 | ✅ | Trace 接口测试 | 接口+单元 | Service 层 23 用例（`test_trace_service.py`）+ API 层 17 用例（`test_trace_api.py`）= 40 用例，全部通过。覆盖 U13.1-U13.5, A9.1-A9.15 |
-| ⬜ | ECharts 统计接口测试 | 单元测试 | trend 聚合 2 + latency 分位数 3 + tokens 聚合 2 = 7 用例 |
+| ✅ | ECharts 统计接口测试 | 单元测试 | trend 聚合 2 + latency 分位数 3 + tokens 聚合 2 = 7 用例（test_admin_api.py TestAdminStatsChartsAPI），全部通过 |
 | ⬜ | 用户管理接口测试 | 接口+单元 | 用户列表 4 + 详情 3 + 角色变更 3 + 禁用启用 3 + 重置密码 3 + 权限矩阵 4 = 20 用例 |
 | ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |
 | ⬜ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 两池子均超预算时各自独立截断互不侵蚀。**P0 Bug 防御** |

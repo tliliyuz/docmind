@@ -4,11 +4,24 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.trace import TraceLatencyItem, TraceTokenItem, TraceTrendItem
+
+
+class StatsChartsData(BaseModel):
+    """ECharts 图表数据 — 对齐 API.md §7.6
+
+    嵌入 /api/admin/stats 响应的 charts 字段。
+    数据来源：traces 表聚合（复用 get_trace_stats 逻辑）。
+    """
+    trend: list[TraceTrendItem] = Field(default_factory=list, description="问答量趋势（按天/小时）")
+    latency: list[TraceLatencyItem] = Field(default_factory=list, description="响应时间分位数（P50/P95/P99）")
+    tokens: list[TraceTokenItem] = Field(default_factory=list, description="Token 使用统计（Input/Output）")
+
 
 class AdminStatsResponse(BaseModel):
     """GET /api/admin/stats 响应
 
-    对齐 API.md §7.1：系统全局统计概览
+    对齐 API.md §7.1：系统全局统计概览 + ECharts 图表数据（§7.6）
     """
     user_count: int = Field(description="注册用户总数")
     kb_count: int = Field(description="知识库总数（含 private+public，不含已删除）")
@@ -17,6 +30,7 @@ class AdminStatsResponse(BaseModel):
     conversation_count: int = Field(description="会话总数")
     message_count: int = Field(description="消息总数")
     storage_bytes: int = Field(description="存储空间占用（字节）")
+    charts: StatsChartsData = Field(default_factory=StatsChartsData, description="ECharts 图表数据")
 
 
 class AdminKBItem(BaseModel):

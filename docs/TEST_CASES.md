@@ -5,7 +5,7 @@
 | 文档版本 | v0.65 |
 | 最后更新 | 2026-06-12 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ⬜ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
 
 ---
 
@@ -903,15 +903,19 @@
 ### 6.15 Phase 5 ECharts 统计测试用例
 
 > 设计文档：`Admin_设计补全_最终方案.md` §四。
-> 后端测试文件（待创建）：`tests/test_admin_stats_charts.py`。
+> 后端测试文件：`tests/test_admin_api.py`（TestAdminStatsChartsAPI 类，7 用例）。
 
 #### 6.15.1 后端 — 统计增强接口测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|---|:---|:---|:---|:---|
-| U14.1 | stats charts 字段存在 | `admin_service.get_stats()` | 正常调用 | 响应含 charts 字段（trend/latency/tokens） | ⬜ | — | 已有接口增强 |
-| U14.2 | stats charts 数据来源 | `admin_service.get_stats()` | traces 表有数据 | charts 数据从 traces 表聚合，非硬编码 | ⬜ | — | — |
-| U14.3 | stats charts 空数据 | `admin_service.get_stats()` | traces 表为空 | charts 各数组为空或零值，不报错 | ⬜ | — | 边界 |
+| U14.1 | stats charts 字段存在 | `admin_service.get_stats()` | 正常调用 | 响应含 charts 字段（trend/latency/tokens） | ✅ | 2026-06-12 | 已有接口增强 |
+| U14.2 | stats charts 数据来源 | `admin_service.get_stats()` | traces 表有数据 | charts 数据从 traces 表聚合，非硬编码 | ✅ | 2026-06-12 | — |
+| U14.3 | stats charts 空数据 | `admin_service.get_stats()` | traces 表为空 | charts 各数组为空或零值，不报错 | ✅ | 2026-06-12 | 边界 |
+| A7.7.1 | stats 响应含 charts 字段 | `/api/admin/stats` | admin 调用 | 响应包含 charts 字段，含 trend/latency/tokens | ✅ | 2026-06-12 | API 层验证 |
+| A7.7.2 | charts.trend 空数据 | `/api/admin/stats` | 无 trace 数据 | trend/latency/tokens 返回空数组 | ✅ | 2026-06-12 | 边界 |
+| A7.7.3-5 | charts.latency P50/P95/P99 | `/api/admin/stats` | 有延迟数据 | 分位数计算正确 | ✅ | 2026-06-12 | 3 用例合并 |
+| A7.7.6-7 | charts.tokens input/output | `/api/admin/stats` | 有 token 数据 | input/output 统计正确 | ✅ | 2026-06-12 | 2 用例合并 |
 
 #### 6.15.2 前端 — ECharts 组件测试
 
@@ -1114,7 +1118,7 @@
 | `rag/trace_recorder.py` | ≥ 80% | ✅ 7 用例 | Phase 5：TraceRecorder 数据收集器（test_trace_service.py TestTraceRecorder） |
 | `api/admin.py` (用户管理端点) | ≥ 90% | ⬜ | Phase 5：用户管理 API（12 用例，A9.20-A9.31） |
 | `services/admin_service.py` (用户管理) | ≥ 80% | ⬜ | Phase 5：用户管理 Service（12 用例，U15.1-U15.12） |
-| `services/admin_service.py` (统计增强) | ≥ 80% | ⬜ | Phase 5：ECharts 统计增强（3 用例，U14.1-U14.3） |
+| `services/admin_service.py` (统计增强) | ≥ 80% | ✅ 7 用例 | Phase 5：ECharts 统计增强（test_admin_api.py TestAdminStatsChartsAPI：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
 | 前端 `views/admin/TraceList.vue` | ≥ 60% | ⬜ | Phase 5：Trace 列表页（7 用例，C9.1-C9.7） |
 | 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ⬜ | Phase 5：Trace 详情页（5 用例，C9.8-C9.12） |
 | 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ⬜ | Phase 5：用户列表页（9 用例，C8.1-C8.9） |

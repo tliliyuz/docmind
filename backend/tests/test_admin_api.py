@@ -7,6 +7,7 @@
 - A7.4 非 Admin 拒绝：所有 admin 端点对普通用户返回 403
 - A7.5 visibility 筛选：按 visibility 参数过滤 KB
 - A7.6 status 筛选：按 status 参数过滤文档
+- A7.7 ECharts 统计：trend/latency/tokens 图表数据
 
 覆盖 app/api/admin.py 接口层 + dependencies.require_admin 权限校验
 """
@@ -23,13 +24,15 @@ from app.schemas.admin import (
     AdminKBItem,
     AdminKBListResponse,
     AdminStatsResponse,
+    StatsChartsData,
 )
+from app.schemas.trace import TraceLatencyItem, TraceTokenItem, TraceTrendItem
 
 
 # ==================== 辅助函数 ====================
 
 
-def _make_stats() -> AdminStatsResponse:
+def _make_stats(charts: StatsChartsData | None = None) -> AdminStatsResponse:
     """构造统计响应"""
     return AdminStatsResponse(
         user_count=10,
@@ -39,6 +42,7 @@ def _make_stats() -> AdminStatsResponse:
         conversation_count=30,
         message_count=200,
         storage_bytes=1048576,
+        charts=charts or StatsChartsData(),
     )
 
 
@@ -476,3 +480,177 @@ class TestAdminPermissionMatrix:
         assert response.status_code == 401, f"未认证用户应被拒绝访问 {endpoint}"
         body = response.json()
         assert body["code"] == "E5004"
+
+
+# ==================== ECharts 统计接口测试 ====================
+
+
+class TestAdminStatsChartsAPI:
+    """GET /api/admin/stats — ECharts 图表数据
+
+    对齐 TEST_CASES.md §6.14.3：ECharts 统计接口测试（7 用例）
+    - A7.7.1 stats 响应含 charts 字段
+    - A7.7.2 charts.trend 为空时返回空数组
+    - A7.7.3 charts.latency P50 正确
+    - A7.7.4 charts.latency P95 正确
+    - A7.7.5 charts.latency P99 正确
+    - A7.7.6 charts.tokens input 正确
+    - A7.7.7 charts.tokens output 正确
+    """
+
+    @pytest.mark.asyncio
+    async def test_stats响应含charts字段(self, async_client, admin_auth_headers):
+        """A7.7.1：stats 响应包含 charts 字段，含 trend/latency/tokens"""
+        charts = StatsChartsData(
+            trend=[TraceTrendItem(date="2026-06-12", success=10, error=1, partial=0)],
+            latency=[TraceLatencyItem(date="2026-06-12", p50=800, p95=2000, p99=3500)],
+            tokens=[TraceTokenItem(date="2026-06-12", input=50000, output=15000)],
+        )
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        data = body["data"]
+        # charts 字段存在
+        assert "charts" in data
+        charts_data = data["charts"]
+        assert "trend" in charts_data
+        assert "latency" in charts_data
+        assert "tokens" in charts_data
+        # trend 数据
+        assert len(charts_data["trend"]) == 1
+        assert charts_data["trend"][0]["date"] == "2026-06-12"
+        assert charts_data["trend"][0]["success"] == 10
+        # latency 数据
+        assert len(charts_data["latency"]) == 1
+        assert charts_data["latency"][0]["p50"] == 800
+        # tokens 数据
+        assert len(charts_data["tokens"]) == 1
+        assert charts_data["tokens"][0]["input"] == 50000
+
+    @pytest.mark.asyncio
+    async def test_charts_trend为空时返回空数组(self, async_client, admin_auth_headers):
+        """A7.7.2：无 trace 数据时，charts.trend 返回空数组"""
+        charts = StatsChartsData(trend=[], latency=[], tokens=[])
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        charts_data = body["data"]["charts"]
+        assert charts_data["trend"] == []
+        assert charts_data["latency"] == []
+        assert charts_data["tokens"] == []
+
+    @pytest.mark.asyncio
+    async def test_charts_latency_p50正确(self, async_client, admin_auth_headers):
+        """A7.7.3：latency P50 分位数计算正确"""
+        charts = StatsChartsData(
+            trend=[],
+            latency=[TraceLatencyItem(date="2026-06-12", p50=820, p95=2100, p99=3800)],
+            tokens=[],
+        )
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        latency = response.json()["data"]["charts"]["latency"]
+        assert len(latency) == 1
+        assert latency[0]["p50"] == 820
+
+    @pytest.mark.asyncio
+    async def test_charts_latency_p95正确(self, async_client, admin_auth_headers):
+        """A7.7.4：latency P95 分位数计算正确"""
+        charts = StatsChartsData(
+            trend=[],
+            latency=[TraceLatencyItem(date="2026-06-12", p50=820, p95=2100, p99=3800)],
+            tokens=[],
+        )
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        latency = response.json()["data"]["charts"]["latency"]
+        assert latency[0]["p95"] == 2100
+
+    @pytest.mark.asyncio
+    async def test_charts_latency_p99正确(self, async_client, admin_auth_headers):
+        """A7.7.5：latency P99 分位数计算正确"""
+        charts = StatsChartsData(
+            trend=[],
+            latency=[TraceLatencyItem(date="2026-06-12", p50=820, p95=2100, p99=3800)],
+            tokens=[],
+        )
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        latency = response.json()["data"]["charts"]["latency"]
+        assert latency[0]["p99"] == 3800
+
+    @pytest.mark.asyncio
+    async def test_charts_tokens_input正确(self, async_client, admin_auth_headers):
+        """A7.7.6：tokens input 统计正确"""
+        charts = StatsChartsData(
+            trend=[],
+            latency=[],
+            tokens=[TraceTokenItem(date="2026-06-12", input=152000, output=45000)],
+        )
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        tokens = response.json()["data"]["charts"]["tokens"]
+        assert len(tokens) == 1
+        assert tokens[0]["input"] == 152000
+
+    @pytest.mark.asyncio
+    async def test_charts_tokens_output正确(self, async_client, admin_auth_headers):
+        """A7.7.7：tokens output 统计正确"""
+        charts = StatsChartsData(
+            trend=[],
+            latency=[],
+            tokens=[TraceTokenItem(date="2026-06-12", input=152000, output=45000)],
+        )
+        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
+            mock_svc.return_value = _make_stats(charts=charts)
+
+            response = await async_client.get(
+                "/api/admin/stats",
+                headers=admin_auth_headers,
+            )
+
+        assert response.status_code == 200
+        tokens = response.json()["data"]["charts"]["tokens"]
+        assert tokens[0]["output"] == 45000
