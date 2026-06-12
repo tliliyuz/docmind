@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.67 |
-| 最后更新 | 2026-06-12 |
+| 文档版本 | v0.68 |
+| 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / 用户管理 ⬜ / 限流 ⬜ / 性能埋点 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ⬜ / 限流 ⬜） |
 
 ---
 
@@ -766,8 +766,9 @@
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U9.5 | 请求入口日志 | 中间件/日志工具 | HTTP 请求到达 | 日志包含 request_id + method + path + user_id | ✅ | 2026-06-06 | test_logging.py 12 用例 |
-| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.10-U13.14），结构化写 traces 表替代散落日志 |
-| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.10），generate JSON 记录 ttft_ms/tokens |
+| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⏭️ | — | 已合并入 §6.13 Trace 测试（U13.10-U13.14），结构化写 traces 表替代散落日志 |
+| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⏭️ | — | 已合并入 §6.13 Trace 测试（U13.10），generate JSON 记录 ttft_ms/tokens |
+| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ⬜ | — | 结构化日志框架已实现（Phase 4），本用例验证日志格式，与 Trace 独立 |
 
 ### 6.8 Phase 5 Admin 测试用例
 
@@ -840,25 +841,13 @@
 | U11.14 | score 字段验证 | `match_sentences()` | 正常定位 | `matched_sentence_score` 为 float，最佳句分数高于其他句 | ✅ | 2026-06-11 | TestMatchSentencesScore (2 用例) |
 | U11.15 | 字段透传 + 幂等 | `match_sentences()` | 重复调用 | 原有字段不变（doc_id/content/score/page/doc_name），重复调用幂等 | ✅ | 2026-06-11 | TestMatchSentencesFieldPassthrough (2 用例) |
 
-### 6.13 Phase 5 性能埋点验证
-
-> **合并说明**：原检索/LLM 耗时埋点（U12.1/U12.2/U12.3）已合并入 §6.14 Trace 测试体系（标记 ⏭️），由 Trace 结构化写 DB 替代散落 `logger.info`。§6.14.4 补充 chat_service 全链路集成测试。
-> **U12.4 独立保留**：日志 JSON 格式校验（U12.4）与 Trace 独立——它验证的是 Phase 4 结构化日志框架（`logging_config.py`）的输出格式，不涉及 Trace 写入。
-
-| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
-|:---|:---|:---|:---|:---|:---|:---|
-| U12.1 | 检索耗时日志 | `chat_service` 检索阶段 | 正常检索流程 | 日志 JSON 包含 `request_id` + `kb_id` + `vector_ms` + `bm25_ms` + `rrf_ms` + `total_chunks` | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.14 retrieve 细粒度），Trace 结构化写 DB 替代散落日志 |
-| U12.2 | LLM 调用日志 | `core/llm` 流式调用 | 正常 LLM 流式调用 | 日志 JSON 包含 `request_id` + `model` + `prompt_tokens` + `completion_tokens` + `ttft_ms` + `total_ms` | ⏭️ | — | 已合并入 §6.14 Trace 测试（U13.10 generate JSON） |
-| U12.3 | 日志-request_id 贯穿 | `chat_service` 全链路 | 单次问答 | meta/sources/finish 事件中的 request_id 与检索/LLM 日志的 request_id 一致 | ⏭️ | — | Trace 用 trace_id 贯穿全链路，替代 request_id 方案 |
-| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ⬜ | — | 结构化日志框架已实现（Phase 4），本用例验证日志格式，与 Trace 独立 |
-
-### 6.14 Phase 5 Trace 链路追踪测试用例
+### 6.13 Phase 5 Trace 链路追踪测试用例
 
 > 设计文档：`Admin_设计补全_最终方案.md` §三。
 > 后端测试文件：`tests/test_trace_service.py`（23 用例）+ `tests/test_trace_api.py`（17 用例），全部通过 ✅。
 > 覆盖 record_trace / list_traces / get_trace_detail / get_trace_stats + TraceRecorder + 3 个 API 端点权限校验。
 
-#### 6.14.1 后端 — Trace 模型与 Service 测试
+#### 6.13.1 后端 — Trace 模型与 Service 测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -868,7 +857,7 @@
 | U13.4 | Trace 写入-generate 不存 output | `trace_service.record_trace()` | generate 含 output 字段 | output 被剥离，不写入 DB | ✅ | 2026-06-12 | 设计约束：通过 conversation_id JOIN 获取 |
 | U13.5 | TraceRecorder 上下文管理器 | `trace_recorder.TraceRecorder()` | 正常问答全流程 | 各阶段 span 自动记录 start_time/duration_ms | ✅ | 2026-06-12 | 上下文管理器 + `with` 语句 |
 
-#### 6.14.2 后端 — Trace API 接口测试
+#### 6.13.2 后端 — Trace API 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -882,7 +871,7 @@
 | A9.8 | Trace 详情-不存在 | GET `/api/admin/traces/invalid-id` | 无效 trace_id | 404 | ✅ | 2026-06-12 | — |
 | A9.9 | Trace 非 admin 拒绝 | GET `/api/admin/traces` | 普通用户 | 403, E5005 | ✅ | 2026-06-12 | 权限矩阵 |
 
-#### 6.14.3 后端 — Trace 统计接口测试
+#### 6.13.3 后端 — Trace 统计接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -893,25 +882,27 @@
 | A9.14 | 统计-response_distribution | GET `/api/admin/stats/traces?days=7` | 混合响应模式 Trace | response_distribution 各模式计数正确 | ✅ | 2026-06-12 | — |
 | A9.15 | 统计-空数据 | GET `/api/admin/stats/traces?days=1` | 无 Trace 数据 | 200, 各数组为空或零值 | ✅ | 2026-06-12 | 边界 |
 
-#### 6.14.4 后端 — chat_service 集成埋点测试
+#### 6.13.4 后端 — chat_service 集成埋点测试
 
-> **与已通过的 Trace 测试的关系**：§6.14.1-6.14.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入，各阶段 JSON 字段是否符合预期。功能已实现（chat_service 中已接入 TraceRecorder 埋点），测试待编写。
-> **与原性能埋点的关系**：原 §6.13 的 U12.1/U12.2/U12.3（散落 `logger.info` 计时日志）已合并入 Trace 体系（标记 ⏭️），由 Trace 结构化写 DB 替代。本节不再重复验证日志格式，仅关注 chat_service 全链路 Trace 写入的正确性。
+> 测试文件：`tests/test_chat_trace_integration.py`（5 用例，全部通过 ✅）。
+> **与已通过的 Trace 测试的关系**：§6.13.1-6.13.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入，各阶段 JSON 字段是否符合预期。
+> **测试策略**：使用真实 TraceRecorder 对象（而非 MagicMock），通过 Mock `record_trace()` 阻止真实 DB 写入，直接断言 recorder 内部属性（`_intent_data`/`_retrieve_data` 等），与 §6.13.1 Trace 模型测试互补。
+> **与原性能埋点的关系**：原 U12.1/U12.2/U12.3（散落 `logger.info` 计时日志）已合并入 Trace 体系（标记 ⏭️），由 Trace 结构化写 DB 替代。本节不再重复验证日志格式，仅关注 chat_service 全链路 Trace 写入的正确性。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U13.10 | 埋点-完整 RAG 流程 | `chat_service.chat()` | KNOWLEDGE 意图问答 | Trace 写入，intent/rewrite/retrieve/rerank/generate 各阶段 JSON 非空 | ⬜ | — | 全链路 Mock；与 U13.1（Trace 模型写入）互补——U13.1 测 Trace 层，本节测 chat_service 集成层 |
-| U13.11 | 埋点-CASUAL 跳过检索 | `chat_service.chat()` | CASUAL 意图问答 | Trace 写入，retrieve/rerank 为空或跳过标记 | ⬜ | — | — |
-| U13.12 | 埋点-META 不调 LLM | `chat_service.chat()` | META 意图问答 | Trace 写入，generate 为空或跳过标记，token_usage 全为 0 | ⬜ | — | — |
-| U13.13 | 埋点-错误状态 | `chat_service.chat()` | LLM 调用失败 | Trace 写入，status=error，error_message 非空 | ⬜ | — | — |
-| U13.14 | 埋点-retrieve 细粒度 | `chat_service.chat()` | 正常检索 | retrieve JSON 含 vector/bm25/fusion/match_sentence 各自 duration_ms | ⬜ | — | 细粒度拆分验证 |
+| U13.10 | 埋点-完整 RAG 流程 | `chat_service.chat()` | KNOWLEDGE 意图问答 | Trace 写入，intent/rewrite/retrieve/rerank/generate 各阶段 JSON 非空 | ✅ | 2026-06-13 | 全链路 Mock；使用真实 TraceRecorder；与 U13.1（Trace 模型写入）互补 |
+| U13.11 | 埋点-CASUAL 跳过检索 | `chat_service.chat()` | CASUAL 意图问答 | Trace 写入，retrieve/rerank 为 None（CASUAL 跳过检索） | ✅ | 2026-06-13 | recorder._retrieve_data/_rerank_data 保持 None |
+| U13.12 | 埋点-META 不调 LLM | `chat_service.chat()` | META 意图问答 | Trace 写入，generate 为 None，token_usage 全为 0 | ✅ | 2026-06-13 | META 路径走 _generate_meta_response，不调 LLM |
+| U13.13 | 埋点-错误状态 | `chat_service.chat()` | LLM 调用失败 | Trace 写入，status=error，error_message 非空 | ✅ | 2026-06-13 | recorder.record_error() 被调用；intent/retrieve 正常（在 LLM 之前完成） |
+| U13.14 | 埋点-retrieve 细粒度 | `chat_service.chat()` | 正常检索 | retrieve JSON 含 vector/bm25/fusion/match_sentence 各自 duration_ms | ✅ | 2026-06-13 | BM25 stats 透传验证（redis_cache/tokenize_ms 等） |
 
-### 6.15 Phase 5 ECharts 统计测试用例
+### 6.14 Phase 5 ECharts 统计测试用例
 
 > 设计文档：`Admin_设计补全_最终方案.md` §四。
 > 后端测试文件：`tests/test_admin_api.py`（TestAdminStatsChartsAPI 类，7 用例）。
 
-#### 6.15.1 后端 — 统计增强接口测试
+#### 6.14.1 后端 — 统计增强接口测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|---|:---|:---|:---|:---|
@@ -923,10 +914,10 @@
 | A7.7.3-5 | charts.latency P50/P95/P99 | `/api/admin/stats` | 有延迟数据 | 分位数计算正确 | ✅ | 2026-06-12 | 3 用例合并 |
 | A7.7.6-7 | charts.tokens input/output | `/api/admin/stats` | 有 token 数据 | input/output 统计正确 | ✅ | 2026-06-12 | 2 用例合并 |
 
-#### 6.15.2 前端 — ECharts 组件测试
+#### 6.14.2 前端 — ECharts 组件测试
 
 > 测试文件：`tests/useECharts.test.js`（9 用例，全部通过 ✅）。覆盖 init/setOption/notMerge/resize/dispose/getInstance + pendingOption 暂存机制。
-> TrendChart/LatencyChart/TokenChart 通过 `StatsPage.test.js` 的 ECharts mock 间接覆盖（§6.15.3），无独立测试文件。
+> TrendChart/LatencyChart/TokenChart 通过 `StatsPage.test.js` 的 ECharts mock 间接覆盖（§6.14.3），无独立测试文件。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -940,7 +931,7 @@
 | C7.8 | useECharts pendingOption | `useECharts` | 挂载前 setOption | 暂存 option，挂载后自动应用 | ✅ | 2026-06-12 | 3 用例（暂存应用/正常调用/dispose 清除） |
 | C7.9 | useECharts setOption notMerge | `useECharts` | notMerge 参数 | setOption 正确传递 notMerge 参数 | ✅ | 2026-06-12 | 1 用例 |
 
-#### 6.15.3 前端 — StatsPage 图表集成测试
+#### 6.14.3 前端 — StatsPage 图表集成测试
 
 > 测试文件：`tests/StatsPage.test.js`（ECharts 图表集成部分，6 用例，全部通过 ✅）。
 
@@ -953,12 +944,12 @@
 | C7.14 | 图表 API 失败容错 | `StatsPage` | getTraceStats 失败 | 不阻断页面，统计卡片正常渲染 | ✅ | 2026-06-12 | — |
 | C7.15 | 并行调用两个 API | `StatsPage` | 性能 | getAdminStats 和 getTraceStats 并行调用 | ✅ | 2026-06-12 | — |
 
-### 6.16 Phase 5 用户管理测试用例
+### 6.15 Phase 5 用户管理测试用例
 
 > 设计文档：`Admin_设计补全_最终方案.md` §五。
 > 后端测试文件（待创建）：`tests/test_admin_user_service.py` + `tests/test_admin_user_api.py`。
 
-#### 6.16.1 后端 — 用户管理 Service 测试
+#### 6.15.1 后端 — 用户管理 Service 测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -975,7 +966,7 @@
 | U15.11 | 重置密码 | `admin_service.reset_user_password()` | 有效 user_id + new_password | 密码更新成功，新密码可登录 | ⬜ | — | 验证密码哈希更新 |
 | U15.12 | 重置密码-用户不存在 | `admin_service.reset_user_password()` | 无效 user_id | 抛出 NotFoundException | ⬜ | — | — |
 
-#### 6.16.2 后端 — 用户管理 API 接口测试
+#### 6.15.2 后端 — 用户管理 API 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -992,7 +983,7 @@
 | A9.30 | 重置密码-密码过短 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"123"}` | 422 | ⬜ | — | 参数校验 |
 | A9.31 | 用户管理-非 admin 拒绝 | 全部用户管理端点 | 普通用户 | 403, E5005 | ⬜ | — | 权限矩阵 |
 
-#### 6.16.3 前端 — 用户管理组件测试
+#### 6.15.3 前端 — 用户管理组件测试
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1010,10 +1001,10 @@
 | C8.12 | AdminUserDetail 快捷操作 | `AdminUserDetail` | 操作按钮 | 变更角色/禁用用户/重置密码按钮存在且可点击 | ⬜ | — | — |
 | C8.13 | AdminUserDetail 返回导航 | `AdminUserDetail` | 点击返回 | 跳转 `/admin/users` | ⬜ | — | — |
 
-### 6.17 Phase 5 Trace 前端组件测试
+### 6.16 Phase 5 Trace 前端组件测试
 
 > 前端测试文件：`frontend/tests/TraceList.test.js`（23 用例）+ `frontend/tests/TraceDetail.test.js`（25 用例）。
-> **说明**：TraceList.vue 和 TraceDetail.vue 组件已实现（2026-06-12），后端 API 测试已通过（§6.14.2-6.14.3，57 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-12，48 用例）。
+> **说明**：TraceList.vue 和 TraceDetail.vue 组件已实现（2026-06-12），后端 API 测试已通过（§6.13.2-6.13.3，57 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-12，48 用例）。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1120,7 +1111,7 @@
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，U10.1-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；U11.1-U11.6） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，U11.10-U11.15） |
-| 性能埋点（检索+LLM） | ≥ 70% | ⏭️ | Phase 5：U9.6/U9.7 已合并入 Trace（§6.14），U12.4 独立保留 |
+| 性能埋点（检索+LLM） | ≥ 70% | ⏭️ | Phase 5：U9.6/U9.7 已合并入 Trace（§6.13），U12.4 已并入 §6.7 |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |

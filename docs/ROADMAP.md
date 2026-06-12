@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.48 |
-| 最后更新 | 2026-06-12 |
+| 文档版本 | v0.49 |
+| 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 用户管理 ⬜ / 限流 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ⬜ / 限流 ⬜） |
 
 ---
 
@@ -580,7 +580,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | sources Evidence 预览测试 | 单元测试 | Evidence 定位集成 3 + 降级 3 + 短 chunk 2 + 格式 3 + 边界 5 + Schema 5 = 21 用例（`test_sources_preview.py`）+ 句级定位 14 用例（`test_sentence_matcher.py`）= 35 用例，全部通过；前端零改动 |
 | ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
 | ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
-| ⬜ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4，独立于 Trace）。原检索/LLM 耗时埋点（U12.1-U12.3）已合并入 Trace 测试（§6.14，✅）；chat_service 全链路集成埋点测试（§6.14.4，U13.10-U13.14）待编写 |
+| ✅ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4，独立于 Trace）。chat_service 全链路集成埋点测试 5 用例（§6.14.4，U13.10-U13.14）— 验证 KNOWLEDGE/CASUAL/META/错误/retrieve 细粒度各路径 Trace 数据收集正确性。原检索/LLM 耗时埋点（U12.1-U12.3）已合并入 Trace 测试（§6.14，✅） |
 | ✅ | Trace 接口测试 | 接口+单元 | Service 层 23 用例（`test_trace_service.py`）+ API 层 17 用例（`test_trace_api.py`）= 40 用例，全部通过。覆盖 U13.1-U13.5, A9.1-A9.15 |
 | ✅ | Trace 前端组件测试 | 前端组件 | TraceList 23 用例（C9.1-C9.7）+ TraceDetail 25 用例（C9.8-C9.12）= 48 用例，全部通过。覆盖渲染/空状态/搜索防抖/筛选/分页/行跳转/剪贴板复制/阶段卡片/JSON 展开折叠/返回导航 |
 | ✅ | ECharts 图表组件测试 | 前端组件 | TrendChart + LatencyChart + TokenChart = 21 用例（C7.4-C7.7），全部通过。含空数据边界（ResizeObserver mock + ECharts mock） |

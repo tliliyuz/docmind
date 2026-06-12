@@ -1,5 +1,30 @@
 # DocMind 变更日志
 
+## 2026-06-13 — Phase 5：chat_service 集成埋点测试
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_chat_trace_integration.py` | chat_service Trace 集成埋点测试（5 用例，U13.10-U13.14）：KNOWLEDGE 全链路 Trace 各阶段 JSON 非空、CASUAL 跳过检索 retrieve/rerank 为 None、META 不调 LLM generate 为 None + token_usage 全为 0、LLM 失败 status=error + error_message 非空、retrieve 细粒度 vector/bm25/fusion/match_sentence 各 duration_ms |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.67→v0.68。§6.14.4 5 用例（U13.10-U13.14）⬜→✅，补充测试文件名和测试策略说明；状态栏新增「chat_service 集成埋点 ✅」，移除「性能埋点 ⬜」（原 §6.13 U12.1-U12.3 已合并入 Trace，U12.4 日志格式校验独立保留） |
+| `docs/ROADMAP.md` | v0.48→v0.49。§7.5 性能埋点验证 ⬜→✅（5 用例 U13.10-U13.14 + 1 用例 U12.4 日志格式待补充）；状态栏新增「性能埋点 ✅」 |
+
+### 测试统计
+
+| 指标 | 值 |
+|:---|:---|
+| 新增用例 | 5（chat_service 集成埋点） |
+| 全量用例 | 25 文件 / 415 用例，全部通过 |
+| 覆盖文档用例 | U13.10-U13.14 |
+
+---
+
 ## 2026-06-12 — Phase 5：Trace 前端组件测试 + ECharts 图表组件测试
 
 ### 新增
