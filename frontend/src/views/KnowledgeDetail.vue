@@ -217,9 +217,10 @@
               <button
                 class="action-btn danger"
                 title="删除"
+                :disabled="deletingId === row.id"
                 @click.stop="confirmDeleteDoc(row)"
               >
-                <i class="fas fa-trash"></i>
+                <i :class="deletingId === row.id ? 'fas fa-spinner fa-spin' : 'fas fa-trash'"></i>
               </button>
             </div>
           </template>
@@ -330,7 +331,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { useKnowledgeStore, TERMINAL_STATUSES, isTerminal } from '@/stores/knowledge'
 import { useAuthStore } from '@/stores/auth'
 
@@ -390,6 +391,7 @@ const filterFilename = ref('')
 const sortOrder = ref('desc')
 const currentPage = ref(1)
 const pageSize = 20
+const deletingId = ref(null)  // 正在删除的文档 ID
 
 async function reloadDocList() {
   currentPage.value = 1
@@ -512,9 +514,19 @@ async function confirmDeleteDoc(doc) {
         confirmButtonClass: 'el-button--danger'
       }
     )
-    await store.removeDoc(kbId.value, doc.id)
-    store.stopPolling(doc.id)
-    ElMessage.success('文档已删除')
+    // 全屏阻塞 loading，阻止用户继续操作
+    const loadingInstance = ElLoading.service({
+      fullscreen: true,
+      text: `正在删除「${doc.filename}」…`,
+      background: 'rgba(0, 0, 0, 0.5)',
+    })
+    try {
+      await store.removeDoc(kbId.value, doc.id)
+      store.stopPolling(doc.id)
+      ElMessage.success('文档已删除')
+    } finally {
+      loadingInstance.close()
+    }
   } catch {
     // 取消
   }
@@ -529,7 +541,21 @@ const editFormData = reactive({ name: '', description: '', visibility: 'private'
 const editFormRules = {
   name: [
     { required: true, message: '请输入知识库名称', trigger: 'blur' },
-    { min: 1, max: 50, message: '名称长度 1-50 字符', trigger: 'blur' }
+    { min: 1, max: 50, message: '名称长度 1-50 字符', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (!value || !value.trim()) {
+          callback(new Error('知识库名称不能为空'))
+        } else if (/^\d+$/.test(value.trim())) {
+          callback(new Error('名称不能全为数字，请包含文字或字母'))
+        } else if (/^\s+$/.test(value)) {
+          callback(new Error('名称不能全为空格'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur',
+    }
   ]
 }
 

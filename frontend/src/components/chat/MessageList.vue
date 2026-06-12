@@ -7,15 +7,15 @@
       @regenerate="$emit('regenerate')"
     />
 
-    <!-- 新消息浮动按钮 -->
+    <!-- 回到底部浮动按钮 -->
     <Transition name="fade">
       <button
         v-if="showScrollBtn"
         class="scroll-bottom-btn"
         @click="scrollToBottom(true)"
+        title="回到底部"
       >
         <i class="fas fa-chevron-down"></i>
-        <span>新消息</span>
       </button>
     </Transition>
   </div>
@@ -55,7 +55,7 @@ function scrollToBottom(smooth = false) {
   setTimeout(() => { isAutoScrolling = false }, 300)
 }
 
-/** 监听滚动事件 */
+/** 监听滚动事件：根据位置显示/隐藏回到底部按钮 */
 function handleScroll() {
   if (isAutoScrolling) return
   showScrollBtn.value = !isNearBottom()
@@ -68,9 +68,8 @@ watch(
     nextTick(() => {
       if (isNearBottom()) {
         scrollToBottom()
-      } else {
-        showScrollBtn.value = true
       }
+      // 不在底部时由 handleScroll 自然显示回到底部按钮
     })
   }
 )

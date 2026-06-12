@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.43 |
+| 文档版本 | v0.44 |
 | 最后更新 | 2026-06-11 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / 限流 ⬜ / 部署 ⬜） |
@@ -460,7 +460,6 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | StatsPage 对接 | `AdminStatsPage.vue` — 统计卡片真实数据 + 存储量格式化 |
 | ✅ | Admin 独立布局 | `AdminLayout.vue` — 独立侧边栏 + 主内容区；Admin 路由嵌套；用户菜单「管理后台」入口 |
 | ✅ | Sidebar 重构 | 移除 admin 导航区，用户菜单新增「管理后台」选项（仅 isAdmin 可见） |
-| ✅ | 活跃统计页 | `ConversationList.vue` → 活跃统计占位（统计维度预览 + 数据表格预览） |
 
 #### 7.2.3 Admin 访问 KB 详情页权限（2 子任务）
 

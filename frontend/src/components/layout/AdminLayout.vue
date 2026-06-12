@@ -21,7 +21,7 @@
           active-class="active"
         >
           <i class="fas fa-chart-bar"></i>
-          <span>系统概览</span>
+          <span>系统统计</span>
         </router-link>
         <router-link
           to="/admin/knowledge"
@@ -38,14 +38,6 @@
         >
           <i class="fas fa-file-alt"></i>
           <span>文档管理</span>
-        </router-link>
-        <router-link
-          to="/admin/activity"
-          class="admin-nav-item"
-          active-class="active"
-        >
-          <i class="fas fa-users"></i>
-          <span>活跃统计</span>
         </router-link>
       </nav>
 
@@ -78,10 +70,9 @@ const route = useRoute()
 
 const pageTitle = computed(() => {
   const titles = {
-    AdminStats: '系统概览',
+    AdminStats: '系统统计',
     AdminKnowledge: '知识库管理',
     AdminDocuments: '文档管理',
-    AdminActivity: '活跃统计',
   }
   return titles[route.name] || '管理后台'
 })

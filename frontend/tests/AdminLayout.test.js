@@ -68,9 +68,9 @@ describe('AdminLayout', () => {
     expect(wrapper.find('.admin-subtitle').text()).toBe('DocMind Admin')
   })
 
-  it('AdminStats 路由显示"系统概览"', () => {
+  it('AdminStats 路由显示"系统统计"', () => {
     const wrapper = getComponent('AdminStats')
-    expect(wrapper.find('.admin-page-title').text()).toBe('系统概览')
+    expect(wrapper.find('.admin-page-title').text()).toBe('系统统计')
   })
 
   it('AdminKnowledge 路由显示"知识库管理"', () => {
@@ -83,9 +83,10 @@ describe('AdminLayout', () => {
     expect(wrapper.find('.admin-page-title').text()).toBe('文档管理')
   })
 
-  it('AdminActivity 路由显示"活跃统计"', () => {
+  it('AdminActivity 路由已移除，不存在对应标题', () => {
     const wrapper = getComponent('AdminActivity')
-    expect(wrapper.find('.admin-page-title').text()).toBe('活跃统计')
+    // AdminActivity 已从 pageTitle 映射移除，降级为默认标题
+    expect(wrapper.find('.admin-page-title').text()).toBe('管理后台')
   })
 
   it('未知路由显示默认标题"管理后台"', () => {
@@ -93,11 +94,11 @@ describe('AdminLayout', () => {
     expect(wrapper.find('.admin-page-title').text()).toBe('管理后台')
   })
 
-  it('侧边栏包含系统概览导航项', () => {
+  it('侧边栏包含系统统计导航项', () => {
     const wrapper = getComponent()
     const links = wrapper.findAll('.admin-nav-item')
     const texts = links.map(l => l.text())
-    expect(texts).toContain('系统概览')
+    expect(texts).toContain('系统统计')
   })
 
   it('侧边栏包含知识库管理导航项', () => {
@@ -114,11 +115,12 @@ describe('AdminLayout', () => {
     expect(texts).toContain('文档管理')
   })
 
-  it('侧边栏包含活跃统计导航项', () => {
+  it('侧边栏已移除活跃统计导航项', () => {
     const wrapper = getComponent()
     const links = wrapper.findAll('.admin-nav-item')
     const texts = links.map(l => l.text())
-    expect(texts).toContain('活跃统计')
+    expect(texts).not.toContain('活跃统计')
+    expect(texts).toHaveLength(3)  // 系统统计 + 知识库管理 + 文档管理
   })
 
   it('侧边栏包含返回对话按钮', () => {

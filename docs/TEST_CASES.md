@@ -934,7 +934,7 @@
 | `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
 | `api/admin.py` (接口测试) | ≥ 90% | ✅ 100% | Phase 5：Admin 端点（27 用例，A7.1-A7.6，含权限矩阵参数化 9 用例） |
 | `services/admin_service.py` | ≥ 80% | ✅ 100% | Phase 5：Admin 业务逻辑（21 用例：统计 3 + KB 列表 8 + 文档列表 10） |
-| 前端 `components/layout/AdminLayout.vue` | ≥ 60% | ✅ 19 通过 | Phase 5：Admin 独立布局（19 用例：渲染结构/路由标题/导航项/返回按钮/slot） |
+| 前端 `components/layout/AdminLayout.vue` | ≥ 60% | ✅ 19 通过 | Phase 5：Admin 独立布局（19 用例：渲染结构/路由标题/导航项/返回按钮/slot；2026-06-11 更新：系统概览→系统统计、移除活跃统计导航项） |
 | `middleware/rate_limit.py` | ≥ 80% | ⬜ | Phase 5：限流中间件（5 用例，A8.1-A8.5） |
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，U10.1-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；U11.1-U11.6） |
@@ -951,11 +951,11 @@
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
 | 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
 | 前端 `api/admin.js` | ≥ 80% | ✅ 9 用例 | Phase 5：Admin API 参数透传（9 用例：getStats 3 + getKBs 3 + getDocs 3，2026-06-10） |
-| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 19 用例 | Phase 5：系统概览页（加载态/数据渲染/千分位/formatStorage/错误态/null 边界，2026-06-10） |
+| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 19 用例 | Phase 5：系统统计页（加载态/数据渲染/千分位/formatStorage/错误态/null 边界，2026-06-10；2026-06-11 改名系统统计） |
 | 前端 `views/admin/KnowledgeList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：知识库管理页（列表加载/空状态/搜索防抖/筛选/分页/编辑弹窗/删除/错误处理/formatDateTime，2026-06-10） |
 | 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页（列表加载/搜索/筛选排序/分页/删除含 KB 确认/getStatusLabel/isTerminal/formatFileSize，2026-06-10） |
-| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：活跃统计占位页（标题/描述/7 维度卡片/预览表格/表头顺序，2026-06-10） |
-| 前端组件 | ≥ 60% | ✅ 327 通过 | 2026-06-10 运行 `npm run test`：20 文件 327 用例全部通过（新增 admin 页面 69 用例 + admin API 9 用例 + MessageItem +4 用例含 U11.6 <mark> 高亮 + AdminLayout 19 用例 + AppLayout 11 用例） |
+| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ⏸️ 已废弃 | ~~Phase 5：活跃统计占位页~~（2026-06-11 移除路由，页面已合并到系统统计页，测试文件保留但不再运行） |
+| 前端组件 | ≥ 60% | ✅ 327 通过 | 2026-06-11 运行 `npm run test`：20 文件 327 用例全部通过（AdminLayout 用例已同步导航变更：系统概览→系统统计、移除活跃统计） |
 
 ---
 

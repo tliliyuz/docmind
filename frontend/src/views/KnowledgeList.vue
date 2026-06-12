@@ -200,7 +200,21 @@ const formData = ref({
 const formRules = {
   name: [
     { required: true, message: '请输入知识库名称', trigger: 'blur' },
-    { min: 1, max: 50, message: '名称长度 1-50 字符', trigger: 'blur' }
+    { min: 1, max: 50, message: '名称长度 1-50 字符', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (!value || !value.trim()) {
+          callback(new Error('知识库名称不能为空'))
+        } else if (/^\d+$/.test(value.trim())) {
+          callback(new Error('名称不能全为数字，请包含文字或字母'))
+        } else if (/^\s+$/.test(value)) {
+          callback(new Error('名称不能全为空格'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur',
+    }
   ]
 }
 

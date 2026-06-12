@@ -1,11 +1,8 @@
 <template>
   <div class="admin-page">
-    <!-- 页面标题栏 -->
+    <!-- 页面描述 -->
     <div class="detail-header">
-      <div class="detail-header-left">
-        <h1 class="detail-title">系统概览</h1>
-        <p class="detail-desc">DocMind 平台运行概览统计</p>
-      </div>
+      <p class="detail-desc">DocMind 平台运行数据总览</p>
     </div>
 
     <!-- 加载中骨架 -->

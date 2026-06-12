@@ -164,20 +164,23 @@ export const useChatStore = defineStore('chat', () => {
       case 'meta':
         // 记录会话 ID（新对话时后端自动创建）
         if (data.conversation_id) {
+          const isNew = !conversationId.value  // 之前无会话 → 真正新对话
           conversationId.value = data.conversation_id
-          // 通知会话列表 Store 新增会话
-          try {
-            const convStore = useConversationStore()
-            convStore.addConversation({
-              id: data.conversation_id,
-              kb_id: selectedKBId.value,
-              title: '新对话',
-              message_count: 1,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-          } catch (err) {
-            console.error('添加会话到侧边栏失败:', err)
+          // 仅新对话时通知会话列表 Store 新增（避免 regenerate 时重复添加）
+          if (isNew) {
+            try {
+              const convStore = useConversationStore()
+              convStore.addConversation({
+                id: data.conversation_id,
+                kb_id: selectedKBId.value,
+                title: '新对话',
+                message_count: 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+            } catch (err) {
+              console.error('添加会话到侧边栏失败:', err)
+            }
           }
         }
         break

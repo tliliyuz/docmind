@@ -1,5 +1,28 @@
 # DocMind 变更日志
 
+## 2026-06-11 — 前端多处交互优化（8 项修复）
+
+### 修改
+
+| 改动 | 文件 | 说明 |
+|:---|:---|:---|
+| **引用来源编号** | `frontend/src/components/chat/MessageItem.vue` | 来源面板始终使用显示索引 `idx+1`，修复单来源显示 `[来源2]` 的 bug |
+| **重新生成侧边栏** | `frontend/src/stores/chat.js` | `meta` SSE 事件仅在真正新对话时调用 `addConversation`，避免 regenerate 冒新条目 |
+| **侧边栏选中态** | `frontend/src/components/layout/Sidebar.vue` | 移除 `isActive` 早返回，允许从其他页面点击已选中会话回到对话 |
+| **新消息按钮** | `frontend/src/components/chat/MessageList.vue` | `handleScroll` 仅清除不设置，新消息按钮不再常驻 |
+| **删除加载态** | `frontend/src/views/KnowledgeDetail.vue` | 新增 `deletingId` 状态，删除按钮显示 spinner + disabled |
+| **管理后台整合** | `AdminLayout.vue` / `router/index.js` / `StatsPage.vue` | 移除「活跃统计」页面和路由，「系统概览」改名「系统统计」 |
+| **管理后台标题去重** | `StatsPage.vue` | 主区域去除重复的 h1 标题（顶部导航栏已有），仅保留描述 |
+| **删除阻塞 loading** | `KnowledgeDetail.vue` | 删除文档时全屏 ElLoading 阻塞用户操作，显示文件名 + 半透明遮罩 |
+| **知识库名称校验** | `KnowledgeList.vue` / `KnowledgeDetail.vue` | 拦截纯数字、纯空格名称，前端即时提示 |
+| **回到底部按钮** | `MessageList.vue` | 「新消息」改为「回到底部」icon 按钮，非底部时可见，点击直接跳转 |
+| **测试同步** | `frontend/tests/AdminLayout.test.js` | 更新 4 个用例对齐导航变更 |
+| **文档同步** | `FRONTEND.md` / `ROADMAP.md` / `DEVELOPMENT.md` | 移除活跃统计相关描述、更新路由表/侧边栏/布局图/目录结构、版本号同步 |
+
+### 待办
+
+- ECharts 可视化方案待设计确认后实施（echarts 包已安装）
+
 ## 2026-06-11 — 开发环境兼容性优化（Redis 异步接口适配 Windows）
 
 ### 背景

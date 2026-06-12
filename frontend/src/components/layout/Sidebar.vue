@@ -507,9 +507,8 @@ function handleNewChat() {
   router.push('/chat')
 }
 
-/** 选择历史会话 */
+/** 选择历史会话（即使已选中也执行导航，解决从其他页面返回时无法点击的问题） */
 function handleSelectConversation(conv) {
-  if (isActive(conv.id)) return
   router.push(`/chat?conversation_id=${conv.id}`)
 }
 

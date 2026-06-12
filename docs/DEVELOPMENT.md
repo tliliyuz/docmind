@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.15 |
-| 最后更新 | 2026-06-09 |
+| 文档版本 | v0.16 |
+| 最后更新 | 2026-06-11 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 5 Docker 部署命令已补充） |
 
@@ -173,8 +173,7 @@ docmind/
 │   │   │   ├── LoginPage.vue          # 登录页
 │   │   │   └── admin/
 │   │   │       ├── KnowledgeList.vue  # 知识库管理
-│   │   │       ├── DocumentList.vue   # 文档管理
-│   │   │       └── ConversationList.vue # 会话管理
+│   │   │       └── DocumentList.vue   # 文档管理
 │   │   │
 │   │   ├── components/
 │   │   │   ├── chat/

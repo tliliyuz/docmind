@@ -62,7 +62,7 @@
             class="source-item"
           >
             <div class="source-header">
-              <span class="source-index">[来源{{ src.chunk_index || idx + 1 }}]</span>
+              <span class="source-index">[来源{{ idx + 1 }}]</span>
               <span class="source-doc">
                 <i class="fas fa-file-alt"></i>
                 {{ src.doc_name || '未知文档' }}

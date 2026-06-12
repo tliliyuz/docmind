@@ -57,11 +57,6 @@ const routes = [
         name: 'AdminDocuments',
         component: () => import('@/views/admin/DocumentList.vue'),
       },
-      {
-        path: 'activity',
-        name: 'AdminActivity',
-        component: () => import('@/views/admin/ConversationList.vue'),
-      },
     ],
   },
   {
