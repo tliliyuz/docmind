@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.68 |
+| 文档版本 | v0.69 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ⬜ / 限流 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ✅ / 限流 ⬜） |
 
 ---
 
@@ -946,7 +946,6 @@
 
 ### 6.15 Phase 5 用户管理测试用例
 
-> 设计文档：`Admin_设计补全_最终方案.md` §五。
 > 后端测试文件（待创建）：`tests/test_admin_user_service.py` + `tests/test_admin_user_api.py`。
 
 #### 6.15.1 后端 — 用户管理 Service 测试
@@ -981,21 +980,24 @@
 
 #### 6.15.3 前端 — 用户管理组件测试
 
+> 前端测试文件：`frontend/tests/AdminUserList.test.js`（15 用例）+ `frontend/tests/AdminUserDetail.test.js`（16 用例）。
+> **说明**：AdminUserList.vue 和 AdminUserDetail.vue 组件已实现（2026-06-13），后端 API 测试已通过（§6.15.1-6.15.2，20 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-13，31 用例）。
+
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| C8.1 | AdminUserList 渲染 | `AdminUserList` | 表格 | 用户表格渲染，含用户名/角色/状态/KB数/文档数/会话数/最后活跃/操作列 | ⬜ | — | — |
-| C8.2 | AdminUserList 空状态 | `AdminUserList` | 无用户 | 显示空状态提示 | ⬜ | — | — |
-| C8.3 | AdminUserList 搜索 | `AdminUserList` | 输入搜索关键词 | 重新请求列表（防抖） | ⬜ | — | — |
-| C8.4 | AdminUserList 筛选 | `AdminUserList` | 切换角色/状态筛选 | 重新请求列表 | ⬜ | — | — |
-| C8.5 | AdminUserList 分页 | `AdminUserList` | 翻页 | 重新请求对应页 | ⬜ | — | — |
-| C8.6 | AdminUserList 操作菜单 | `AdminUserList` | 点击 ⋮ | 弹出操作菜单（查看详情/变更角色/禁用启用/重置密码） | ⬜ | — | — |
-| C8.7 | AdminUserList 变更角色确认 | `AdminUserList` | 点击变更角色 | 确认弹窗 → PUT 角色 → 刷新列表 | ⬜ | — | — |
-| C8.8 | AdminUserList 禁用确认 | `AdminUserList` | 点击禁用 | 确认弹窗（危险色）→ PUT 状态 → 刷新列表 | ⬜ | — | — |
-| C8.9 | AdminUserList 重置密码 | `AdminUserList` | 点击重置密码 | 弹窗输入新密码 → POST 重置 → 显示成功提示 | ⬜ | — | — |
-| C8.10 | AdminUserDetail 渲染 | `AdminUserDetail` | 用户信息卡片 | 用户名/角色/状态/创建时间/最后活跃正确显示 | ⬜ | — | — |
-| C8.11 | AdminUserDetail 统计卡片 | `AdminUserDetail` | 统计数据 | KB数/文档数/会话数/消息数/Input Token/Output Token 正确显示 | ⬜ | — | — |
-| C8.12 | AdminUserDetail 快捷操作 | `AdminUserDetail` | 操作按钮 | 变更角色/禁用用户/重置密码按钮存在且可点击 | ⬜ | — | — |
-| C8.13 | AdminUserDetail 返回导航 | `AdminUserDetail` | 点击返回 | 跳转 `/admin/users` | ⬜ | — | — |
+| C8.1 | AdminUserList 渲染 | `AdminUserList` | 表格 | 用户表格渲染，含用户名/角色/状态/KB数/文档数/会话数/最后活跃/操作列 | ✅ | 2026-06-13 | 5 用例（API 调用/筛选栏/总数/空数据不显示总数/空列表） |
+| C8.2 | AdminUserList 空状态 | `AdminUserList` | 无用户 | 无数据时不渲染表格，显示空状态 | ✅ | 2026-06-13 | — |
+| C8.3 | AdminUserList 搜索 | `AdminUserList` | 输入搜索关键词 | 重新请求列表（300ms 防抖） | ✅ | 2026-06-13 | useFakeTimers 验证防抖 |
+| C8.4 | AdminUserList 筛选 | `AdminUserList` | 切换角色/状态筛选 | 重新请求列表 | ✅ | 2026-06-13 | 角色+状态 2 个筛选 |
+| C8.5 | AdminUserList 分页 | `AdminUserList` | 翻页 | 数据量大于 pageSize 时显示分页，反之隐藏 | ✅ | 2026-06-13 | 2 用例（显示/隐藏） |
+| C8.6 | AdminUserList 操作菜单 | `AdminUserList` | 点击 ⋮ | 弹出操作菜单（查看详情/禁用启用/重置密码） | ✅ | 2026-06-13 | 角色变更已移除 |
+| C8.8 | AdminUserList 行点击 | `AdminUserList` | 点击表格行 | 触发 row-click 事件 | ✅ | 2026-06-13 | — |
+| C8.9 | AdminUserList 错误处理 | `AdminUserList` | API/网络异常 | 显示错误消息或兜底提示 | ✅ | 2026-06-13 | 2 用例（错误码/网络异常） |
+| C8.10 | AdminUserDetail 渲染 | `AdminUserDetail` | 用户信息卡片 | 用户名/角色/状态/创建时间/最后活跃正确显示 | ✅ | 2026-06-13 | 8 用例（信息卡片/统计卡片/数值/Token单位/操作按钮/禁用启用/注册时间/从未活跃） |
+| C8.11 | AdminUserDetail 加载状态 | `AdminUserDetail` | 加载中 | 显示 loading 状态 | ✅ | 2026-06-13 | — |
+| C8.12 | AdminUserDetail 错误状态 | `AdminUserDetail` | API/网络异常 | 显示错误信息，缺少 user_id 时显示错误 | ✅ | 2026-06-13 | 3 用例（API错误/缺少参数/网络异常） |
+| C8.13 | AdminUserDetail 返回导航 | `AdminUserDetail` | 点击返回 | 跳转 `/admin/users`，错误状态下也显示返回按钮 | ✅ | 2026-06-13 | 2 用例（正常返回/错误状态返回） |
+| C8.14 | AdminUserDetail 禁用/启用 | `AdminUserDetail` | 操作按钮 | 活跃用户显示禁用按钮，已禁用用户显示启用按钮 | ✅ | 2026-06-13 | 2 用例 |
 
 ### 6.16 Phase 5 Trace 前端组件测试
 
@@ -1134,8 +1136,8 @@
 | `services/admin_service.py` (统计增强) | ≥ 80% | ✅ 7 用例 | Phase 5：ECharts 统计增强（test_admin_api.py TestAdminStatsChartsAPI：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
 | 前端 `views/admin/TraceList.vue` | ≥ 60% | ✅ 23 用例 | Phase 5：Trace 列表页（7 用例，C9.1-C9.7） |
 | 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ✅ 25 用例 | Phase 5：Trace 详情页（5 用例，C9.8-C9.12） |
-| 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ⬜ | Phase 5：用户列表页（9 用例，C8.1-C8.9） |
-| 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ⬜ | Phase 5：用户详情页（4 用例，C8.10-C8.13） |
+| 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ✅ 15 用例 | Phase 5：用户列表页（7 用例，C8.1-C8.9） |
+| 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户详情页（5 用例，C8.10-C8.14） |
 | 前端 `components/charts/*.vue` | ≥ 60% | ✅ 21 用例 | Phase 5：ECharts 图表组件（7 用例，C7.1-C7.7） |
 
 ---

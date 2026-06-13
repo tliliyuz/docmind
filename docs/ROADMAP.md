@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.51 |
+| 文档版本 | v0.53 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理后端 ✅ / 限流 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ⬜） |
 
 ---
 
@@ -559,10 +559,10 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `AdminUserList.vue` | 用户列表页（/admin/users）：搜索用户名 + 角色/状态筛选 + 表格（用户名/角色/状态/KB数/文档数/会话数/最后活跃/操作）+ 分页。操作菜单：查看详情/变更角色/禁用启用/重置密码 |
-| ⬜ | `AdminUserDetail.vue` | 用户详情页（/admin/users/{user_id}）：用户信息卡片 + 统计卡片（KB/文档/会话/消息/Input Token/Output Token）+ 快捷操作（变更角色/禁用用户/重置密码） |
-| ⬜ | `api/user.js` | 接口封装 |
-| ⬜ | `AdminLayout.vue` 导航更新 | 添加「用户管理」菜单项（图标 `fa-users`，路由 `/admin/users`） |
+| ✅ | `AdminUserList.vue` | 用户列表页（/admin/users）：搜索用户名 + 角色/状态筛选 + 表格（用户名/角色/状态/KB数/文档数/会话数/最后活跃/操作）+ 分页。操作菜单：查看详情/禁用启用/重置密码 |
+| ✅ | `AdminUserDetail.vue` | 用户详情页（/admin/users/{user_id}）：用户信息卡片 + 统计卡片（KB/文档/会话/消息/Input Token/Output Token）+ 快捷操作（禁用用户/重置密码） |
+| ✅ | `api/admin.js`（新增函数） | 用户管理接口封装（getAdminUsers / getAdminUserDetail / changeUserStatus / resetUserPassword） |
+| ✅ | `AdminLayout.vue` 导航更新 | 添加「用户管理」菜单项（图标 `fa-users`，路由 `/admin/users`） |
 
 #### v2 迭代（后续）
 
@@ -585,7 +585,8 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Trace 前端组件测试 | 前端组件 | TraceList 23 用例（C9.1-C9.7）+ TraceDetail 25 用例（C9.8-C9.12）= 48 用例，全部通过。覆盖渲染/空状态/搜索防抖/筛选/分页/行跳转/剪贴板复制/阶段卡片/JSON 展开折叠/返回导航 |
 | ✅ | ECharts 图表组件测试 | 前端组件 | TrendChart + LatencyChart + TokenChart = 21 用例（C7.4-C7.7），全部通过。含空数据边界（ResizeObserver mock + ECharts mock） |
 | ✅ | ECharts 统计接口测试 | 单元测试 | trend 聚合 2 + latency 分位数 3 + tokens 聚合 2 = 7 用例（test_admin_api.py TestAdminStatsChartsAPI），全部通过 |
-| ✅ | 用户管理接口测试 | 接口+单元 | 用户列表 3 + 详情 3 + 角色变更 3 + 禁用启用 3 + 重置密码 3 + 权限矩阵 10 = 25 用例（`test_admin_api.py`），全部通过 |
+| ✅ | 用户管理接口测试 | 接口+单元 | 用户列表 3 + 详情 3 + 禁用启用 3 + 重置密码 3 + 权限矩阵 8 = 20 用例（`test_admin_api.py`），全部通过 |
+| ✅ | 用户管理前端组件测试 | 前端组件 | AdminUserList 15 用例（C8.1-C8.9）+ AdminUserDetail 16 用例（C8.10-C8.14）= 31 用例，全部通过。覆盖渲染/空状态/筛选/分页/行点击/操作菜单/错误处理/加载状态/导航/禁用启用 |
 | ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |
 | ⬜ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 两池子均超预算时各自独立截断互不侵蚀。**P0 Bug 防御** |
 | ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
