@@ -1,5 +1,86 @@
 # DocMind 变更日志
 
+## 2026-06-13 — Phase 5：用户管理前端组件测试（7.4c 前端测试）
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/tests/AdminUserList.test.js` | 用户列表组件测试（15 用例，C8.1-C8.9）：渲染（API 调用/筛选栏/总数/空数据/空列表）、空状态、角色+状态筛选、搜索 300ms 防抖（useFakeTimers）、分页显示/隐藏、行点击、操作菜单、错误处理（错误码/网络异常） |
+| `frontend/tests/AdminUserDetail.test.js` | 用户详情组件测试（16 用例，C8.10-C8.14）：渲染（信息卡片/6 统计卡片/数值/Token k+M 单位/操作按钮/禁用启用文案/注册时间/从未活跃）、加载状态、错误状态（API 错误/缺少参数/网络异常）、返回导航（正常/错误状态）、禁用启用样式切换 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.68→v0.69。§6.15.3 用户管理前端组件 14 用例 ⬜→✅（C8.7 变更角色确认已删除）；§8 覆盖率表 AdminUserList/AdminUserDetail 两行 ⬜→✅；状态栏「用户管理 ⬜」→「用户管理 ✅」 |
+| `docs/ROADMAP.md` | v0.52→v0.53。§7.5 新增「用户管理前端组件测试 ✅」（31 用例） |
+
+### 测试结果
+
+| 指标 | 值 |
+|:---|:---|
+| 新增用例 | 31（AdminUserList 15 + AdminUserDetail 16） |
+| 测试框架 | Vitest + @vue/test-utils |
+| 运行结果 | 2 文件 31 用例全部通过 |
+| 覆盖文档用例 | C8.1-C8.14 |
+
+---
+
+## 2026-06-13 — Phase 5：用户管理前端实现（7.4c）
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/views/admin/AdminUserList.vue` | 用户列表页：搜索 + 角色/状态筛选 + 表格（用户名/角色/状态/KB数/文档数/会话数/最后活跃）+ 分页 + 操作菜单（查看详情/禁用启用/重置密码弹窗） |
+| `frontend/src/views/admin/AdminUserDetail.vue` | 用户详情页：用户信息卡片（用户名/角色/状态/注册时间/最后活跃）+ 6 张统计卡片（KB/文档/会话/消息/Input Token/Output Token）+ 快捷操作（禁用启用/重置密码） |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/api/admin.js` | 新增 `getAdminUsers` / `getAdminUserDetail` / `changeUserStatus` / `resetUserPassword` 4 个 API 函数 |
+| `frontend/src/router/index.js` | 新增 `/admin/users`（AdminUsers）和 `/admin/users/:user_id`（AdminUserDetail）路由 |
+| `frontend/src/components/layout/AdminLayout.vue` | 新增「用户管理」导航菜单项（`fa-users`，路由 `/admin/users`）+ `isUsersActive` computed（列表+详情页激活）+ 页面标题映射 |
+| `docs/ROADMAP.md` | v0.51→v0.52。§7.4c 前端 4 项任务 ⬜→✅；移除 `changeUserRole` 引用；测试用例数修正（25→20） |
+| `frontend/docs/FRONTEND.md` | v0.27→v0.28。§7.9 移除「变更角色」按钮和交互；状态更新 |
+| `backend/docs/API.md` | v0.28→v0.29。E7003 描述移除「角色」引用 |
+
+---
+
+## 2026-06-13 — 后端：移除角色变更端点（7.4c）
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/api/admin.py` | 删除 `update_admin_user_role` 路由、`AdminUserRoleRequest` 导入、`change_user_role` 导入 |
+| `backend/app/services/admin_service.py` | 删除 `change_user_role` 函数 |
+| `backend/app/schemas/admin.py` | 删除 `AdminUserRoleRequest` 类 |
+| `backend/tests/test_admin_api.py` | 删除 `TestAdminUserRoleAPI` 类（3 个用例）；`TestAdminUserPermissionMatrix.USER_ENDPOINTS` 移除 `("PUT", "/api/admin/users/3/role")` 条目 |
+| `backend/docs/API.md` | 删除 `PUT /api/admin/users/{user_id}/role` 文档段落和路由表条目 |
+
+### 架构决策
+
+| 决策 | 说明 |
+|---|---|
+| 角色变更暂不实现 | v1 MVP 不提供 admin 直接变更用户角色的功能。角色变更为敏感操作，需配合审计日志（`user_operations` 表，v2）方可安全实现 |
+
+---
+
+## 2026-06-13 — 前端架构审查问题修复（7.4c 前端）
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/api/index.js` | 修复：401 拦截器将 E5010（用户被禁用）加入透传白名单，登录页可正确显示禁用提示 |
+| `docs/ROADMAP.md` | 修正：§7.4c 接口封装文件从 `api/user.js` 改为 `api/admin.js`（新增函数），与 ARCHITECTURE.md §9b.3 对齐 |
+| `frontend/docs/FRONTEND.md` | 补充：§7.5 AdminLayout 菜单高亮规则说明（含详情页菜单项使用自定义 computed 高亮） |
+
+---
+
 ## 2026-06-13 — 前端架构审查：用户管理（7.4c 前端）
 
 ### 新增

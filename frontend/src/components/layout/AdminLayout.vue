@@ -47,6 +47,14 @@
           <i class="fas fa-file-alt"></i>
           <span>文档管理</span>
         </router-link>
+        <router-link
+          to="/admin/users"
+          class="admin-nav-item"
+          :class="{ active: isUsersActive }"
+        >
+          <i class="fas fa-users"></i>
+          <span>用户管理</span>
+        </router-link>
       </nav>
 
       <!-- 底部：返回对话 -->
@@ -83,6 +91,8 @@ const pageTitle = computed(() => {
     AdminTraceDetail: 'Trace 详情',
     AdminKnowledge: '知识库管理',
     AdminDocuments: '文档管理',
+    AdminUsers: '用户管理',
+    AdminUserDetail: '用户详情',
   }
   return titles[route.name] || '管理后台'
 })
@@ -90,6 +100,11 @@ const pageTitle = computed(() => {
 /** Trace 菜单高亮：列表页和详情页都激活 */
 const isTraceActive = computed(() => {
   return route.name === 'AdminTraces' || route.name === 'AdminTraceDetail'
+})
+
+/** 用户管理菜单高亮：列表页和详情页都激活 */
+const isUsersActive = computed(() => {
+  return route.name === 'AdminUsers' || route.name === 'AdminUserDetail'
 })
 </script>
 

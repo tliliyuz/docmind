@@ -29,3 +29,35 @@ export function getAdminDocuments(params = {}) {
 export function getTraceStats(params = {}) {
   return api.get('/admin/stats/traces', { params })
 }
+
+// ==================== 用户管理 API — 对齐 API.md §7.7 ====================
+
+/** GET /api/admin/users — 用户列表（分页+筛选）
+ * @param {Object} params — { page, page_size, role, status, search }
+ */
+export function getAdminUsers(params = {}) {
+  return api.get('/admin/users', { params })
+}
+
+/** GET /api/admin/users/{userId} — 用户详情（含统计+Token 聚合）
+ * @param {number} userId
+ */
+export function getAdminUserDetail(userId) {
+  return api.get(`/admin/users/${userId}`)
+}
+
+/** PUT /api/admin/users/{userId}/status — 禁用/启用用户
+ * @param {number} userId
+ * @param {string} status — "active" | "disabled"
+ */
+export function changeUserStatus(userId, status) {
+  return api.put(`/admin/users/${userId}/status`, { status })
+}
+
+/** POST /api/admin/users/{userId}/reset-password — 重置用户密码
+ * @param {number} userId
+ * @param {string} newPassword
+ */
+export function resetUserPassword(userId, newPassword) {
+  return api.post(`/admin/users/${userId}/reset-password`, { new_password: newPassword })
+}

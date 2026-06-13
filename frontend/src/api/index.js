@@ -89,8 +89,8 @@ api.interceptors.response.use(
 
     const code = error.response?.data?.code
 
-    // E5002：用户名或密码错误（登录/改密场景）→ 非 token 问题，透传错误给调用方
-    if (code === 'E5002') {
+    // E5002：用户名或密码错误 / E5010：用户被禁用 → 非 token 问题，透传错误给调用方
+    if (code === 'E5002' || code === 'E5010') {
       return Promise.reject(error)
     }
 
