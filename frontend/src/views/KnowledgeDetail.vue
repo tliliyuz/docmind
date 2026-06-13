@@ -514,21 +514,23 @@ async function confirmDeleteDoc(doc) {
         confirmButtonClass: 'el-button--danger'
       }
     )
-    // 全屏阻塞 loading，阻止用户继续操作
-    const loadingInstance = ElLoading.service({
-      fullscreen: true,
-      text: `正在删除「${doc.filename}」…`,
-      background: 'rgba(0, 0, 0, 0.5)',
-    })
-    try {
-      await store.removeDoc(kbId.value, doc.id)
-      store.stopPolling(doc.id)
-      ElMessage.success('文档已删除')
-    } finally {
-      loadingInstance.close()
-    }
   } catch {
-    // 取消
+    return // 用户取消
+  }
+
+  const loadingInstance = ElLoading.service({
+    fullscreen: true,
+    text: `正在删除「${doc.filename}」…`,
+    background: 'rgba(0, 0, 0, 0.5)',
+  })
+  try {
+    await store.removeDoc(kbId.value, doc.id)
+    store.stopPolling(doc.id)
+    ElMessage.success('文档已删除')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '删除失败')
+  } finally {
+    loadingInstance.close()
   }
 }
 
@@ -595,11 +597,23 @@ async function confirmDeleteKb() {
         confirmButtonClass: 'el-button--danger'
       }
     )
+  } catch {
+    return // 用户取消
+  }
+
+  const loadingInstance = ElLoading.service({
+    fullscreen: true,
+    text: `正在删除知识库「${store.currentKb?.name || ''}」…`,
+    background: 'rgba(0, 0, 0, 0.5)',
+  })
+  try {
     await store.deleteKb(kbId.value)
     ElMessage.success('知识库已删除')
     router.push('/knowledge-bases')
-  } catch {
-    // 取消
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '删除失败')
+  } finally {
+    loadingInstance.close()
   }
 }
 

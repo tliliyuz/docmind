@@ -117,11 +117,12 @@
       <div class="actions-row">
         <button
           class="action-card"
-          :class="user.status === 'active' ? 'danger' : ''"
+          :class="[user.status === 'active' ? 'danger' : '', toggleLoading ? 'loading' : '']"
+          :disabled="toggleLoading"
           @click="confirmToggleStatus"
         >
-          <i :class="user.status === 'active' ? 'fas fa-ban' : 'fas fa-check-circle'"></i>
-          <span>{{ user.status === 'active' ? '禁用用户' : '启用用户' }}</span>
+          <i :class="toggleLoading ? 'fas fa-spinner fa-spin' : (user.status === 'active' ? 'fas fa-ban' : 'fas fa-check-circle')"></i>
+          <span>{{ toggleLoading ? '处理中…' : (user.status === 'active' ? '禁用用户' : '启用用户') }}</span>
         </button>
         <button class="action-card" @click="openResetDialog">
           <i class="fas fa-key"></i>
@@ -206,6 +207,8 @@ function goBack() {
 }
 
 // ==================== 禁用/启用 ====================
+const toggleLoading = ref(false)
+
 async function confirmToggleStatus() {
   const isDisabling = user.value.status === 'active'
   const action = isDisabling ? '禁用' : '启用'
@@ -225,6 +228,7 @@ async function confirmToggleStatus() {
   }
 
   const newStatus = isDisabling ? 'disabled' : 'active'
+  toggleLoading.value = true
   try {
     const { data } = await changeUserStatus(user.value.id, newStatus)
     if (data.code === '0') {
@@ -235,6 +239,8 @@ async function confirmToggleStatus() {
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '网络异常，请稍后重试')
+  } finally {
+    toggleLoading.value = false
   }
 }
 
@@ -528,6 +534,13 @@ onMounted(loadDetail)
   border-color: var(--dm-danger);
   color: var(--dm-danger);
   background: var(--dm-danger-light);
+}
+
+.action-card:disabled,
+.action-card.loading {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .action-card i {

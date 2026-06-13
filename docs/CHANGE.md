@@ -1,5 +1,48 @@
 # DocMind 变更日志
 
+## 2026-06-13 — §8 交互规范补全 + 全项目危险操作交互对齐
+
+### 背景
+
+FRONTEND.md §8 组件交互规范仅覆盖通用按钮/表单/加载/确认弹窗，缺失三个关键领域：确认弹窗到 API 响应之间的 loading 策略、本地更新 vs 服务端重拉取的取舍原则、前台与后台的交互差异约定。代码层面，Admin KnowledgeList/DocumentList 的删除已修复为全屏 loading + 本地 filter，但其他危险操作（用户禁用/启用、前台 KB 删除、KB 编辑后刷新）的交互模式不一致。
+
+### 文档变更
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/docs/FRONTEND.md` | v0.29→v0.30。§8.4 扩展为覆盖所有危险操作（不再仅限删除）；新增 §8.5 危险操作统一规范（含模板代码）；新增 §8.6 列表刷新策略取舍表；新增 §8.7 前台与后台交互差异约定；新增 §8.8 Admin 页面交互约定（表格操作列/筛选联动/空状态/分页）；§7.8.2/§7.9.2 补充禁用/启用操作的按钮 loading 描述；§11 TODO 表同步更新 |
+
+### 代码变更
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/views/KnowledgeList.vue` | 导入 `ElLoading`；KB 删除拆分为两段式 try 块（确认 + API）；添加 `ElLoading.service({ fullscreen: true })` 全屏阻塞；`finally` 中 `loadingInstance.close()` |
+| `frontend/src/views/KnowledgeDetail.vue` | KB 删除（`confirmDeleteKb`）添加全屏阻塞 loading（文本取 `store.currentKb?.name`）；文档删除（`confirmDeleteDoc`）重构为标准两段式 try 块 + 补 `catch` 错误提示（原先 API 失败会静默吞掉错误） |
+| `frontend/src/views/admin/AdminUserList.vue` | 新增 `toggleLoadingId` ref；禁用/启用操作添加行级 loading 反馈（dropdown item disabled + spinner 图标 + "处理中…" 文案）；`finally` 中清除 loading |
+| `frontend/src/views/admin/AdminUserDetail.vue` | 新增 `toggleLoading` ref；禁用/启用按钮添加 loading 状态（disabled + spinner + "处理中…"）；补充 `.action-card:disabled` CSS 样式 |
+| `frontend/src/views/admin/KnowledgeList.vue` | 编辑 KB 成功后从 `loadList()` 全量重拉改为本地 patch（`list.value[idx] = { ...list.value[idx], name, description, visibility }`） |
+
+### 验证中发现并修复的额外问题
+
+| 问题 | 说明 |
+|:---|:---|
+| `KnowledgeDetail.vue` KB 删除 loading 文本引用了不存在的 `kbInfo` 变量 | 改为 `store.currentKb?.name`，与组件其他位置（标题、编辑表单）一致 |
+| `KnowledgeDetail.vue` `confirmDeleteDoc` 的 API 失败无错误提示 | 原单 try 块结构中，内层 `try` 无 `catch`，API 异常落入外层 `catch { // 取消 }` 被静默忽略。重构为标准两段式并添加 `ElMessage.error` |
+
+### 附带修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/tests/AdminLayout.test.js` | 侧边栏导航项断言从 4→5（"用户管理"在之前版本已添加但测试未同步更新） |
+
+### 测试结果
+
+| 指标 | 值 |
+|:---|:---|
+| 测试文件 | 26 个全部通过 |
+| 测试用例 | 442 个全部通过 |
+| 修复用例 | 1（AdminLayout 侧边栏导航项数量断言） |
+
 ## 2026-06-13 — Admin 管理页面删除交互优化：全屏阻塞 + 本地即时移除
 
 ### 背景

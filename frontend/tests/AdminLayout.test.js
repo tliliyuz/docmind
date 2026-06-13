@@ -120,7 +120,7 @@ describe('AdminLayout', () => {
     const links = wrapper.findAll('.admin-nav-item')
     const texts = links.map(l => l.text())
     expect(texts).not.toContain('活跃统计')
-    expect(texts).toHaveLength(4)  // 系统统计 + 链路追踪 + 知识库管理 + 文档管理
+    expect(texts).toHaveLength(5)  // 系统统计 + 链路追踪 + 知识库管理 + 文档管理 + 用户管理 + 文档管理
   })
 
   it('侧边栏包含返回对话按钮', () => {

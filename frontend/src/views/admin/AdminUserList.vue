@@ -111,9 +111,10 @@
                 <el-dropdown-item
                   command="toggleStatus"
                   :class="row.status === 'active' ? 'danger-action' : ''"
+                  :disabled="toggleLoadingId === row.id"
                 >
-                  <i :class="row.status === 'active' ? 'fas fa-ban' : 'fas fa-check-circle'"></i>
-                  {{ row.status === 'active' ? '禁用用户' : '启用用户' }}
+                  <i :class="toggleLoadingId === row.id ? 'fas fa-spinner fa-spin' : (row.status === 'active' ? 'fas fa-ban' : 'fas fa-check-circle')"></i>
+                  {{ toggleLoadingId === row.id ? '处理中…' : (row.status === 'active' ? '禁用用户' : '启用用户') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="resetPassword">
                   <i class="fas fa-key"></i> 重置密码
@@ -255,6 +256,8 @@ function handleAction(row, command) {
 }
 
 // ==================== 禁用/启用 ====================
+const toggleLoadingId = ref(null)
+
 async function confirmToggleStatus(row) {
   const isDisabling = row.status === 'active'
   const action = isDisabling ? '禁用' : '启用'
@@ -274,6 +277,7 @@ async function confirmToggleStatus(row) {
   }
 
   const newStatus = isDisabling ? 'disabled' : 'active'
+  toggleLoadingId.value = row.id
   try {
     const { data } = await changeUserStatus(row.id, newStatus)
     if (data.code === '0') {
@@ -285,6 +289,8 @@ async function confirmToggleStatus(row) {
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '网络异常，请稍后重试')
+  } finally {
+    toggleLoadingId.value = null
   }
 }
 

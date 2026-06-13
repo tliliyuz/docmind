@@ -289,7 +289,16 @@ async function handleEditSubmit() {
     if (data.code === '0') {
       ElMessage.success('知识库已更新')
       editDialogVisible.value = false
-      loadList()
+      // 本地 patch：直接更新行数据，避免全量重拉
+      const idx = list.value.findIndex(k => k.id === editingRow.value.id)
+      if (idx !== -1) {
+        list.value[idx] = {
+          ...list.value[idx],
+          name: editFormData.name,
+          description: editFormData.description,
+          visibility: editFormData.visibility,
+        }
+      }
     } else {
       ElMessage.error(data.message || '更新失败')
     }

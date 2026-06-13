@@ -164,7 +164,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useKnowledgeStore, getDepartmentStyle } from '@/stores/knowledge'
 
@@ -283,10 +283,22 @@ async function confirmDelete(kb) {
         confirmButtonClass: 'el-button--danger'
       }
     )
+  } catch {
+    return // 用户取消
+  }
+
+  const loadingInstance = ElLoading.service({
+    fullscreen: true,
+    text: `正在删除知识库「${kb.name}」…`,
+    background: 'rgba(0, 0, 0, 0.5)',
+  })
+  try {
     await store.deleteKb(kb.id)
     ElMessage.success('知识库已删除')
-  } catch {
-    // 取消操作
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '删除失败')
+  } finally {
+    loadingInstance.close()
   }
 }
 
