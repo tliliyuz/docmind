@@ -2,10 +2,11 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
-from app.dependencies import get_db
+from app.dependencies import get_db, get_current_user
 from app.core.security import create_access_token
 from app.core.database import async_session
 
@@ -24,10 +25,38 @@ def mock_db():
     return session
 
 
+async def _mock_get_current_user(request: Request):
+    """Mock get_current_user：从 JWT token 解析用户信息，不查数据库。
+
+    get_current_user 改为 async + DB 查询后，测试中需 override 避免真实 DB 调用。
+    """
+    from app.core.security import decode_access_token
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        from app.core.exceptions import InvalidTokenException
+        raise InvalidTokenException("缺少 Authorization header")
+    token = auth_header[7:]
+    payload = decode_access_token(token)
+    if not payload:
+        from app.core.exceptions import InvalidTokenException
+        raise InvalidTokenException("Token 解析失败")
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, ValueError, TypeError):
+        from app.core.exceptions import InvalidTokenException
+        raise InvalidTokenException("Token payload 异常")
+    return {
+        "user_id": user_id,
+        "username": payload.get("username"),
+        "role": payload.get("role"),
+    }
+
+
 @pytest.fixture
 async def async_client(mock_db):
-    """带 mock DB 的 async HTTP 客户端，自动覆盖 get_db 依赖"""
+    """带 mock DB 的 async HTTP 客户端，自动覆盖 get_db 和 get_current_user 依赖"""
     app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_current_user] = _mock_get_current_user
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

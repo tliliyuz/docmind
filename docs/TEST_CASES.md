@@ -959,8 +959,6 @@
 | U15.4 | 用户列表-搜索 | `admin_service.list_users(search="zhang")` | 多用户 | 仅返回用户名含「zhang」的 | ⬜ | — | 模糊搜索 |
 | U15.5 | 用户详情-正常 | `admin_service.get_user_detail()` | 有效 user_id | 返回含 kb_count/doc_count/conversation_count/message_count/token 统计 | ⬜ | — | 跨表聚合 |
 | U15.6 | 用户详情-不存在 | `admin_service.get_user_detail()` | 无效 user_id | 抛出 NotFoundException | ⬜ | — | — |
-| U15.7 | 变更角色-user→admin | `admin_service.change_user_role()` | role="admin" | 角色更新成功 | ⬜ | — | — |
-| U15.8 | 变更角色-admin→user | `admin_service.change_user_role()` | role="user" | 角色更新成功 | ⬜ | — | — |
 | U15.9 | 禁用用户 | `admin_service.change_user_status()` | status="disabled" | 状态更新为 disabled | ⬜ | — | — |
 | U15.10 | 启用用户 | `admin_service.change_user_status()` | status="active" | 状态更新为 active | ⬜ | — | — |
 | U15.11 | 重置密码 | `admin_service.reset_user_password()` | 有效 user_id + new_password | 密码更新成功，新密码可登录 | ⬜ | — | 验证密码哈希更新 |
@@ -975,8 +973,6 @@
 | A9.22 | 用户列表-搜索 | GET `/api/admin/users?search=zhang` | 多用户 | 200, 仅返回匹配的用户 | ⬜ | — | — |
 | A9.23 | 用户详情-正常 | GET `/api/admin/users/{user_id}` | 有效 user_id | 200, 含统计信息 | ⬜ | — | — |
 | A9.24 | 用户详情-不存在 | GET `/api/admin/users/99999` | 无效 user_id | 404 | ⬜ | — | — |
-| A9.25 | 变更角色-正常 | PUT `/api/admin/users/{user_id}/role` | `{"role":"admin"}` | 200, 角色已更新 | ⬜ | — | — |
-| A9.26 | 变更角色-无效值 | PUT `/api/admin/users/{user_id}/role` | `{"role":"invalid"}` | 422 | ⬜ | — | 参数校验 |
 | A9.27 | 禁用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"disabled"}` | 200, 状态已更新 | ⬜ | — | — |
 | A9.28 | 启用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"active"}` | 200, 状态已更新 | ⬜ | — | — |
 | A9.29 | 重置密码-正常 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"Temp123!"}` | 200, 密码已重置 | ⬜ | — | — |

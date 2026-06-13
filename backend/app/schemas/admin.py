@@ -93,3 +93,62 @@ class AdminDocListResponse(BaseModel):
     page: int
     page_size: int
     items: list[AdminDocItem]
+
+
+# ==================== 用户管理 Schema — 对齐 API.md §7.7 ====================
+
+
+class AdminUserItem(BaseModel):
+    """GET /api/admin/users 响应中的单条用户
+
+    对齐 API.md §7.7：用户列表项，含关联统计
+    """
+    id: int
+    username: str
+    role: str = Field(description="user / admin")
+    status: str = Field(description="active / disabled")
+    kb_count: int = 0
+    doc_count: int = 0
+    conversation_count: int = 0
+    last_active_at: datetime | None = None
+    created_at: datetime
+
+
+class AdminUserListResponse(BaseModel):
+    """GET /api/admin/users 响应
+
+    对齐 API.md §7.7：分页用户列表
+    """
+    total: int
+    page: int
+    page_size: int
+    items: list[AdminUserItem]
+
+
+class AdminUserDetailResponse(BaseModel):
+    """GET /api/admin/users/{user_id} 响应
+
+    对齐 API.md §7.7：用户详情（含统计 + Token 聚合）
+    """
+    id: int
+    username: str
+    role: str
+    status: str
+    kb_count: int = 0
+    doc_count: int = 0
+    conversation_count: int = 0
+    message_count: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    last_active_at: datetime | None = None
+    created_at: datetime
+
+
+class AdminUserStatusRequest(BaseModel):
+    """PUT /api/admin/users/{user_id}/status 请求体"""
+    status: str = Field(description="active / disabled")
+
+
+class AdminUserResetPasswordRequest(BaseModel):
+    """POST /api/admin/users/{user_id}/reset-password 请求体"""
+    new_password: str = Field(min_length=6, description="新密码（≥6 字符）")

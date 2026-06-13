@@ -6,7 +6,8 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
-from app.core.exceptions import PermissionDeniedException
+from app.core.exceptions import PermissionDeniedException, UserDisabledException
+from app.models.user import User
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -20,12 +21,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-def get_current_user(request: Request) -> dict:
-    """从 request.state 中获取已认证用户信息（由 AuthMiddleware 注入）。
+async def get_current_user(request: Request) -> dict:
+    """从 request.state 中获取已认证用户信息（由 AuthMiddleware 注入），
+    并校验用户 status 是否被禁用。
+
     路由中通过 Depends(get_current_user) 使用。
     """
+    user_id = request.state.user_id
+    # 校验用户是否被禁用（主键查询，毫秒级）
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        if user is None or user.status == "disabled":
+            raise UserDisabledException()
     return {
-        "user_id": request.state.user_id,
+        "user_id": user_id,
         "username": request.state.username,
         "role": request.state.role,
     }

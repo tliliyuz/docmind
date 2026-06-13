@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.27 |
-| 最后更新 | 2026-06-12 |
+| 文档版本 | v0.28 |
+| 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ✅） |
 
 ---
 
@@ -120,6 +120,14 @@
 | E5007 | 401 | Refresh Token 已吊销 |
 | E5008 | 401 | Refresh Token 无效或格式错误 |
 | E5009 | 401 | Token 可能泄露（Rotation 检测到旧 token 被重用，已吊销全部会话） |
+| E5010 | 401 | 用户已被禁用（登录/刷新/API 请求时用户 status=disabled） |
+
+#### 用户管理错误（E7xxx）
+
+| 错误码 | HTTP 状态码 | 说明 |
+|:---|:---|:---|
+| E7002 | 404 | 用户不存在 |
+| E7003 | 400 | 不能修改自身（admin 不能修改自己的角色或状态） |
 
 #### 系统错误（E9xxx）
 
@@ -1528,7 +1536,7 @@ Trace 统计数据，用于 ECharts 图表渲染。
 
 ### 7.7 用户管理接口
 
-> **实现状态**：Phase 5 待实现。详见 `Admin_设计补全_最终方案.md` §五。
+> **实现状态**：已实现（Phase 5）。后端 `app/api/admin.py` + `app/services/admin_service.py` + `app/schemas/admin.py`。
 > **权限**：所有 `/api/admin/users/*` 端点要求 `role=admin`。
 
 #### GET `/api/admin/users`
@@ -1596,30 +1604,6 @@ Trace 统计数据，用于 ECharts 图表渲染。
     "last_active_at": "2026-06-12T10:30:00+00:00",
     "created_at": "2026-05-06T08:00:00+00:00"
   }
-}
-```
-
-#### PUT `/api/admin/users/{user_id}/role`
-
-变更用户角色。
-
-**请求**：
-
-```json
-{"role": "admin"}
-```
-
-| 字段 | 类型 | 必填 | 说明 |
-|:---|:---|:---|:---|
-| `role` | string | 是 | user / admin |
-
-**响应** (200)：
-
-```json
-{
-  "code": "0",
-  "message": "角色变更成功",
-  "data": {"id": 3, "username": "zhangsan", "role": "admin"}
 }
 ```
 
@@ -1899,7 +1883,6 @@ data: {"message_id": 13, "title": null, "token_usage": {"prompt": 80, "completio
 | GET | `/api/admin/traces/{trace_id}` | admin | Trace 详情（含各阶段 JSON） | Phase 5 |
 | GET | `/api/admin/users` | admin | 用户列表（分页+筛选） | Phase 5 |
 | GET | `/api/admin/users/{user_id}` | admin | 用户详情（含统计） | Phase 5 |
-| PUT | `/api/admin/users/{user_id}/role` | admin | 变更用户角色 | Phase 5 |
 | PUT | `/api/admin/users/{user_id}/status` | admin | 禁用/启用用户 | Phase 5 |
 | POST | `/api/admin/users/{user_id}/reset-password` | admin | 重置用户密码 | Phase 5 |
 

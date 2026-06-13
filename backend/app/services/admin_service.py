@@ -1,4 +1,4 @@
-"""管理后台业务逻辑 — 统计/知识库列表/文档列表
+"""管理后台业务逻辑 — 统计/知识库列表/文档列表/用户管理
 
 对齐 API.md §7：所有接口要求 admin 角色，跨用户管理视图。
 """
@@ -11,10 +11,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.exceptions import AdminSelfModifyException, PasswordSameAsCurrentException, UserNotFoundException
+from app.core.security import hash_password, verify_password
 from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
 from app.models.message import Message
+from app.models.trace import Trace
 from app.models.user import User
 from app.schemas.admin import (
     AdminDocItem,
@@ -22,6 +25,9 @@ from app.schemas.admin import (
     AdminKBItem,
     AdminKBListResponse,
     AdminStatsResponse,
+    AdminUserDetailResponse,
+    AdminUserItem,
+    AdminUserListResponse,
     StatsChartsData,
 )
 
@@ -238,3 +244,229 @@ async def list_all_documents(
     return AdminDocListResponse(
         total=total, page=page, page_size=page_size, items=items
     )
+
+
+# ==================== 用户管理 — 对齐 API.md §7.7 ====================
+
+
+async def list_users(
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 20,
+    role: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+) -> AdminUserListResponse:
+    """获取用户列表（分页+筛选）。
+
+    对齐 API.md §7.7 GET /api/admin/users：
+    - 支持 role/status/search 筛选
+    - 聚合 kb_count/doc_count/conversation_count
+    - 从 traces 表获取 last_active_at
+    """
+    # 基础查询
+    base_q = select(User)
+
+    # 筛选条件
+    conditions = []
+    if role is not None:
+        conditions.append(User.role == role)
+    if status is not None:
+        conditions.append(User.status == status)
+    if search:
+        conditions.append(User.username.like(f"%{search}%"))
+
+    if conditions:
+        base_q = base_q.where(*conditions)
+
+    # 总数
+    count_q = select(func.count()).select_from(base_q.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    # 分页数据
+    q = (
+        base_q
+        .order_by(User.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    users = (await db.execute(q)).scalars().all()
+
+    items = []
+    for user in users:
+        # 聚合统计
+        kb_count = (await db.execute(
+            select(func.count()).select_from(
+                select(KnowledgeBase).where(KnowledgeBase.user_id == user.id).subquery()
+            )
+        )).scalar() or 0
+
+        doc_count = (await db.execute(
+            select(func.count()).select_from(
+                select(Document)
+                .join(KnowledgeBase, Document.kb_id == KnowledgeBase.id)
+                .where(KnowledgeBase.user_id == user.id)
+                .subquery()
+            )
+        )).scalar() or 0
+
+        conversation_count = (await db.execute(
+            select(func.count()).select_from(
+                select(Conversation).where(Conversation.user_id == user.id).subquery()
+            )
+        )).scalar() or 0
+
+        # 最后活跃时间（从 traces 表聚合）
+        last_active_at = (await db.execute(
+            select(func.max(Trace.created_at)).where(Trace.user_id == user.id)
+        )).scalar()
+
+        items.append(AdminUserItem(
+            id=user.id,
+            username=user.username,
+            role=user.role,
+            status=user.status,
+            kb_count=kb_count,
+            doc_count=doc_count,
+            conversation_count=conversation_count,
+            last_active_at=last_active_at,
+            created_at=user.created_at,
+        ))
+
+    return AdminUserListResponse(
+        total=total, page=page, page_size=page_size, items=items
+    )
+
+
+async def get_user_detail(
+    db: AsyncSession,
+    user_id: int,
+) -> AdminUserDetailResponse:
+    """获取用户详情（含统计 + Token 聚合）。
+
+    对齐 API.md §7.7 GET /api/admin/users/{user_id}：
+    - 基础统计 + message_count
+    - 从 traces 表聚合 total_input_tokens / total_output_tokens / last_active_at
+    """
+    user = await db.get(User, user_id)
+    if user is None:
+        raise UserNotFoundException(user_id)
+
+    # 聚合统计
+    kb_count = (await db.execute(
+        select(func.count()).select_from(
+            select(KnowledgeBase).where(KnowledgeBase.user_id == user_id).subquery()
+        )
+    )).scalar() or 0
+
+    doc_count = (await db.execute(
+        select(func.count()).select_from(
+            select(Document)
+            .join(KnowledgeBase, Document.kb_id == KnowledgeBase.id)
+            .where(KnowledgeBase.user_id == user_id)
+            .subquery()
+        )
+    )).scalar() or 0
+
+    conversation_count = (await db.execute(
+        select(func.count()).select_from(
+            select(Conversation).where(Conversation.user_id == user_id).subquery()
+        )
+    )).scalar() or 0
+
+    message_count = (await db.execute(
+        select(func.count()).select_from(
+            select(Message)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(Conversation.user_id == user_id)
+            .subquery()
+        )
+    )).scalar() or 0
+
+    # Token 聚合（从 traces 表 JSON_EXTRACT）
+    token_stats = (await db.execute(
+        select(
+            func.coalesce(func.sum(func.JSON_EXTRACT(Trace.generate, "$.input_tokens")), 0),
+            func.coalesce(func.sum(func.JSON_EXTRACT(Trace.generate, "$.output_tokens")), 0),
+            func.max(Trace.created_at),
+        ).where(Trace.user_id == user_id)
+    )).one()
+    total_input_tokens = int(token_stats[0] or 0)
+    total_output_tokens = int(token_stats[1] or 0)
+    last_active_at = token_stats[2]
+
+    return AdminUserDetailResponse(
+        id=user.id,
+        username=user.username,
+        role=user.role,
+        status=user.status,
+        kb_count=kb_count,
+        doc_count=doc_count,
+        conversation_count=conversation_count,
+        message_count=message_count,
+        total_input_tokens=total_input_tokens,
+        total_output_tokens=total_output_tokens,
+        last_active_at=last_active_at,
+        created_at=user.created_at,
+    )
+
+
+async def change_user_status(
+    db: AsyncSession,
+    user_id: int,
+    new_status: str,
+    current_user_id: int,
+) -> dict:
+    """禁用/启用用户。
+
+    对齐 API.md §7.7 PUT /api/admin/users/{user_id}/status：
+    - 禁用时吊销全部 refresh_token
+    - 不能操作自己
+    """
+    if user_id == current_user_id:
+        raise AdminSelfModifyException()
+
+    user = await db.get(User, user_id)
+    if user is None:
+        raise UserNotFoundException(user_id)
+    if user.status == new_status:
+        return {"id": user.id, "username": user.username, "status": user.status}
+
+    user.status = new_status
+    await db.flush()
+
+    # 禁用时吊销全部 refresh_token
+    if new_status == "disabled":
+        from app.services.auth_service import revoke_all_user_tokens
+        await revoke_all_user_tokens(db, user_id)
+
+    logger.info("用户状态变更: user_id=%d, new_status=%s", user_id, new_status)
+    return {"id": user.id, "username": user.username, "status": user.status}
+
+
+async def reset_user_password(
+    db: AsyncSession,
+    user_id: int,
+    new_password: str,
+) -> dict:
+    """重置用户密码 + 吊销全部 refresh_token。
+
+    对齐 API.md §7.7 POST /api/admin/users/{user_id}/reset-password。
+    新密码不能与当前密码相同。
+    """
+    user = await db.get(User, user_id)
+    if user is None:
+        raise UserNotFoundException(user_id)
+
+    if verify_password(new_password, user.password_hash):
+        raise PasswordSameAsCurrentException()
+
+    user.password_hash = hash_password(new_password)
+    await db.flush()
+
+    # 吊销全部 refresh_token（密码已变更，强制重新登录）
+    from app.services.auth_service import revoke_all_user_tokens
+    await revoke_all_user_tokens(db, user_id)
+
+    logger.info("管理员重置用户密码: user_id=%d", user_id)
+    return {"id": user.id, "username": user.username}

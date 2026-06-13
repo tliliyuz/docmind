@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.41 |
-| 最后更新 | 2026-06-12 |
+| 文档版本 | v0.42 |
+| 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / 用户管理 ⬜ / 限流 ⬜ / 部署 ✅） |
 
@@ -1731,6 +1731,33 @@ backend/app/main.py              ← handler 增强（堆栈屏蔽 + 日志）
 - 刷新成功后重放原请求，刷新失败（refresh_token 也过期/吊销）→ 跳转登录页
 - Pinia `authStore` 新增 `refreshToken()` action + `scheduleRefresh()` 定时器（access_token 到期前 1 分钟自动刷新）
 
+#### 9.2.6 共享基础设施：revoke_all_user_tokens
+
+`revoke_all_user_tokens(db, user_id)` 是吊销指定用户全部有效 refresh_token 的通用函数，定位为**共享基础设施**（非 `auth_service` 内部实现）：
+
+```python
+# backend/app/services/auth_service.py
+
+async def revoke_all_user_tokens(db: AsyncSession, user_id: int) -> None:
+    """吊销指定用户的全部有效 refresh_token（公开函数，供跨模块调用）。
+
+    调用方：
+    - auth_service.change_password()     — 改密后强制下线
+    - auth_service.refresh()             — Token 泄露检测时吊销
+    - admin_service.change_user_status() — 禁用用户后强制下线（§9b.5）
+    - admin_service.reset_user_password() — 重置密码后强制下线（§9b.5）
+    """
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    await db.flush()
+```
+
+> **注意**：原内部函数 `_revoke_all_user_tokens`（带 `_` 前缀）在用户管理实现时统一去掉前缀，`auth_service` 内部调用处同步更新。
+
 ### 9.3 结构化日志
 
 #### 9.3.1 设计目标
@@ -1822,7 +1849,6 @@ GET /api/admin/stats (已有接口增强，新增 charts 字段)
 |:---|:---|:---|
 | `/api/admin/users` | GET | 用户列表（分页+筛选：role/status/search） |
 | `/api/admin/users/{user_id}` | GET | 用户详情（含统计：kb_count/doc_count/conversation_count/message_count/token 统计） |
-| `/api/admin/users/{user_id}/role` | PUT | 变更角色（user/admin） |
 | `/api/admin/users/{user_id}/status` | PUT | 禁用/启用用户（active/disabled） |
 | `/api/admin/users/{user_id}/reset-password` | POST | 重置密码（生成临时密码） |
 
@@ -1836,6 +1862,44 @@ frontend/src/views/admin/AdminUserList.vue   ← 新建：用户列表页
 frontend/src/views/admin/AdminUserDetail.vue ← 新建：用户详情页
 frontend/src/api/admin.js                ← 修改：新增用户管理接口封装
 ```
+
+### 9b.4 认证链路分层职责
+
+用户管理引入 `status` 字段后，认证链路需要在三个层级各司其职，保持关注点分离：
+
+| 层级 | 组件 | 职责 | 是否查 DB |
+|:---|:---|:---|:---|
+| L1 无状态解码 | `AuthMiddleware` | JWT 解码 + 将 `user_id` / `username` / `role` 写入 `request.state` | 否 |
+| L2 有状态校验 | `get_current_user` 依赖 | 查询 `user.status`，disabled → 401 E5010 | 是（`db.get(User, user_id)` 单行查询） |
+| L3 角色校验 | `require_admin` 依赖 | 检查 `role == admin`，非 admin → 403 E5005 | 否（读 `request.state`） |
+
+**设计决策：禁用检查放在 `get_current_user` 依赖而非 `AuthMiddleware`**。理由：
+
+- `AuthMiddleware` 是纯 ASGI 中间件，保持无状态、无 DB 依赖，职责单一且易于测试。在 Middleware 中引入 DB 查询会打破这一边界，且中间件无法使用 FastAPI 的 `Depends(get_db)` 依赖注入，需自行管理 session 生命周期。
+- `get_current_user` 是 FastAPI 依赖注入层，天然可以使用 `Depends(get_db)` 获取 session，且只在需要认证的端点生效（公开路由不经过此依赖）。
+- 性能影响：每次认证请求多一次 `SELECT ... WHERE id=?` 主键查询（<1ms）。后续可通过 Redis 缓存 `user:{id}:status` 优化，但 v1 不引入缓存层。
+
+### 9b.5 禁用用户全链路行为
+
+用户被 admin 设为 `disabled` 后，系统在各入口的拦截策略：
+
+| 入口 | 拦截点 | 行为 | 错误码 |
+|:---|:---|:---|:---|
+| `POST /api/auth/login` | `auth_service.login()` — 密码验证通过后、签发 token 前 | 检查 `user.status`，disabled → 拒绝登录 | E5010, 401 |
+| `POST /api/auth/refresh` | `auth_service.refresh()` — `db.get(User, user_id)` 之后 | 检查 `user.status`，disabled → 拒绝刷新 | E5010, 401 |
+| 任意认证 API 请求 | `get_current_user` 依赖（§9b.4 L2） | 检查 `user.status`，disabled → 401 | E5010, 401 |
+
+**三端协同保证完整覆盖**：
+
+- `login` 拦截防止被禁用用户获取新 token 对（用户体验：登录即告知"已被禁用"，而非登录成功后立即被拒）。
+- `refresh` 拦截防止被禁用用户通过 refresh_token 续期（admin 禁用操作 + token 吊销后，旧 access_token 到期时刷新失败）。
+- `get_current_user` 拦截兜底：即使 access_token 尚未过期（最长 15min），下一次 API 请求也会被拒绝。
+
+**Token 吊销联动**：`change_user_status`（→disabled）和 `reset_user_password` 操作完成后，须吊销该用户全部有效 refresh_token，强制其下线。此逻辑复用 `auth_service.revoke_all_user_tokens()`（见 §9.2.6）。
+
+### 9b.6 共享基础设施
+
+用户管理的 `change_user_status`（→disabled）和 `reset_user_password` 操作需要吊销用户全部 refresh_token。此逻辑复用 `auth_service.revoke_all_user_tokens()`，详见 §9.2.6。
 
 ---
 

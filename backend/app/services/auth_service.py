@@ -18,9 +18,11 @@ from app.config import settings
 from app.core.exceptions import (
     InvalidCredentialsException,
     InvalidRefreshTokenException,
+    PasswordSameAsCurrentException,
     RefreshTokenExpiredException,
     RefreshTokenRevokedException,
     TokenLeakDetectedException,
+    UserDisabledException,
     UsernameExistsException,
 )
 from app.core.security import (
@@ -66,6 +68,10 @@ async def login(db: AsyncSession, username: str, password: str) -> TokenResponse
 
     if user is None or not verify_password(password, user.password_hash):
         raise InvalidCredentialsException()
+
+    # 禁用用户拒绝登录
+    if user.status == "disabled":
+        raise UserDisabledException()
 
     # 签发 token 对
     access_token = create_access_token(user.id, user.username, user.role)
@@ -125,7 +131,7 @@ async def refresh(db: AsyncSession, refresh_token_str: str) -> TokenResponse:
             "检测到已吊销的 refresh_token 被重用: user_id=%d, 可能泄露",
             user_id,
         )
-        await _revoke_all_user_tokens(db, user_id)
+        await revoke_all_user_tokens(db, user_id)
         raise TokenLeakDetectedException()
 
     # 检查过期（DB 已存储 UTC，ORM DateTime(timezone=True) 返回 aware datetime）
@@ -140,6 +146,10 @@ async def refresh(db: AsyncSession, refresh_token_str: str) -> TokenResponse:
     user = await db.get(User, user_id)
     if user is None:
         raise InvalidRefreshTokenException("用户不存在")
+
+    # 禁用用户拒绝刷新
+    if user.status == "disabled":
+        raise UserDisabledException()
 
     new_access_token = create_access_token(user.id, user.username, user.role)
     new_refresh_token_str = create_refresh_token(user.id)
@@ -189,6 +199,7 @@ async def change_password(
     """修改密码 + 吊销该用户全部 refresh_token（强制下线）。
 
     对齐 API.md §2 PUT /api/auth/password。
+    新密码不能与当前密码相同。
     """
     user = await db.get(User, user_id)
     if user is None:
@@ -197,17 +208,20 @@ async def change_password(
     if not verify_password(old_password, user.password_hash):
         raise InvalidCredentialsException()
 
+    if old_password == new_password:
+        raise PasswordSameAsCurrentException()
+
     # 更新密码
     user.password_hash = hash_password(new_password)
     await db.flush()
 
     # 吊销该用户全部 refresh_token
-    await _revoke_all_user_tokens(db, user_id)
+    await revoke_all_user_tokens(db, user_id)
 
     logger.info("密码修改成功，全部 refresh_token 已吊销: user_id=%d", user_id)
 
 
-async def _revoke_all_user_tokens(db: AsyncSession, user_id: int) -> None:
+async def revoke_all_user_tokens(db: AsyncSession, user_id: int) -> None:
     """吊销指定用户的全部有效 refresh_token。"""
     now = datetime.now(timezone.utc)
     await db.execute(

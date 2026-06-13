@@ -1,4 +1,4 @@
-"""管理后台 API — 统计/知识库管理/文档管理/链路追踪
+"""管理后台 API — 统计/知识库管理/文档管理/链路追踪/用户管理
 
 对齐 API.md §7：所有端点要求 admin 角色（require_admin 依赖注入）。
 """
@@ -6,14 +6,23 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_admin
 from app.core.exceptions import AppException
+from app.schemas.admin import (
+    AdminUserResetPasswordRequest,
+    AdminUserStatusRequest,
+)
 from app.services.admin_service import (
+    change_user_status,
     get_stats,
+    get_user_detail,
     list_all_documents,
     list_all_kbs,
+    list_users,
+    reset_user_password,
 )
 from app.services.trace_service import (
     get_trace_detail,
@@ -149,3 +158,83 @@ async def get_admin_trace_stats(
     """
     data = await get_trace_stats(db, days=days, group_by=group_by)
     return {"code": "0", "message": "ok", "data": data.model_dump()}
+
+
+# ==================== 用户管理接口 — 对齐 API.md §7.7 ====================
+
+
+@router.get("/users")
+async def list_admin_users(
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数"),
+    role: str | None = Query(None, description="user / admin"),
+    status: str | None = Query(None, description="active / disabled"),
+    search: str | None = Query(None, description="按用户名模糊搜索"),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """获取用户列表（分页+筛选）
+
+    对齐 API.md §7.7 GET /api/admin/users。
+    """
+    data = await list_users(
+        db,
+        page=page,
+        page_size=page_size,
+        role=role,
+        status=status,
+        search=search,
+    )
+    return {"code": "0", "message": "ok", "data": data.model_dump()}
+
+
+@router.get("/users/{user_id}")
+async def get_admin_user_detail(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """获取用户详情（含统计）
+
+    对齐 API.md §7.7 GET /api/admin/users/{user_id}。
+    """
+    data = await get_user_detail(db, user_id=user_id)
+    return {"code": "0", "message": "ok", "data": data.model_dump()}
+
+
+@router.put("/users/{user_id}/status")
+async def update_admin_user_status(
+    user_id: int,
+    body: AdminUserStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """禁用/启用用户
+
+    对齐 API.md §7.7 PUT /api/admin/users/{user_id}/status。
+    """
+    data = await change_user_status(
+        db,
+        user_id=user_id,
+        new_status=body.status,
+        current_user_id=current_user.get("user_id"),
+    )
+    message = "用户已禁用" if body.status == "disabled" else "用户已启用"
+    return {"code": "0", "message": message, "data": data}
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_admin_user_password(
+    user_id: int,
+    body: AdminUserResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """重置用户密码
+
+    对齐 API.md §7.7 POST /api/admin/users/{user_id}/reset-password。
+    """
+    data = await reset_user_password(
+        db, user_id=user_id, new_password=body.new_password
+    )
+    return {"code": "0", "message": "密码重置成功", "data": data}

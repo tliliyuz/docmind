@@ -164,7 +164,7 @@ class TestRefreshRotation:
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(side_effect=[
             _make_mock_execute(rt),  # 查 refresh_tokens
-            MagicMock(),              # _revoke_all_user_tokens 的 update
+            MagicMock(),              # revoke_all_user_tokens 的 update
         ])
         mock_db.get = AsyncMock(return_value=user)
 
@@ -317,6 +317,21 @@ class TestChangePassword:
 
         # 验证 execute 被调用（UPDATE refresh_tokens SET revoked_at = now()）
         assert mock_db.execute.called
+
+    @pytest.mark.asyncio
+    async def test_新旧密码相同被拒绝(self):
+        from app.services.auth_service import change_password
+        from app.core.exceptions import PasswordSameAsCurrentException
+        from app.core.security import hash_password
+
+        user = _make_user()
+        user.password_hash = hash_password("same_password")
+
+        mock_db = AsyncMock()
+        mock_db.get = AsyncMock(return_value=user)
+
+        with pytest.raises(PasswordSameAsCurrentException):
+            await change_password(mock_db, 1, "same_password", "same_password")
 
 
 # ==================== API 层测试 ====================

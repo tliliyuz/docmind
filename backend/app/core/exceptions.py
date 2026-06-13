@@ -206,6 +206,30 @@ class TokenLeakDetectedException(AppException):
         )
 
 
+# ==================== 用户管理错误 E7xxx ====================
+
+class UserNotFoundException(AppException):
+    def __init__(self, user_id: int):
+        super().__init__("E7002", "用户不存在", 404, f"user_id={user_id} 不存在")
+
+
+class AdminSelfModifyException(AppException):
+    def __init__(self):
+        super().__init__("E7003", "不能修改自身", 400, "管理员不能修改自己的角色或状态")
+
+
+class PasswordSameAsCurrentException(AppException):
+    def __init__(self):
+        super().__init__("E7004", "新密码不能与原密码相同", 400, "请设置一个与当前密码不同的新密码")
+
+
+# ==================== 认证错误补充 E5xxx ====================
+
+class UserDisabledException(AppException):
+    def __init__(self):
+        super().__init__("E5010", "用户已被禁用", 401, "该用户账号已被管理员禁用，请联系管理员")
+
+
 # ==================== 系统错误 E9xxx ====================
 
 class InternalServerException(AppException):

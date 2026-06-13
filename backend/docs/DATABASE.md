@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.13 |
-| 最后更新 | 2026-06-12 |
+| 文档版本 | v0.14 |
+| 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现） |
 
@@ -64,6 +64,7 @@ CREATE TABLE users (
     username VARCHAR(64) NOT NULL UNIQUE,
     password_hash VARCHAR(256) NOT NULL,
     role ENUM('user', 'admin') DEFAULT 'user',
+    status ENUM('active', 'disabled') DEFAULT 'active',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -75,6 +76,7 @@ CREATE TABLE users (
 | username | VARCHAR(64) | 用户名，唯一索引 |
 | password_hash | VARCHAR(256) | bcrypt 哈希后的密码 |
 | role | ENUM | 角色：user（普通用户）/ admin（管理员） |
+| status | ENUM | 状态：active（正常）/ disabled（禁用），禁用后拒绝登录和 Token 刷新 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间，自动更新 |
 

@@ -19,6 +19,11 @@ class User(Base):
         default="user",
         server_default=text("'user'"),
     )
+    status: Mapped[str] = mapped_column(
+        Enum("active", "disabled", name="user_status"),
+        default="active",
+        server_default=text("'active'"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime, server_default=func.current_timestamp()
     )

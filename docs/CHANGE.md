@@ -1,5 +1,62 @@
 # DocMind 变更日志
 
+## 2026-06-13 — 前端架构审查：用户管理（7.4c 前端）
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/REVIEW-2026-06-13-user-mgmt-frontend.md` | 新建：Phase 5 §7.4c 用户管理前端任务架构对齐检查报告。发现 E5010 被 axios 拦截器吞掉（高优）+ api/user.js 文件名冲突 + AdminLayout 菜单高亮模式未文档化 |
+
+---
+
+## 2026-06-13 — Phase 5：用户管理后端实现（7.4c）
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/alembic/versions/b3c4d5e6f7a8_users新增status字段.py` | users 表新增 `status ENUM('active','disabled') DEFAULT 'active'` 列 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/models/user.py` | 新增 `status` 字段（`Enum("active","disabled")` + `server_default`） |
+| `backend/app/core/exceptions.py` | 新增 `UserNotFoundException`(E7002) / `AdminSelfModifyException`(E7003) / `UserDisabledException`(E5010) |
+| `backend/app/schemas/admin.py` | 新增 `AdminUserItem` / `AdminUserListResponse` / `AdminUserDetailResponse` / `AdminUserStatusRequest` / `AdminUserResetPasswordRequest` |
+| `backend/app/services/auth_service.py` | `_revoke_all_user_tokens` → `revoke_all_user_tokens`（公开函数）；`login()` / `refresh()` 增加 `status=='disabled'` 拦截（E5010） |
+| `backend/app/dependencies.py` | `get_current_user()` 改为 async，增加 DB 查询校验 `user.status`（禁用用户返回 E5010） |
+| `backend/app/services/admin_service.py` | 新增 `list_users` / `get_user_detail` / `change_user_status` / `reset_user_password` 4 个函数 |
+| `backend/app/api/admin.py` | 新增 4 个用户管理端点（GET/PUT/POST）；导入新 Schema 和 Service 函数 |
+| `backend/tests/conftest.py` | `get_current_user` 改为 async 后新增 `_mock_get_current_user` mock 函数，避免测试中真实 DB 查询 |
+| `backend/tests/test_admin_api.py` | 新增 22 个用户管理测试用例：列表 3 + 详情 3 + 状态变更 3 + 重置密码 3 + 权限矩阵 7 |
+| `backend/tests/test_refresh_token.py` | 注释同步更新（`_revoke_all_user_tokens` → `revoke_all_user_tokens`） |
+| `backend/docs/DATABASE.md` | v0.13→v0.14。§2.1 users 表新增 `status` 字段 |
+| `backend/docs/API.md` | v0.27→v0.28。§7.7 标记已实现；§1.4 新增 E5010/E7002/E7003 错误码 |
+| `docs/ROADMAP.md` | v0.49→v0.50。§7.4c 后端 4 项任务 ⬜→✅，状态栏更新 |
+
+### 架构决策
+
+| 决策 | 说明 |
+|---|---|
+| 禁用拦截位置 | `get_current_user()` 依赖（非 AuthMiddleware），保持中间件无状态 |
+| Token 吊销复用 | `revoke_all_user_tokens()` 从 `_` 私有提升为公开，admin_service 导入复用 |
+| 禁用时行为 | `change_user_status(disabled)` 自动吊销全部 refresh_token；`login()` / `refresh()` 拒绝 disabled 用户 |
+
+---
+
+## 2026-06-13 — 架构文档补充：用户管理认证链路设计
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/ARCHITECTURE.md` | v0.41→v0.42。§9b 新增 §9b.4 认证链路分层职责（AuthMiddleware / get_current_user / require_admin 三层分工）+ §9b.5 禁用用户全链路行为（login/refresh/API 三端拦截策略）+ §9b.6 共享基础设施（引用 §9.2.6）。§9.2 新增 §9.2.6 revoke_all_user_tokens 共享基础设施定位（含代码签名和调用方清单） |
+| `docs/REVIEW-2026-06-13-user-mgmt-plan.md` | 新建：Phase 5 §7.4c 用户管理后端任务清单架构对齐检查报告（8 步骤逐项审查，发现 3 个偏差并给出修正建议） |
+
+---
+
 ## 2026-06-13 — Phase 5：chat_service 集成埋点测试
 
 ### 新增
