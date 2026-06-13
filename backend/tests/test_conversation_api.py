@@ -30,17 +30,22 @@ from app.schemas.conversation import (
 
 
 def _make_conv_response(conv_id=1, user_id=1, kb_id=1, title="新对话",
-                        message_count=0):
+                        message_count=0, kb_status="active", kb_name="测试知识库",
+                        last_message_at=None, original_kb_id=None, original_kb_name=None):
     return ConversationResponse(
         id=conv_id, user_id=user_id, kb_id=kb_id, title=title,
         message_count=message_count,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        kb_status=kb_status, kb_name=kb_name,
+        last_message_at=last_message_at or datetime.now(timezone.utc),
+        original_kb_id=original_kb_id, original_kb_name=original_kb_name,
     )
 
 
 def _make_conv_detail(conv_id=1, user_id=1, kb_id=1, title="新对话",
-                      message_count=2, messages=None):
+                      message_count=2, messages=None, kb_status="active",
+                      kb_name="测试知识库", last_message_at=None):
     if messages is None:
         messages = [
             MessageResponse(id=1, role="user", content="问题",
@@ -53,6 +58,8 @@ def _make_conv_detail(conv_id=1, user_id=1, kb_id=1, title="新对话",
         message_count=message_count,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        kb_status=kb_status, kb_name=kb_name,
+        last_message_at=last_message_at or datetime.now(timezone.utc),
         messages=messages,
     )
 
@@ -83,6 +90,9 @@ class TestCreateConversation:
         assert body["message"] == "会话创建成功"
         assert body["data"]["title"] == "关于报销流程"
         assert body["data"]["kb_id"] == 1
+        assert body["data"]["kb_status"] == "active"
+        assert body["data"]["kb_name"] == "测试知识库"
+        assert body["data"]["last_message_at"] is not None
 
     @pytest.mark.asyncio
     async def test_create_default_title(self, async_client, auth_headers):
@@ -138,6 +148,11 @@ class TestListConversations:
         assert body["code"] == "0"
         assert body["data"]["total"] == 2
         assert len(body["data"]["items"]) == 2
+        # 新字段断言
+        item = body["data"]["items"][0]
+        assert item["kb_status"] == "active"
+        assert item["kb_name"] == "测试知识库"
+        assert item["last_message_at"] is not None
 
     @pytest.mark.asyncio
     async def test_list_unauthenticated(self, async_client):
@@ -177,6 +192,9 @@ class TestGetConversationDetail:
         body = response.json()
         assert body["code"] == "0"
         assert body["data"]["title"] == "关于报销流程"
+        assert body["data"]["kb_status"] == "active"
+        assert body["data"]["kb_name"] == "测试知识库"
+        assert body["data"]["last_message_at"] is not None
         assert len(body["data"]["messages"]) == 2
         assert body["data"]["messages"][0]["role"] == "user"
         assert body["data"]["messages"][1]["role"] == "assistant"
@@ -324,3 +342,60 @@ class TestDeleteConversation:
     async def test_delete_unauthenticated(self, async_client):
         response = await async_client.delete("/api/conversations/1")
         assert response.status_code == 401
+
+
+class TestConversationKbStatus:
+    """会话 kb_status / kb_name / last_message_at 字段覆盖"""
+
+    @pytest.mark.asyncio
+    async def test_list_orphan_conversation(self, async_client, auth_headers):
+        """kb_id=None + original_kb_id 非空（KB 已删除），kb_status="deleted" """
+        with patch("app.api.conversation.list_conversations", new_callable=AsyncMock) as mock:
+            mock.return_value = _make_list_data(total=1, items=[
+                _make_conv_response(conv_id=10, kb_id=None, kb_status="deleted",
+                                    kb_name="已删除知识库", original_kb_id=5,
+                                    original_kb_name="已删除知识库"),
+            ])
+
+            response = await async_client.get("/api/conversations", headers=auth_headers)
+
+        assert response.status_code == 200
+        item = response.json()["data"]["items"][0]
+        assert item["kb_id"] is None
+        assert item["kb_status"] == "deleted"
+        assert item["kb_name"] == "已删除知识库"
+        assert item["original_kb_id"] == 5
+        assert item["original_kb_name"] == "已删除知识库"
+
+    @pytest.mark.asyncio
+    async def test_detail_unavailable_kb(self, async_client, auth_headers):
+        """KB 为 private 且非 owner 时，kb_status=unavailable"""
+        with patch("app.api.conversation.get_conversation_detail", new_callable=AsyncMock) as mock:
+            mock.return_value = _make_conv_detail(
+                conv_id=20, kb_id=5, kb_status="unavailable", kb_name="私有知识库",
+            )
+
+            response = await async_client.get("/api/conversations/20", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["kb_status"] == "unavailable"
+        assert data["kb_name"] == "私有知识库"
+
+    @pytest.mark.asyncio
+    async def test_list_last_message_at_ordering(self, async_client, auth_headers):
+        """列表 items 包含 last_message_at 字段"""
+        with patch("app.api.conversation.list_conversations", new_callable=AsyncMock) as mock:
+            t1 = datetime(2026, 6, 13, 10, 0, 0, tzinfo=timezone.utc)
+            t2 = datetime(2026, 6, 13, 8, 0, 0, tzinfo=timezone.utc)
+            mock.return_value = _make_list_data(total=2, items=[
+                _make_conv_response(conv_id=1, title="较新", last_message_at=t1),
+                _make_conv_response(conv_id=2, title="较旧", last_message_at=t2),
+            ])
+
+            response = await async_client.get("/api/conversations", headers=auth_headers)
+
+        assert response.status_code == 200
+        items = response.json()["data"]["items"]
+        assert items[0]["last_message_at"] is not None
+        assert items[1]["last_message_at"] is not None

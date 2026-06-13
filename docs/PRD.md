@@ -15,21 +15,26 @@
 
 核心价值：**你不必知道文档在哪、叫什么名字、关键词是什么，问就行。**
 
-### 1.1 对标参考
-
-设计思路对齐 **Ragent AI**（Java 企业级 RAG 平台），本项目用 Python 生态重新实现核心设计。
+### 1.1 原型设计
+本项目用 Python 生态重新实现核心设计。
 主要原型图：
+![登录页](../resources/img/login.png)
+![注册页](../resources/img/register.png)
+![主页](../resources/img/chat_home.png)
+![聊天页1](../resources/img/chat_1.png)
+![聊天页2](../resources/img/chat_2.png)
+![知识库列表](../resources/img/kb_list.png)
+![知识库详情](../resources/img/kb_detail.png)
+![添加知识库](../resources/img/kb_add.png)
+![系统统计](../resources/img/admin_stus_1.png)
+![系统统计2](../resources/img/admin_stus_2.png)
+![链路追踪列表](../resources/img/admin_trace_list.png)
+![链路追踪详情](../resources/img/admin_trace_detail.png)
+![知识库管理](../resources/img/admin_kb_list.png)
+![文档管理](../resources/img/admin_doc_list.png)
+![用户列表](../resources/img/admin_user_list.png)
+![用户详情](../resources/img/admin_user_detail.png)
 
-登录页:
-![登录页](../resources/product_image/login.png)
-注册页：
-![注册页](../resources/product_image/register.png)
-后台页:
-![管理后台](../resources/product_image/admin.png)
-聊天页1:
-![问答页-欢迎](../resources/product_image/chat.png)
-聊天页2:
-![问答页-对话](../resources/product_image/chat-2.png)
 
 ---
 

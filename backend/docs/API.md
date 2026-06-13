@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.30 |
+| 文档版本 | v0.31 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ✅） |
@@ -880,7 +880,12 @@ Celery Worker（异步）:
     "user_id": 1,
     "kb_id": 1,
     "title": "关于报销流程",
+    "kb_status": "active",
+    "kb_name": "公司内部知识库",
+    "original_kb_id": null,
+    "original_kb_name": null,
     "message_count": 0,
+    "last_message_at": null,
     "created_at": "2026-05-11T11:00:00",
     "updated_at": "2026-05-11T11:00:00"
   }
@@ -891,7 +896,7 @@ Celery Worker（异步）:
 
 **权限**：user（需登录）
 
-获取当前用户的会话列表（分页），按更新时间倒序。
+获取当前用户的会话列表（分页），按 last_message_at DESC 排序。
 
 **查询参数**：
 
@@ -915,7 +920,10 @@ Celery Worker（异步）:
         "id": 1,
         "kb_id": 1,
         "title": "关于报销流程",
+        "kb_status": "active",
+        "kb_name": "公司内部知识库",
         "message_count": 8,
+        "last_message_at": "2026-05-11T14:30:00",
         "created_at": "2026-05-11T11:00:00",
         "updated_at": "2026-05-11T14:30:00"
       }
@@ -941,7 +949,10 @@ Celery Worker（异步）:
     "user_id": 1,
     "kb_id": 1,
     "title": "关于报销流程",
+    "kb_status": "active",
+    "kb_name": "公司内部知识库",
     "message_count": 2,
+    "last_message_at": "2026-05-11T11:00:05",
     "created_at": "2026-05-11T11:00:00",
     "updated_at": "2026-05-11T11:00:05",
     "messages": [
@@ -992,6 +1003,33 @@ Celery Worker（异步）:
   "data": null
 }
 ```
+
+### 5.1 会话与知识库生命周期解耦（孤儿会话处理）
+
+会话（Conversation）的生命周期**独立于**知识库（Knowledge Base）。知识库被删除后，关联的会话不会被级联删除，而是成为「孤儿会话」继续存在。
+
+**设计原则**：
+
+- **会话保留**：用户的历史对话记录具有长期价值（复盘、审计、知识沉淀），不因知识库删除而丢失
+- **数据完整性**：会话记录（含消息历史）永久保留，仅当用户主动删除会话时才清理
+- **前端提示**：孤儿会话在列表中通过 `kb_status` 和 `kb_name` 字段标识，前端应展示友好提示（如「关联知识库已删除」）
+
+**孤儿会话状态**：
+
+| 场景 | `kb_id` | `original_kb_id` | `kb_status` | `kb_name` | 前端行为 |
+|:---|:---|:---|:---|:---|:---|
+| 知识库正常 | `1` | `null` | `"active"` | `"公司内部知识库"` | 正常展示，可继续问答 |
+| 知识库已删除 | `null` | `1` | `"deleted"` | `"公司内部知识库"` | 展示 Banner「关联知识库已删除」，禁止继续问答 |
+| 知识库不可访问（权限变更） | `1` | `null` | `"unavailable"` | `"公司内部知识库"` | 展示提示「知识库不可访问」，禁止继续问答 |
+| 无关联知识库 | `null` | `null` | `null` | `null` | 正常展示（独立会话） |
+
+**后端实现**：
+
+- 会话列表/详情接口通过 `selectinload(Conversation.knowledge_base)` 加载 KB 关系，`_enrich_kb_status()` 动态计算 `kb_status` / `kb_name`
+- 知识库删除时 FK `ON DELETE SET NULL` 自动清空 `kb_id`；Celery 任务在物理删除前批量备份 `original_kb_id` / `original_kb_name`
+- 问答接口校验：若 `kb_status != "active"`，拒绝新消息并返回错误提示
+
+> **注意**：`kb_status` 和 `kb_name` 是**动态计算字段**（非数据库存储），`_enrich_kb_status()` 根据 `kb_id` + `original_kb_id` 实时判断。
 
 ---
 

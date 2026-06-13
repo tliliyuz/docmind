@@ -913,6 +913,49 @@ class TestChatSourcesSuppression:
         sources = next(e for e in events if e["event"] == "sources")
         assert len(sources["data"]["chunks"]) >= 1
 
+    @pytest.mark.asyncio
+    async def test_LLM前缀含未找到但有引用标注时sources仍发送(self):
+        """回归 VPN case：LLM 以"知识库中未找到"开头但给出 [来源N] 引用时，
+        应视为部分答案而非真阴性，sources 必须保留。
+
+        历史Bug：条件1（前缀匹配）不检查 _has_citation，导致
+        "知识库中未找到关于VPN忘记密码的直接处理流程……通过OA系统重置密码[来源1]"
+        被误判为真阴性，sources 事件被抑制。
+        修复：两级匹配均须尊重 _has_citation，有引用 → 不抑制。
+        """
+        from app.services.chat_service import chat
+
+        db = AsyncMock()
+        conv = MagicMock()
+        conv.id = 50
+        conv.user_id = 1
+        conv.message_count = 0
+
+        retrieval_output = _make_retrieval_output()
+        # LLM 以"未找到"开头，但后文给出有效引用（VPN case 典型模式）
+        llm_chunks = _make_llm_chunks([
+            "知识库中未找到关于VPN忘记密码的直接处理流程。",
+            "但根据文档，可以通过OA系统重置密码[来源1]。",
+        ])
+
+        with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
+                                  llm_chunks=llm_chunks):
+            response = await chat(
+                db=db, user_id=1, role="user",
+                conversation_id=None, kb_id=1,
+                question="VPN忘记密码怎么办", deep_thinking=False,
+            )
+            events = await _consume_sse(response)
+
+        # 关键断言：有 [来源N] 引用时，即使前缀含"未找到"，sources 也必须发送
+        event_types = [e["event"] for e in events]
+        assert "sources" in event_types, (
+            f"LLM 以'未找到'开头但有 [来源N] 引用时 sources 应保留，"
+            f"但实际事件序列不含 sources: {event_types}"
+        )
+        sources = next(e for e in events if e["event"] == "sources")
+        assert len(sources["data"]["chunks"]) >= 1
+
 
 class TestExtractCitationIndices:
     """U7.63d — _extract_citation_indices 单元测试

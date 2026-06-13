@@ -382,23 +382,35 @@ async def _generate_sse_stream(
 
     # 发送 sources 事件
     # 对齐 API.md §6.1：
-    #   1. "未找到相关信息"抑制（两级匹配）
+    #   1. "未找到相关信息"抑制：两级匹配均须尊重引用标注
+    #      - 前缀含"未找到" + 无 [来源N] → 真阴性，抑制 sources
+    #      - 前缀含"未找到" + 有 [来源N] → LLM 给出了部分引用答案，保留 sources
+    #      - 全文含"未找到" + 无 [来源N] → 真阴性，抑制 sources
     #   2. 引用过滤：LLM 写了 [来源N] 时仅发送被引用的 chunk（保留引用过滤优化）
     #   3. 回退：LLM 未引用 [来源N] 但有检索结果时，发送全部 used_chunks
     #      防止因 LLM 格式问题（DeepSeek/Qwen 常忘记写 [来源N]）导致 sources 消失
     _answer_stripped = assistant_content.strip()
     _answer_head = _answer_stripped[:35]
     _has_citation = bool(_CITATION_PATTERN.search(_answer_stripped))
+    # 两级匹配均须尊重引用：LLM 写了 [来源N] 意味着它认为自己有有价值引用，
+    # 即使以"未找到"开头也是部分答案而非真阴性（如"未找到X的直接流程，但Y[来源1]"）
     _not_found = (
-        any(kw in _answer_head for kw in _NOT_FOUND_KEYWORDS)
+        (any(kw in _answer_head for kw in _NOT_FOUND_KEYWORDS) and not _has_citation)
         or (any(kw in _answer_stripped for kw in _NOT_FOUND_KEYWORDS) and not _has_citation)
     )
     logger.info(
-        "SOURCES_DIAG used_chunks=%d cited=%s answer_head=%s",
+        "SOURCES_DIAG used_chunks=%d cited=%s has_citation=%s not_found=%s answer_head=%s",
         len(prompt_result.used_chunks) if prompt_result.used_chunks else 0,
         _extract_citation_indices(_answer_stripped) if _answer_stripped else set(),
-        _answer_stripped[:200] if _answer_stripped else "(empty)",
+        _has_citation,
+        _not_found,
+        _answer_head,
     )
+
+    if _not_found:
+        logger.info(
+            "SOURCES_SUPPRESSED: LLM 判定未找到（not_found=True），抑制 sources 发送",
+        )
 
     if reranked_output.results and not _not_found:
         _send_chunks = prompt_result.used_chunks or reranked_output.results
@@ -439,8 +451,10 @@ async def _generate_sse_stream(
         )
         db.add(assistant_msg)
         conv.message_count += 1
-        # 手动同步 updated_at（对齐 ARCHITECTURE.md §8.6）
-        conv.updated_at = datetime.now(timezone.utc)
+        # 手动同步 updated_at + last_message_at（对齐 ARCHITECTURE.md §8.6）
+        _now = datetime.now(timezone.utc)
+        conv.updated_at = _now
+        conv.last_message_at = _now
         await db.flush()
         await db.refresh(assistant_msg)
 
@@ -530,7 +544,9 @@ async def _generate_meta_response(
         )
         db.add(assistant_msg)
         conv.message_count += 1
-        conv.updated_at = datetime.now(timezone.utc)
+        _now = datetime.now(timezone.utc)
+        conv.updated_at = _now
+        conv.last_message_at = _now
 
         title = None
         if is_first_turn:
@@ -617,8 +633,10 @@ async def _validate_and_prepare(
     )
     db.add(user_msg)
     conv.message_count += 1
-    # 手动同步 updated_at（对齐 ARCHITECTURE.md §8.6）
-    conv.updated_at = datetime.now(timezone.utc)
+    # 手动同步 updated_at + last_message_at（对齐 ARCHITECTURE.md §8.6）
+    _now = datetime.now(timezone.utc)
+    conv.updated_at = _now
+    conv.last_message_at = _now
     await db.commit()
     t_db_done = time.perf_counter()
 

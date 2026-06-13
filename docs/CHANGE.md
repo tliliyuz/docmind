@@ -1,5 +1,149 @@
 # DocMind 变更日志
 
+## 2026-06-13 v0.32 — 孤儿会话交互优化
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/docs/FRONTEND.md` §4.3b | 横幅按钮「选择知识库」→「新建对话」；对话框标题改为「新建对话」，取消按钮文案改为「取消」 |
+| `frontend/docs/FRONTEND.md` §4.5.1 | 孤儿会话指示器从标题右侧文字标签改为左侧图标替换（`fa-message` → `fa-exclamation-triangle` / `fa-lock`），移除"已删除"/"不可访问"文字，仅保留 hover tooltip |
+| `frontend/src/views/ChatPage.vue` | 横幅按钮改为「新建对话」（`fa-plus` 图标）；`handleOrphanSwitchKB` → `handleOrphanNewChat`，对话框标题/确认/取消文案对齐 FRONTEND.md v0.32；placeholder 和 warning 文案统一 |
+| `frontend/src/components/layout/Sidebar.vue` | 四个时间组的孤儿会话指示器从标题右侧 `<span>` 标签改为左侧 `conv-icon` 条件渲染（`kb_status` 驱动），CSS 从 `.conv-orphan-tag` 改为 `.conv-icon-orphan` |
+| `frontend/src/components/chat/MessageItem.vue` | 孤儿会话隐藏「重新生成」按钮（`!chatStore.isKbOrphaned` 条件） |
+| `frontend/tests/MessageItem.test.js` | 补充 `chatStore` mock（`vi.hoisted` + 纯对象），适配 MessageItem 新增的 store 依赖 |
+
+### 设计决策
+
+| 决策 | 说明 |
+|:---|:---|
+| 侧边栏图标替换 | 侧边栏宽度有限，文字标签 + 重命名图标容易被遮挡；改为替换左侧会话图标，hover 显示 tooltip，视觉更清晰且不占额外空间 |
+| 横幅按钮语义对齐 | 「选择知识库」跳转的是新对话页而非 KB 选择器，改为「新建对话」更准确；取消操作语义简化为「取消」 |
+
+## 2026-06-13 — 孤儿会话检测修复（original_kb_id）
+
+### 背景
+
+CHANGE.md 已设计孤儿会话交互（Banner + 输入禁用 + 标签），前端代码已就位，但**从未触发**。根因：FK `ON DELETE SET NULL` 在 MySQL 层自动将 `conversations.kb_id` 置空，`_enrich_kb_status` 看到 `kb_id=None` 返回 `kb_status=None`，前端 `isKbOrphaned` 永远为 `false`。信息不可逆丢失——无法区分「从未关联 KB」和「KB 已删除」。
+
+### 设计决策
+
+| 决策 | 说明 |
+|:---|:---|
+| `original_kb_id` + `original_kb_name` | 在 Celery 物理删除 KB **之前**批量备份 `kb_id` → `original_kb_id` 和 `kb.name` → `original_kb_name`，恢复被 FK SET NULL 擦除的历史信息 |
+| 保持 `ON DELETE SET NULL` | 不改 FK 行为，最小化变更范围 |
+| 批量 UPDATE | `UPDATE conversations SET original_kb_id=?, original_kb_name=? WHERE kb_id=?`，避免 ORM 逐行循环 |
+| `kb_status` 三态 | `active`（kb_id 非空 + 可访问）/ `deleted`（kb_id 为空 + original_kb_id 非空）/ `unavailable`（kb_id 非空 + 权限不足） |
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/alembic/versions/d3e4f5a6b7c8_conversations新增original_kb列.py` | Alembic 迁移：`original_kb_id BIGINT NULL` + `original_kb_name VARCHAR(128) NULL` |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/models/conversation.py` | Conversation 模型新增 `original_kb_id` + `original_kb_name` 列 |
+| `backend/app/schemas/conversation.py` | `ConversationResponse` 新增 `original_kb_id` / `original_kb_name` 字段；`kb_status` 描述更新 |
+| `backend/app/services/conversation_service.py` | `_enrich_kb_status` 修改：`kb_id=None` + `original_kb_id` 非空 → `kb_status="deleted"` |
+| `backend/app/ingest/tasks.py` | `_delete_kb_async` 新增步骤 3.5：物理删除 KB 前批量备份 `original_kb_id` / `original_kb_name` |
+| `backend/tests/test_conversation_service.py` | `_make_conv` 新增 `original_kb_id`/`original_kb_name` 参数；拆分孤儿测试为「从未关联 KB」和「KB 已删除」两个用例；`test_孤儿会话kb_status为None` → `test_孤儿会话kb_status为deleted` |
+| `backend/tests/test_conversation_api.py` | `_make_conv_response` 新增 `original_kb_id`/`original_kb_name` 参数；`test_list_orphan_conversation` 断言更新为 `kb_status="deleted"` |
+
+### 文档更新
+
+| 文档 | 说明 |
+|:---|:---|
+| `backend/docs/DATABASE.md` | conversations 表新增 `original_kb_id` / `original_kb_name` 列 + 设计决策说明 |
+| `backend/docs/API.md` | ConversationResponse 新增字段；孤儿会话状态表更新（`kb_id` 为 null，`original_kb_id` 保留原值） |
+
+---
+
+## 2026-06-13 — 会话接口 500 修复（两个 Bug）
+
+### 修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/services/conversation_service.py` | **Bug 1**：`list_conversations` 排序使用 `.nulls_last()` 生成 `NULLS LAST` SQL 语法，MySQL 不支持（PostgreSQL 特有），导致会话列表 500。移除 `.nulls_last()`——MySQL `ORDER BY col DESC` 天然将 NULL 排在末尾 |
+| `backend/app/services/conversation_service.py` | **Bug 2**：`get_conversation_detail` 通过 `_get_owned_conversation`（`db.get()`）获取会话后访问 `conv.knowledge_base`，触发 lazy load。async 上下文中 lazy load 不可用（`MissingGreenlet`），导致会话详情 500。改为直接用 `selectinload(Conversation.knowledge_base)` 查询，一次性加载 relationship |
+
+### 测试
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_conversation_api.py` | 辅助函数新增 `kb_status`/`kb_name`/`last_message_at` 参数；现有测试补充新字段断言；新增 3 个用例（孤儿会话字段 / 不可访问 KB / last_message_at 排序）；共 23 用例 |
+| `backend/tests/test_conversation_service.py` | 新建 Service 层测试（11 用例）：`TestEnrichKbStatus` 4 分支 / `TestListConversations` 3 用例 / `TestCreateConversation` 1 用例 / `TestGetConversationDetail` 3 用例 |
+| `docs/TEST_CASES.md` | v0.73→v0.74。§6.1 用例数 20→23，A5.3 排序字段更正；新增 §6.1b Service 层测试 11 用例 |
+
+---
+
+## 2026-06-13 — 会话与知识库生命周期解耦（Conversation-KB Lifecycle Decoupling）
+
+### 背景
+
+两个关联 Bug：
+
+1. **会话排序污染**：删除 KB 后，MySQL FK `ON DELETE SET NULL` 级联更新 `conversations.kb_id`，连带触发 `ON UPDATE CURRENT_TIMESTAMP` 刷新 `updated_at`，导致旧对话浮到列表顶部
+2. **孤儿会话交互缺失**：KB 删除后会话保留（`kb_id=NULL`），但前端无任何提示，用户看到「请先选择知识库」却不知原因
+
+### 设计决策
+
+| 决策 | 说明 |
+|:---|:---|
+| `last_message_at` 独立排序字段 | 不复用 `updated_at`（语义错乱：标题/pin/归档/FK 级联等非消息操作均会污染），新增 `last_message_at` 仅在 `send_message`/`assistant_reply` 时更新 |
+| 孤儿会话保留 | 不删除历史对话（防止用户认为聊天记录丢失），增加前端提示与交互引导 |
+| `kb_status` 动态计算 | API 层 LEFT JOIN `knowledge_bases` 实时判断 `active`/`deleted`/`unavailable`，不持久化（避免同步开销） |
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/alembic/versions/c5d6e7f8a9b0_conversations新增last_message_at列.py` | Alembic 迁移：`last_message_at DATETIME NULL`，存量回填（MAX(messages.created_at) 或 created_at 降级），新建 `(user_id, last_message_at)` 复合索引 |
+| `frontend/src/views/ChatPage.vue` — 孤儿会话 Banner | KB 已删除/不可访问时，消息列表顶部显示警告 Banner（含知识库名称 + 「选择知识库」按钮 + ElMessageBox 确认弹窗：新建会话/继续当前会话） |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/models/conversation.py` | Conversation 模型新增 `last_message_at` 列（nullable DateTime）+ `idx_conversations_user_last_msg` 复合索引 |
+| `backend/app/schemas/conversation.py` | `ConversationResponse` 新增 `last_message_at`、`kb_status`、`kb_name` 三个字段（`kb_status`：`active`/`deleted`/`unavailable`/`null`） |
+| `backend/app/services/conversation_service.py` | 排序从 `updated_at DESC` 改为 `last_message_at DESC`；新增 `selectinload(Conversation.knowledge_base)` + `_enrich_kb_status()` 函数填充 `kb_status`/`kb_name`；`get_conversation_detail` 预加载 KB relationship |
+| `backend/app/services/chat_service.py` | 3 处 `conv.updated_at = ...` 改为同时更新 `conv.last_message_at`（`_now = datetime.now(timezone.utc); conv.updated_at = _now; conv.last_message_at = _now`） |
+| `frontend/src/stores/conversation.js` | `groupedConversations` 分组字段从 `updated_at` 改为 `last_message_at \|\| updated_at \|\| created_at`（降级链） |
+| `frontend/src/stores/chat.js` | 新增 `kbStatus`/`kbName` ref + `isKbOrphaned` computed；`loadConversation` 设置 `kb_status`/`kb_name`；`meta` 事件 `addConversation` 包含 `last_message_at`；`clearMessages`/`reset` 清理新状态 |
+| `frontend/src/views/ChatPage.vue` | 新增孤儿会话 Banner（警告图标 + 知识库名称 + 切换按钮）；`handleSend` 拦截孤儿会话发送；ChatInput 传入 `disabled`/`placeholder` prop |
+| `frontend/src/components/chat/ChatInput.vue` | 新增 `disabled`（Boolean）和 `placeholder`（String）prop；`handleKeydown` 检查 `disabled`；`displayPlaceholder` computed 优先使用 prop |
+| `frontend/src/components/layout/Sidebar.vue` | 会话时间显示从 `conv.updated_at` 改为 `conv.last_message_at \|\| conv.updated_at`；新增孤儿会话标签（`已删除` 橙色 / `不可访问` 紫色 + 图标） |
+
+### 文档更新
+
+| 文档 | 说明 |
+|:---|:---|
+| `backend/docs/DATABASE.md` | v0.14→v0.15。conversations 表新增 `last_message_at` 列 + `idx_conversations_user_last_msg` 索引 + 设计决策说明 |
+| `backend/docs/API.md` | v0.30→v0.31。ConversationResponse 新增 `kb_status`/`kb_name`/`last_message_at` 字段；排序说明更新；新增「会话与知识库生命周期解耦」设计文档 |
+| `frontend/docs/FRONTEND.md` | v0.30→v0.31。ChatStore 新增 `kbStatus`/`kbName`/`isKbOrphaned` 文档；Sidebar 孤儿会话指示器；ChatPage 孤儿 Banner（§4.3b）；ChatInput `disabled`/`placeholder` prop |
+
+---
+
+## 2026-06-13 — Sources 链路「未找到+有引用」误抑制 Bug 修复
+
+### 修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/services/chat_service.py` | **P0 Bug**：LLM 以"知识库中未找到"开头但给出 `[来源N]` 引用时，sources 事件被误抑制。根因：`_not_found` 两级匹配中条件1（前缀匹配）不检查 `_has_citation`，导致"未找到X的直接流程，但Y[来源1]"被误判为真阴性。修复：两级匹配均加 `and not _has_citation`，有引用即不抑制。增加 `SOURCES_SUPPRESSED` 诊断日志 + `SOURCES_DIAG` 增加 `has_citation`/`not_found` 字段 |
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_chat_service.py` — `TestChatSourcesSuppression::test_LLM前缀含未找到但有引用标注时sources仍发送` | VPN 回归测试：LLM 以"未找到"开头+`[来源1]`引用 → sources 必须保留 |
+
+---
+
 ## 2026-06-13 — 检索评估脚本 BM25 初始化修复 + ChromaDB 遥测噪音消除
 
 ### 修复

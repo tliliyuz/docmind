@@ -26,6 +26,7 @@ from app.core.storage import local_storage
 from app.ingest.celery_app import celery_app
 from app.ingest.lock import acquire_idempotency_lock, release_idempotency_lock
 from app.models.chunk import Chunk
+from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.enums import DocumentStatus, is_terminal
 from app.models.knowledge_base import KnowledgeBase
@@ -622,7 +623,19 @@ async def _delete_kb_async(kb_id: int) -> dict:
             except Exception as e:
                 logger.warning("知识库 %d 文档 %d 磁盘文件删除失败（非致命）: %s", kb_id, doc_id, e)
 
-    # 4. 物理删除 KB（FK CASCADE 自动清理 documents + chunks）
+    # 3.5 批量备份孤儿会话的 kb_id / kb_name（在物理删除 KB 之前）
+    async with async_session() as db:
+        kb = await db.get(KnowledgeBase, kb_id)
+        if kb is not None:
+            await db.execute(
+                update(Conversation)
+                .where(Conversation.kb_id == kb_id)
+                .values(original_kb_id=kb_id, original_kb_name=kb.name)
+            )
+            await db.commit()
+            logger.info("知识库 %d 关联会话已批量备份 original_kb_id", kb_id)
+
+    # 4. 物理删除 KB（FK CASCADE 自动清理 documents + chunks，conversations.kb_id SET NULL）
     async with async_session() as db:
         kb = await db.get(KnowledgeBase, kb_id)
         if kb is not None:

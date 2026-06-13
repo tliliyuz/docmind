@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.14 |
+| 文档版本 | v0.15 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现） |
+| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现 + last_message_at 排序字段新增） |
 
 ---
 
@@ -228,11 +228,15 @@ CREATE TABLE conversations (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id BIGINT NOT NULL,
     kb_id BIGINT COMMENT '关联的知识库',
+    original_kb_id BIGINT NULL COMMENT 'KB 删除前的原始 kb_id，用于孤儿会话检测',
+    original_kb_name VARCHAR(128) NULL COMMENT 'KB 删除前的原始名称，用于孤儿会话 Banner 展示',
     title VARCHAR(256) DEFAULT '新对话',
     message_count INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    last_message_at DATETIME NULL DEFAULT NULL COMMENT '最后一次产生消息的时间，用于列表排序。仅 send_message/assistant_reply 更新（不受 FK SET NULL 等非消息 UPDATE 污染）',
     INDEX idx_user_id (user_id),
+    INDEX idx_conversations_user_last_msg (user_id, last_message_at) COMMENT '会话列表按 last_message_at DESC 排序查询',
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE SET NULL
 );
@@ -243,10 +247,37 @@ CREATE TABLE conversations (
 | id | BIGINT | 主键 |
 | user_id | BIGINT | 所属用户 ID，有索引 |
 | kb_id | BIGINT | 关联的知识库 ID（可选，表示对话的知识域） |
+| original_kb_id | BIGINT | KB 删除前的原始 ID，用于孤儿会话检测。KB 物理删除前由 Celery 批量备份 |
+| original_kb_name | VARCHAR(128) | KB 删除前的原始名称，用于孤儿会话 Banner 展示 |
 | title | VARCHAR(256) | 对话标题（可由首条消息自动生成） |
 | message_count | INT | 消息总数（冗余缓存） |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
+| last_message_at | DATETIME | 最后一次产生消息的时间，用于列表排序。仅 send_message/assistant_reply 更新（不受 FK SET NULL 等非消息 UPDATE 污染） |
+
+**设计决策：为什么新增 `last_message_at` 而不复用 `updated_at` 排序？**
+
+> `updated_at` 列由 `ON UPDATE CURRENT_TIMESTAMP` 自动维护，任何 `UPDATE` 操作都会刷新该值——包括：
+> - `conversations.kb_id` 外键 `ON DELETE SET NULL` 级联（知识库删除时 kb_id 置空，触发 updated_at 更新）
+> - 管理员后台修改会话标题、元数据等非消息操作
+> - 未来可能新增的任何 `UPDATE conversations SET ...` 语句
+>
+> 会话列表的默认排序（"最近有消息的会话排在前面"）应当只反映**真实消息活动**，而非上述元数据变更。因此引入 `last_message_at` 列：
+> - **仅**在 `send_message`（用户发送）和 `assistant_reply`（助手回复）时由业务代码显式更新
+> - 不受 FK 级联、管理员操作、标题修改等"非消息 UPDATE"影响
+> - 配合 `idx_conversations_user_last_msg (user_id, last_message_at)` 复合索引，实现高效的会话列表排序查询
+
+**设计决策：为什么新增 `original_kb_id` / `original_kb_name`？**
+
+> FK `ON DELETE SET NULL` 在 MySQL 层自动将 `conversations.kb_id` 置空，导致信息不可逆丢失——无法区分「从未关联 KB」和「KB 已删除」。
+>
+> 解决方案：在 Celery 物理删除 KB **之前**，批量备份 `kb_id` → `original_kb_id` 和 `kb.name` → `original_kb_name`。MySQL FK SET NULL 随后清空 `kb_id`，但 `original_kb_id` 保留原值。
+>
+> `_enrich_kb_status` 据此判断：
+> - `kb_id=NULL` + `original_kb_id` 非空 → `kb_status="deleted"`（孤儿会话）
+> - `kb_id=NULL` + `original_kb_id` 为空 → `kb_status=None`（从未关联 KB）
+>
+> 使用批量 UPDATE（`UPDATE conversations SET original_kb_id=?, original_kb_name=? WHERE kb_id=?`）而非 ORM 逐行循环，避免 N 对象实例化 + N 次脏检查。
 
 ### 2.6 消息表 `messages`
 
@@ -389,6 +420,7 @@ CREATE TABLE traces (
 | chunks | idx_kb_id | 普通索引 | 按知识库统计分块 |
 | conversations | idx_user_id | 普通索引 | 按用户列出会话 |
 | conversations | idx_conversations_user_updated (user_id, updated_at) | 复合索引 | Phase 4：按用户列出会话并按更新时间倒序排列 |
+| conversations | idx_conversations_user_last_msg (user_id, last_message_at) | 复合索引 | 会话列表按 last_message_at DESC 排序查询（替代 updated_at 排序，避免 FK 级联污染） |
 | messages | idx_conversation_id | 普通索引 | 按会话列出消息 |
 | refresh_tokens | idx_user_id | 普通索引 | 按用户查询刷新令牌 |
 | refresh_tokens | idx_token_hash | 普通索引 | 按 token 哈希查找（刷新校验入口） |
