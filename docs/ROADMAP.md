@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.55 |
+| 文档版本 | v0.56 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ✅ / 外部资源 UUID 化 ⬜） |
 
 ---
 
@@ -572,6 +572,48 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 用户操作日志 API | GET `/api/admin/users/{user_id}/operations` |
 | 操作日志前端展示 | 用户详情页内嵌操作日志表格 |
 
+### 7.4d 外部资源 UUID 化（P1）
+
+> **目标**：消除 URL/API 响应中暴露的数据库自增主键，改用 UUID 作为外部标识符。
+> **设计文档**：ARCHITECTURE.md §8.11，DATABASE.md §2（uuid 字段），API.md（路径参数/响应字段更新）。
+> **方案**：双字段 — 内部保留 `id BIGINT AUTO_INCREMENT`（FK/JOIN 性能），新增 `uuid CHAR(36) UNIQUE` 作为外部标识。API 边界做 UUID↔ID 转换，内部逻辑不变。
+> **改造范围**：knowledge_bases / documents / conversations 三张表。User（Admin 内部/JWT 保护）、Message（SSE 专用/高频）、Chunk（内部结构）不改造。Trace 移除响应中的自增 `id`（已有 `trace_id` UUID）。
+
+#### 后端
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | Alembic 迁移 | knowledge_bases / documents / conversations 新增 `uuid CHAR(36) NOT NULL` + `UNIQUE INDEX idx_uuid (uuid)`，存量数据回填 `uuid()`，默认值 `gen_random_uuid()`（MySQL 8.0+）或 `UUID()` |
+| ⬜ | ORM 模型更新 | 三表新增 `uuid = Column(String(36), ...)` 字段 + `default=uuid4` 生成逻辑 |
+| ⬜ | Pydantic Schema 更新 | 响应 Schema：`id` → `uuid`，`kb_id` → `kb_uuid`，`conversation_id` → UUID 字符串类型。请求 Schema：`kb_id: int` → `kb_uuid: str`，`conversation_id: int\|None` → `str\|None` |
+| ⬜ | Service 层 UUID↔ID 转换 | 新增辅助函数：`uuid_to_id(db, model, uuid)` / `get_by_uuid(db, model, uuid)`；Chat Service / Document Service / Conversation Service 内部继续用 integer id，仅在 API 入口/出口转换 |
+| ⬜ | API 路径参数更新 | 所有 `{id}` / `{kb_id}` / `{doc_id}` 路径参数改为 `{uuid}` / `{kb_uuid}` / `{doc_uuid}`；FastAPI 路由 + 依赖注入适配 |
+| ⬜ | Chat API 适配 | `POST /api/chat`：`kb_id: int` → `kb_uuid: str`，`conversation_id: int\|None` → `str\|None`；SSE meta 事件 `conversation_id` 输出 UUID |
+| ⬜ | Trace 响应清理 | `GET /api/admin/traces` / `GET /api/admin/traces/{trace_id}` 响应移除自增 `id` 字段（保留 `trace_id` UUID） |
+| ⬜ | KB 选择器适配 | `GET /api/knowledge-bases/selectable` 返回 `uuid` 替代 `id` |
+| ⬜ | ChromaDB metadata 兼容 | ChromaDB 中 `kb_id` / `doc_id` 仍为 int（内部检索性能），UUID 仅在 API 边界转换，不侵入向量库 |
+
+#### 前端
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | API 接口适配 | `api/*.js` 所有接口参数 `kb_id` / `conversation_id` / `doc_id` 改为 `kb_uuid` / `conversation_id(UUID)` / `doc_uuid` |
+| ⬜ | 路由参数适配 | `/knowledge-bases/:id` → `/knowledge-bases/:uuid`；`/chat?conversation_id=` 值改为 UUID 字符串 |
+| ⬜ | Pinia Store 适配 | `knowledge.js` / `chat.js` / `conversation.js` 中 id 相关字段改为 uuid |
+| ⬜ | 组件适配 | KnowledgeDetail / ChatPage / Sidebar 等组件中 id 引用改为 uuid |
+| ⬜ | Admin 页面适配 | Trace 列表/详情移除自增 id 展示；Admin KB/Doc 列表 uuid 适配 |
+
+#### 测试
+
+| 状态 | 任务 | 测试类型 | 说明 |
+|:---|:---|:---|:---|
+| ⬜ | UUID 迁移测试 | 单元测试 | Alembic 迁移 up/down + 存量数据回填 + 唯一约束 |
+| ⬜ | UUID↔ID 转换测试 | 单元测试 | `uuid_to_id()` / `get_by_uuid()` 正常 + 不存在 + 无效格式 |
+| ⬜ | API 接口回归 | 接口测试 | 所有涉及 UUID 的端点：正常流程 + 无效 UUID 404 + 权限校验不变 |
+| ⬜ | SSE 事件回归 | 接口测试 | `POST /api/chat` SSE meta 事件 conversation_id 为 UUID 格式 |
+| ⬜ | 前端组件回归 | 组件测试 | 路由跳转 + API 调用参数 + 页面渲染正常 |
+| ⬜ | 全量回归测试 | 回归测试 | `regression_test.py` + `regression_multi_turn_test.py` 全部通过 |
+
 ### 7.5 Phase 5 测试
 
 | 状态 | 任务 | 测试类型 | 说明 |
@@ -589,7 +631,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 用户管理前端组件测试 | 前端组件 | AdminUserList 15 用例（C8.1-C8.9）+ AdminUserDetail 16 用例（C8.10-C8.14）= 31 用例，全部通过。覆盖渲染/空状态/筛选/分页/行点击/操作菜单/错误处理/加载状态/导航/禁用启用 |
 | ✅ | U8.2 Retrieval 超限截断测试 | 单元测试 | 3 用例（`test_history_memory.py` TestRetrievalBudgetTruncation）：超预算从低分丢弃 / 软上限跳过超大保留小 / score 降序验证。**P0 Bug 防御** |
 | ✅ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 3 用例（`test_history_memory.py` TestHistoryRetrievalDualBudget）：双池独立截断 / 历史不侵蚀检索（P0防御） / 检索不侵蚀历史。**P0 Bug 防御** |
-| ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
+| ✅ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
 | ⬜ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** |
 | ⬜ | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 |
 
@@ -603,6 +645,8 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | Trace 瀑布图 | v2 | v1 先用 JSON 面板展示详情，后续迭代时间轴可视化 |
 | 意图分类/响应模式饼图 | v2 | ECharts v1 先做趋势/延迟/Token 三个核心图表 |
 | 用户审计日志 | v2 | `user_operations` 表 + 操作日志 API，v1 先做 CRUD + 角色管理 |
+| User/Message/Chunk UUID 化 | 不做 | User 为 Admin 内部管理 + JWT 保护，暴露风险低；Message 仅通过 SSE 传输 + 高频写入，UUID 开销不值得；Chunk 为内部结构，不暴露给 API |
+| ChromaDB metadata 改用 UUID | 不做 | 向量库中 `kb_id`/`doc_id` 保持 int 类型，UUID 仅在 API 边界转换，避免影响检索性能和现有数据迁移成本 |
 
 ---
 

@@ -1,5 +1,34 @@
 # DocMind 变更日志
 
+## 2026-06-13 v0.33 — 外部资源 UUID 化
+
+### 设计决策
+
+| 决策 | 说明 |
+|:---|:---|
+| 双字段方案 | 保留 `id BIGINT AUTO_INCREMENT` 作为内部主键，新增 `uuid CHAR(36) UNIQUE` 作为外部暴露标识 |
+| 改造范围 | Knowledge Base、Document、Conversation 三个外部资源；Trace 移除响应中的自增 id |
+| 不改造资源 | User（Admin 内部使用）、Message（仅 SSE 返回）、Chunk（内部结构） |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/docs/DATABASE.md` | knowledge_bases、documents、conversations 表新增 `uuid` 字段和唯一索引 |
+| `backend/docs/API.md` | 所有知识库/文档/会话接口路径参数从 `{id}` 改为 `{uuid}`，响应中 `id` 改为 `uuid`，`kb_id` 改为 `kb_uuid`，`conversation_id` 改为 UUID 字符串格式 |
+| `frontend/docs/FRONTEND.md` | 路由参数说明更新，`conversation_id` 和 `kb_id` 类型改为 UUID 字符串 |
+| `docs/ARCHITECTURE.md` | 新增 §8.11 外部资源 UUID 化架构决策说明 |
+| `docs/TEST_CASES.md` | 更新涉及 conversation_id、kb_id 的测试用例描述；新增 §6.17 UUID 外部 ID 测试用例（41 用例） |
+| `docs/ROADMAP.md` | Phase 5 新增 §7.4d 外部资源 UUID 化任务清单（后端 9 项 + 前端 5 项 + 测试 6 项） |
+
+### 影响范围
+
+- **后端**：需新增 Alembic 迁移（3 张表加 uuid 列）、模型、Schema、Service、API 层改造
+- **前端**：需更新 Store、组件中的 ID 类型处理（移除 Number() 转换）
+- **数据库**：knowledge_bases、documents、conversations 表新增 uuid 列（CHAR(36) + UNIQUE INDEX）
+
+---
+
 ## 2026-06-13 v0.32 — 孤儿会话交互优化
 
 ### 修改

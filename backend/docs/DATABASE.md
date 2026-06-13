@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.15 |
+| 文档版本 | v0.16 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现 + last_message_at 排序字段新增） |
@@ -85,6 +85,7 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE knowledge_bases (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid CHAR(36) NOT NULL COMMENT '外部暴露的知识库标识符（UUID v4），API/URL 使用',
     name VARCHAR(128) NOT NULL,
     description TEXT,
     user_id BIGINT NOT NULL,
@@ -94,6 +95,7 @@ CREATE TABLE knowledge_bases (
     doc_count INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_uuid (uuid),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     UNIQUE INDEX idx_user_name (user_id, name)
 );
@@ -101,7 +103,8 @@ CREATE TABLE knowledge_bases (
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| id | BIGINT | 主键 |
+| id | BIGINT | 主键（内部使用，不暴露给 API） |
+| uuid | CHAR(36) | 外部暴露的知识库标识符（UUID v4），唯一索引，API/URL 使用 |
 | name | VARCHAR(128) | 知识库名称，与 user_id 联合唯一（同一用户下名称不重复） |
 | description | TEXT | 知识库描述 |
 | user_id | BIGINT | 创建者用户 ID |
@@ -117,6 +120,7 @@ CREATE TABLE knowledge_bases (
 ```sql
 CREATE TABLE documents (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid CHAR(36) NOT NULL COMMENT '外部暴露的文档标识符（UUID v4），API/URL 使用',
     kb_id BIGINT NOT NULL,
     filename VARCHAR(256) NOT NULL,
     file_type VARCHAR(32) NOT NULL COMMENT 'pdf/docx/md/txt',
@@ -129,6 +133,7 @@ CREATE TABLE documents (
     last_success_batch INT DEFAULT 0 COMMENT '最后成功的批次号，用于批次级 checkpoint',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_uuid (uuid),
     INDEX idx_kb_id (kb_id),
     INDEX idx_kb_filename (kb_id, filename) COMMENT '文档唯一性检查',
     FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
@@ -137,7 +142,8 @@ CREATE TABLE documents (
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| id | BIGINT | 主键 |
+| id | BIGINT | 主键（内部使用，不暴露给 API） |
+| uuid | CHAR(36) | 外部暴露的文档标识符（UUID v4），唯一索引，API/URL 使用 |
 | kb_id | BIGINT | 所属知识库 ID，有索引 |
 | filename | VARCHAR(256) | 原始文件名 |
 | file_type | VARCHAR(32) | 文件类型：pdf / docx / md / txt |
@@ -226,6 +232,7 @@ CREATE TABLE chunks (
 ```sql
 CREATE TABLE conversations (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid CHAR(36) NOT NULL COMMENT '外部暴露的会话标识符（UUID v4），API/URL 使用',
     user_id BIGINT NOT NULL,
     kb_id BIGINT COMMENT '关联的知识库',
     original_kb_id BIGINT NULL COMMENT 'KB 删除前的原始 kb_id，用于孤儿会话检测',
@@ -235,6 +242,7 @@ CREATE TABLE conversations (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     last_message_at DATETIME NULL DEFAULT NULL COMMENT '最后一次产生消息的时间，用于列表排序。仅 send_message/assistant_reply 更新（不受 FK SET NULL 等非消息 UPDATE 污染）',
+    UNIQUE INDEX idx_uuid (uuid),
     INDEX idx_user_id (user_id),
     INDEX idx_conversations_user_last_msg (user_id, last_message_at) COMMENT '会话列表按 last_message_at DESC 排序查询',
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -244,7 +252,8 @@ CREATE TABLE conversations (
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| id | BIGINT | 主键 |
+| id | BIGINT | 主键（内部使用，不暴露给 API） |
+| uuid | CHAR(36) | 外部暴露的会话标识符（UUID v4），唯一索引，API/URL 使用 |
 | user_id | BIGINT | 所属用户 ID，有索引 |
 | kb_id | BIGINT | 关联的知识库 ID（可选，表示对话的知识域） |
 | original_kb_id | BIGINT | KB 删除前的原始 ID，用于孤儿会话检测。KB 物理删除前由 Celery 批量备份 |
@@ -278,6 +287,22 @@ CREATE TABLE conversations (
 > - `kb_id=NULL` + `original_kb_id` 为空 → `kb_status=None`（从未关联 KB）
 >
 > 使用批量 UPDATE（`UPDATE conversations SET original_kb_id=?, original_kb_name=? WHERE kb_id=?`）而非 ORM 逐行循环，避免 N 对象实例化 + N 次脏检查。
+
+**设计决策：为什么使用双字段方案（id + uuid）？**
+
+> 外部暴露的资源（knowledge_bases、documents、conversations）采用双字段方案：
+> - `id BIGINT AUTO_INCREMENT`：内部主键，用于外键关联、JOIN 查询、内部逻辑
+> - `uuid CHAR(36) UNIQUE`：外部暴露标识符，用于 API 路由、响应、URL
+>
+> **优势**：
+> - 零影响现有外键关系（`messages.conversation_id`、`traces.conversation_id` 等）——无需迁移子表
+> - 内部查询（JOIN、聚合）保持 BIGINT 性能，索引更小、缓存命中率更高
+> - UUID 仅在 API 边界解析，影响面最小
+> - 防止 ID 枚举攻击，提升安全性
+>
+> **存储**：CHAR(36) 存储标准 UUID 格式（含连字符），如 `550e8400-e29b-41d4-a716-446655440000`。未来如需优化存储，可迁移至 BINARY(16)（节省约 55% 空间）。
+>
+> **不改造的资源**：users（Admin 内部使用）、messages（仅 SSE 返回）、chunks（内部结构）保持 BIGINT 主键。
 
 ### 2.6 消息表 `messages`
 
@@ -413,11 +438,14 @@ CREATE TABLE traces (
 | 表 | 索引 | 类型 | 用途 |
 |:---|:---|:---|:---|
 | users | username (UNIQUE) | 唯一索引 | 登录查询 |
+| knowledge_bases | idx_uuid (uuid) | 唯一索引 | 外部暴露标识符，API/URL 查询 |
 | knowledge_bases | idx_user_name (user_id, name) | 唯一索引 | 用户级知识库名称唯一性约束 |
+| documents | idx_uuid (uuid) | 唯一索引 | 外部暴露标识符，API/URL 查询 |
 | documents | idx_kb_id | 普通索引 | 按知识库列出文档 |
 | documents | idx_kb_filename (kb_id, filename) | 复合索引 | 文档唯一性检查 + 同名查找 |
 | chunks | idx_doc_id | 普通索引 | 按文档列出分块 |
 | chunks | idx_kb_id | 普通索引 | 按知识库统计分块 |
+| conversations | idx_uuid (uuid) | 唯一索引 | 外部暴露标识符，API/URL 查询 |
 | conversations | idx_user_id | 普通索引 | 按用户列出会话 |
 | conversations | idx_conversations_user_updated (user_id, updated_at) | 复合索引 | Phase 4：按用户列出会话并按更新时间倒序排列 |
 | conversations | idx_conversations_user_last_msg (user_id, last_message_at) | 复合索引 | 会话列表按 last_message_at DESC 排序查询（替代 updated_at 排序，避免 FK 级联污染） |

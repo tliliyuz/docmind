@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.73 |
+| 文档版本 | v0.75 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ✅ / 限流 ✅） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ✅ / 限流 ✅ / 外部资源 UUID 化 ⬜） |
 
 ---
 
@@ -368,7 +368,7 @@
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U7.60 | Service-正常问答流程 | `chat_service.chat()` | conversation_id=null | 自动创建会话 → 检索 → RRF → Rerank → Prompt → LLM 流式 → SSE 事件 | ✅ | 2026-06-02 | 全链路 Mock |
-| U7.61 | Service-已有会话追加 | `chat_service.chat()` | conversation_id 存在 | 复用已有会话，保存消息到同一 conversation | ✅ | 2026-06-02 | — |
+| U7.61 | Service-已有会话追加 | `chat_service.chat()` | conversation_id (UUID) 存在 | 复用已有会话，保存消息到同一 conversation | ✅ | 2026-06-02 | — |
 | U7.62 | Service-检索失败 | `chat_service.chat()` | 检索抛异常 | 包装为 `RetrievalServiceException(E4003)`，对齐 API.md §1.3 E4003 | ✅ | 2026-06-02 | — |
 | U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ✅ | 2026-06-02 | — |
 | U7.63b | Service-sources 抑制 | `_generate_sse_stream` | LLM 回答含"未找到相关信息" | 前缀 35 字符匹配 → 抑制；全文匹配 + 无 [来源N] 引用 → 抑制；有引用 → 保留 | ✅ | 2026-06-04 | 4 用例：真阴性前缀/假阳性有引用/真阴性无引用/正常回答 |
@@ -412,7 +412,7 @@
 | U7.90 | question 为空 | `ChatRequest` | `question=""` | `ValidationError`（min_length=1） | ✅ | 2026-06-02 | — |
 | U7.91 | question 超长 | `ChatRequest` | `question="x"×2001` | `ValidationError`（max_length=2000） | ✅ | 2026-06-02 | — |
 | U7.92 | kb_id 缺失 | `ChatRequest` | 不传 kb_id | `ValidationError`（required） | ✅ | 2026-06-02 | — |
-| U7.93 | conversation_id 可选 | `ChatRequest` | 不传 conversation_id | 校验通过，默认 None | ✅ | 2026-06-02 | — |
+| U7.93 | conversation_id 可选 | `ChatRequest` | 不传 conversation_id | 校验通过，默认 None（UUID 字符串或 null） | ✅ | 2026-06-02 | — |
 | U7.94 | deep_thinking 默认值 | `ChatRequest` | 不传 deep_thinking | 默认 false | ✅ | 2026-06-02 | — |
 | U7.95 | reasoning_effort 非请求字段 | `ChatRequest` | 请求体不包含 reasoning_effort | 校验通过，后端仅在 `deep_thinking=true` 时内部固定 `"high"` | ⏭️ | — | Phase 3 不开放前端控制，待 Phase 5+ |
 | U7.96 | reasoning_effort 非法值 | `ChatRequest` | reasoning_effort="low" | 不作为请求字段校验；如 Phase 5+ 开放需新增枚举校验 | ⏭️ | — | Phase 3 不开放前端控制 |
@@ -422,8 +422,8 @@
 
 | ID | 测试用例 | 端点 | 场景 | 预期 SSE 事件序列 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A4.1 | 正常问答 | POST `/api/chat` | 有效问题 + conversation_id=null | meta → message×N → sources → finish（finish 含新 conversation_id + title） | ✅ | 2026-06-02 | — |
-| A4.2 | 正常问答-已有会话 | POST `/api/chat` | 有效问题 + conversation_id 存在 | meta（复用 conversation_id） → message×N → sources → finish | ✅ | 2026-06-02 | — |
+| A4.1 | 正常问答 | POST `/api/chat` | 有效问题 + conversation_id=null | meta → message×N → sources → finish（finish 含新 conversation_id (UUID) + title） | ✅ | 2026-06-02 | — |
+| A4.2 | 正常问答-已有会话 | POST `/api/chat` | 有效问题 + conversation_id (UUID) 存在 | meta（复用 conversation_id） → message×N → sources → finish | ✅ | 2026-06-02 | — |
 | A4.3 | 空问题 | POST `/api/chat` | question="" | HTTP 422 (E9003)，非 SSE | ✅ | 2026-06-02 | 连接建立前校验 |
 | A4.4 | kb 无可用文档 | POST `/api/chat` | kb chunks=0 | SSE error event (E4001) | ✅ | 2026-06-02 | — |
 | A4.5 | kb 不存在 | POST `/api/chat` | 无效 kb_id | HTTP 404 (E1001)，非 SSE | ✅ | 2026-06-02 | 连接建立前校验 |
@@ -452,7 +452,7 @@
 
 | ID | 测试用例 | 被测模块 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| UT1.1 | SSE-解析 meta | `sse.js` | `event: meta\ndata: {"conversation_id":42}` | 返回 `{event: "meta", data: {conversation_id: 42}}` | ✅ | 2026-06-03 | — |
+| UT1.1 | SSE-解析 meta | `sse.js` | `event: meta\ndata: {"conversation_id":"990e8400-e29b-41d4-a716-446655440004"}` | 返回 `{event: "meta", data: {conversation_id: "990e8400-e29b-41d4-a716-446655440004"}}` | ✅ | 2026-06-03 | — |
 | UT1.2 | SSE-解析 message | `sse.js` | `event: message\ndata: {"delta":"你好"}` | 返回 `{event: "message", data: {delta: "你好"}}` | ✅ | 2026-06-03 | — |
 | UT1.3 | SSE-解析 thinking | `sse.js` | `event: thinking\ndata: {"delta":"思考…"}` | 返回 `{event: "thinking", data: {delta: "思考…"}}` | ✅ | 2026-06-03 | — |
 | UT1.4 | SSE-解析 sources | `sse.js` | `event: sources\ndata: {"chunks":[...]}` | 返回 `{event: "sources", chunks 含 doc_name}` | ✅ | 2026-06-03 | — |
@@ -744,11 +744,11 @@
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | C4.1 | Sidebar 会话列表 | `Sidebar` | 多会话 | 列表渲染 + 当前高亮 | ✅ | 2026-06-06 | 21 用例覆盖：时间分组/渲染/切换/重命名/删除/折叠 |
-| C4.2 | 会话切换加载历史 | `Sidebar` | 点击不同会话 | 跳转 `/chat?conversation_id=xxx` | ✅ | 2026-06-06 | 验证 router.push 调用 |
+| C4.2 | 会话切换加载历史 | `Sidebar` | 点击不同会话 | 跳转 `/chat?conversation_id=<uuid>` | ✅ | 2026-06-06 | 验证 router.push 调用 |
 | C4.3 | 新建对话 | `Sidebar` | 点击「新建对话」按钮 | 清空消息列表 + URL 回到 `/chat` + conversationId=null | ✅ | 2026-06-06 | 验证 clearMessages + push |
 | C4.4 | 会话重命名 | `Sidebar` | 双击标题编辑 | 调用 PUT API + 列表更新 | ✅ | 2026-06-06 | 含 Enter 保存/Esc 取消/空标题拒绝 |
 | C4.5 | 会话删除 | `Sidebar` | 删除按钮 + 确认弹窗 | 调用 DELETE API + 列表移除 | ✅ | 2026-06-06 | 含确认/取消两种场景 |
-| C4.6 | URL 直链加载 | `ChatPage` | `/chat?conversation_id=123` | 自动加载会话历史 + Sidebar 对应项高亮 | ✅ | 2026-06-06 | 通过 route.query.conversation_id 实现 |
+| C4.6 | URL 直链加载 | `ChatPage` | `/chat?conversation_id=<uuid>` | 自动加载会话历史 + Sidebar 对应项高亮 | ✅ | 2026-06-06 | 通过 route.query.conversation_id 实现 |
 | C4.7 | scheduleRefresh 定时器 | `authStore` | 登录成功后 | `setTimeout` 在 access_token 到期前 1 分钟触发 refresh | ✅ | 2026-06-06 | authStore.scheduleRefresh 实现 |
 | C4.8 | scheduleRefresh 页面卸载清除 | `authStore` | 组件 `onUnmounted` | `clearTimeout` 停止定时器 | ✅ | 2026-06-06 | authStore.clearRefreshTimer 实现 |
 | C4.9 | 修改密码-弹窗打开 | `Sidebar` | 点击头像/用户名 | 弹出修改密码 el-dialog，表单已清空 | ✅ | 2026-06-06 | — |
@@ -1039,6 +1039,93 @@
 | C9.11 | TraceDetail JSON 折叠 | `TraceDetail` | 再次点击 | JSON 面板折叠 | ✅ | 2026-06-12 | v-if 切换验证 |
 | C9.12 | TraceDetail 返回导航 | `TraceDetail` | 点击返回 | 跳转 `/admin/traces` | ✅ | 2026-06-12 | router.push 验证 |
 
+### 6.17 Phase 5 外部资源 UUID 化测试用例
+
+> 测试文件：待创建（后端 `tests/test_uuid_migration.py` / `test_uuid_helpers.py`，前端各组件测试文件补充）。覆盖迁移/转换/API/前端四层。
+
+#### 6.17.1 后端 — Alembic 迁移测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U16.1 | 迁移 up — 新增 uuid 列 | Alembic | upgrade head | knowledge_bases / documents / conversations 均新增 `uuid CHAR(36)` 列 | ⬜ | — | — |
+| U16.2 | 迁移 up — 存量数据回填 | Alembic | upgrade（表中有存量数据） | 所有存量记录 uuid 列被回填为合法 UUID 格式（36 字符含 4 个连字符） | ⬜ | — | — |
+| U16.3 | 迁移 up — 唯一约束 | Alembic | upgrade 后插入重复 uuid | DB 层抛出 IntegrityError（UNIQUE INDEX idx_uuid） | ⬜ | — | — |
+| U16.4 | 迁移 up — 默认值自动生成 | Alembic | INSERT 不指定 uuid | uuid 自动生成且非空 | ⬜ | — | — |
+| U16.5 | 迁移 down — 回滚 uuid 列 | Alembic | downgrade | uuid 列和唯一索引被移除，表结构恢复原状 | ⬜ | — | — |
+| U16.6 | 迁移 down — 数据不丢失 | Alembic | downgrade 后查数据 | 原有列数据完整，仅 uuid 列被移除 | ⬜ | — | — |
+
+#### 6.17.2 后端 — UUID↔ID 转换工具测试
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U16.10 | uuid_to_id — 正常转换 | `uuid_to_id` | 有效 uuid + 存在记录 | 返回对应 integer id | ⬜ | — | — |
+| U16.11 | uuid_to_id — 不存在 | `uuid_to_id` | 有效 uuid + 无匹配记录 | 抛出 NotFoundException | ⬜ | — | — |
+| U16.12 | uuid_to_id — 无效格式 | `uuid_to_id` | 非 UUID 字符串（如 "abc"） | 抛出 ValidationError 或 400 错误 | ⬜ | — | — |
+| U16.13 | get_by_uuid — 正常获取 | `get_by_uuid` | 有效 uuid | 返回 ORM 模型实例 | ⬜ | — | — |
+| U16.14 | get_by_uuid — 不存在 | `get_by_uuid` | 不存在的 uuid | 抛出 NotFoundException | ⬜ | — | — |
+| U16.15 | get_by_uuid — 无效格式 | `get_by_uuid` | 非法 uuid 字符串 | 抛出 ValidationError 或 400 错误 | ⬜ | — | — |
+
+#### 6.17.3 后端 — ORM 模型测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U16.20 | KB 模型 uuid 字段 | `KnowledgeBase` | 创建 KB 不指定 uuid | uuid 自动生成，格式为合法 UUID | ⬜ | — | — |
+| U16.21 | Document 模型 uuid 字段 | `Document` | 创建 Document 不指定 uuid | uuid 自动生成，格式为合法 UUID | ⬜ | — | — |
+| U16.22 | Conversation 模型 uuid 字段 | `Conversation` | 创建 Conversation 不指定 uuid | uuid 自动生成，格式为合法 UUID | ⬜ | — | — |
+| U16.23 | uuid 唯一性 | `KnowledgeBase` | 创建两条记录后查 uuid | 两条记录 uuid 不同 | ⬜ | — | — |
+| U16.24 | id 字段仍为自增 | 三张表 | 创建多条记录 | id 仍为自增整数，与 uuid 独立 | ⬜ | — | — |
+
+#### 6.17.4 后端 — Pydantic Schema 测试
+
+| ID | 测试用例 | Schema | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U16.30 | KB 响应含 uuid 不含 id | `KnowledgeBaseResponse` | 序列化 KB | 输出含 `uuid` 字段，不含 `id` 字段 | ⬜ | — | — |
+| U16.31 | Document 响应含 uuid 不含 id | `DocumentResponse` | 序列化 Document | 输出含 `uuid` 字段，不含 `id` 字段；`kb_uuid` 替代 `kb_id` | ⬜ | — | — |
+| U16.32 | Conversation 响应含 uuid 不含 id | `ConversationResponse` | 序列化 Conversation | 输出含 `uuid` 字段，不含 `id` 字段 | ⬜ | — | — |
+| U16.33 | ChatRequest kb_uuid 类型 | `ChatRequest` | kb_uuid="550e8400-..." | 校验通过 | ⬜ | — | — |
+| U16.34 | ChatRequest kb_uuid 缺失 | `ChatRequest` | 不传 kb_uuid | `ValidationError` | ⬜ | — | — |
+| U16.35 | ChatRequest conversation_id UUID | `ChatRequest` | conversation_id="550e8400-..." | 校验通过，类型为字符串 | ⬜ | — | — |
+| U16.36 | Trace 响应不含自增 id | `TraceResponse` | 序列化 Trace | 输出含 `trace_id`，不含自增 `id` | ⬜ | — | — |
+
+#### 6.17.5 后端 — API 接口测试（路径参数 UUID 化）
+
+| ID | 测试用例 | 端点 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| A10.1 | KB 详情 — UUID 路径 | `GET /knowledge-bases/{uuid}` | 有效 uuid | 200 + 响应含 `uuid` 不含 `id` | ⬜ | — | — |
+| A10.2 | KB 详情 — 无效 UUID | `GET /knowledge-bases/{uuid}` | uuid="invalid" | 404 或 400 | ⬜ | — | — |
+| A10.3 | KB 详情 — 不存在 UUID | `GET /knowledge-bases/{uuid}` | 合法格式但不存在 | 404, E1001 | ⬜ | — | — |
+| A10.4 | KB 更新 — UUID 路径 | `PUT /knowledge-bases/{uuid}` | 有效 uuid | 200 + 更新成功 | ⬜ | — | — |
+| A10.5 | KB 删除 — UUID 路径 | `DELETE /knowledge-bases/{uuid}` | 有效 uuid | 202 + 异步删除 | ⬜ | — | — |
+| A10.6 | 文档列表 — kb_uuid 参数 | `GET /documents?kb_uuid=xxx` | 有效 kb_uuid | 200 + 返回该 KB 下文档 | ⬜ | — | — |
+| A10.7 | 文档详情 — UUID 路径 | `GET /documents/{uuid}` | 有效 uuid | 200 + 响应含 `uuid` 不含 `id` | ⬜ | — | — |
+| A10.8 | 文档上传 — kb_uuid 参数 | `POST /documents` | multipart + kb_uuid | 201 + 文档创建成功 | ⬜ | — | — |
+| A10.9 | 文档删除 — UUID 路径 | `DELETE /documents/{uuid}` | 有效 uuid | 202 + 异步删除 | ⬜ | — | — |
+| A10.10 | 会话详情 — UUID 路径 | `GET /conversations/{uuid}` | 有效 uuid | 200 + 响应含 `uuid` 不含 `id` | ⬜ | — | — |
+| A10.11 | 会话重命名 — UUID 路径 | `PUT /conversations/{uuid}` | 有效 uuid | 200 + 重命名成功 | ⬜ | — | — |
+| A10.12 | 会话删除 — UUID 路径 | `DELETE /conversations/{uuid}` | 有效 uuid | 200 + 硬删除成功 | ⬜ | — | — |
+| A10.13 | Chat — kb_uuid 参数 | `POST /api/chat` | kb_uuid="550e8400-..." | SSE 流正常返回 | ⬜ | — | — |
+| A10.14 | Chat — conversation_id UUID | `POST /api/chat` | conversation_id="550e8400-..." | 加载历史 + SSE 流正常 | ⬜ | — | — |
+| A10.15 | Chat — 无效 kb_uuid | `POST /api/chat` | kb_uuid="invalid" | 400 或 404 | ⬜ | — | — |
+| A10.16 | SSE meta 事件 — conversation_id UUID | `POST /api/chat` | conversation_id=null（新建） | meta 事件 conversation_id 为 UUID 字符串格式 | ⬜ | — | — |
+| A10.17 | KB 选择器 — 返回 uuid | `GET /knowledge-bases/selectable` | 正常请求 | 返回 mine/public 分组中每项含 `uuid` 不含 `id` | ⬜ | — | — |
+| A10.18 | Trace 列表 — 不含自增 id | `GET /admin/traces` | 正常请求 | 响应每条 Trace 不含自增 `id` 字段 | ⬜ | — | — |
+| A10.19 | Trace 详情 — 不含自增 id | `GET /admin/traces/{trace_id}` | 有效 trace_id | 响应不含自增 `id` 字段 | ⬜ | — | — |
+| A10.20 | 权限校验不变 — private KB | `GET /knowledge-bases/{uuid}` | private KB 非 owner | 403, E5005（UUID 化不影响权限逻辑） | ⬜ | — | — |
+| A10.21 | 权限校验不变 — admin 访问 | `GET /knowledge-bases/{uuid}` | admin 访问他人 KB | 200（admin 权限不受 UUID 化影响） | ⬜ | — | — |
+
+#### 6.17.6 前端 — 组件与路由测试
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| C10.1 | KB 详情路由 — uuid 参数 | `KnowledgeDetail.vue` | 访问 `/knowledge-bases/:uuid` | 组件正常渲染，API 调用使用 uuid 参数 | ⬜ | — | — |
+| C10.2 | Chat 路由 — conversation_id UUID | `ChatPage.vue` | URL `?conversation_id=<uuid>` | 加载会话历史消息 | ⬜ | — | — |
+| C10.3 | Sidebar 会话切换 — uuid | `Sidebar.vue` | 点击会话项 | URL 更新为 `?conversation_id=<uuid>`，消息加载正常 | ⬜ | — | — |
+| C10.4 | KB 创建后跳转 — uuid | `KnowledgeList.vue` | 创建 KB 成功 | 跳转 `/knowledge-bases/<uuid>`（非 `<id>`） | ⬜ | — | — |
+| C10.5 | ChatStore sendMessage — kb_uuid | `chat.js` | 发送消息 | API 请求参数为 `kb_uuid`（非 `kb_id`） | ⬜ | — | — |
+| C10.6 | ConversationStore — uuid 字段 | `conversation.js` | 加载会话列表 | 列表项使用 `uuid` 字段标识会话 | ⬜ | — | — |
+| C10.7 | Admin Trace 列表 — 无自增 id | `TraceList.vue` | 渲染 Trace 列表 | 表格不展示自增 `id` 列 | ⬜ | — | — |
+| C10.8 | Admin Trace 详情 — 无自增 id | `TraceDetail.vue` | 渲染 Trace 详情 | 详情不展示自增 `id` 字段 | ⬜ | — | — |
+
 ---
 
 ## 7. 专项测试用例
@@ -1158,6 +1245,10 @@
 | 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ✅ 15 用例 | Phase 5：用户列表页（7 用例，C8.1-C8.9） |
 | 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户详情页（5 用例，C8.10-C8.14） |
 | 前端 `components/charts/*.vue` | ≥ 60% | ✅ 21 用例 | Phase 5：ECharts 图表组件（7 用例，C7.1-C7.7） |
+| `core/uuid_helpers.py`（UUID↔ID 转换） | ≥ 80% | ⬜ | Phase 5：UUID 外部 ID（U16.10-U16.15，6 用例） |
+| Alembic UUID 迁移 | — | ⬜ | Phase 5：迁移正确性（U16.1-U16.6，6 用例） |
+| API 层 UUID 路径参数 | ≥ 90% | ⬜ | Phase 5：接口回归（A10.1-A10.21，21 用例） |
+| 前端 UUID 适配 | ≥ 60% | ⬜ | Phase 5：组件/路由/Store 适配（C10.1-C10.8，8 用例） |
 
 ---
 

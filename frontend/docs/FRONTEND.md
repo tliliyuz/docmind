@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.32 |
+| 文档版本 | v0.33 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — §8 交互规范补全：危险操作统一流程 / 列表刷新策略 / 前后台差异约定 / Admin 交互约定 / 孤儿会话指示器） |
@@ -103,7 +103,7 @@
 | `/chat` | ChatPage | 需登录 | 核心问答页，默认首页（Phase 3 完整实现） |
 | `/knowledge-bases` | KnowledgeList | 需登录 | 我的知识库列表（Phase 2.3.3 实现） |
 | `/knowledge-bases/public` | PublicKnowledgeList | 需登录 | 公开知识库列表，浏览所有 public KB（Phase 2.5 新增） |
-| `/knowledge-bases/:id` | KnowledgeDetail | 需登录（owner/admin/public KB 可查看） | 知识库详情：KB 信息 + 文档上传/管理。public KB 非 owner 只读查看 |
+| `/knowledge-bases/:uuid` | KnowledgeDetail | 需登录（owner/admin/public KB 可查看） | 知识库详情：KB 信息 + 文档上传/管理。`:uuid` 为知识库 UUID。public KB 非 owner 只读查看 |
 
 **管理员视角路由**（仅 admin 可访问，使用独立 AdminLayout 布局）：
 
@@ -233,10 +233,10 @@ ChatPage 支持两种进入方式：
 
 | 进入方式 | URL | 行为 |
 |:---|:---|:---|
-| 新建对话 | `/chat` 或 `/chat?kb_id=1` | `onMounted` 时不加载历史，`conversation_id=null`，首轮问答后自动创建会话 |
-| 继续对话 | `/chat?conversation_id=123` | `onMounted` 时调 `GET /api/conversations/123` 加载历史消息 + Sidebar 对应项高亮 |
+| 新建对话 | `/chat` 或 `/chat?kb_id=<uuid>` | `onMounted` 时不加载历史，`conversation_id=null`，首轮问答后自动创建会话 |
+| 继续对话 | `/chat?conversation_id=<uuid>` | `onMounted` 时调 `GET /api/conversations/<uuid>` 加载历史消息 + Sidebar 对应项高亮 |
 
-> 两种 query param 模式保持一致：`?kb_id=` 已在 Phase 3 实现，`?conversation_id=` 为 Phase 4 新增。两者可共存（`/chat?kb_id=1&conversation_id=123`），前端优先使用 `conversation_id` 恢复会话，`kb_id` 作为降级（会话不存在时回退到指定 KB 的新对话）。
+> 两种 query param 模式保持一致：`?kb_id=` 已在 Phase 3 实现，`?conversation_id=` 为 Phase 4 新增。两者可共存（`/chat?kb_id=<uuid>&conversation_id=<uuid>`），前端优先使用 `conversation_id` 恢复会话，`kb_id` 作为降级（会话不存在时回退到指定 KB 的新对话）。**注意**：`kb_id` 和 `conversation_id` 现在均为 UUID 字符串格式。
 
 **新建对话触发方式**：
 
@@ -263,7 +263,7 @@ ChatPage 支持两种进入方式：
   META      → 不调 LLM，固定模板响应（毫秒级）
     ↓
 接收 SSE 事件流：
-  event: meta      → 记录 conversation_id（新对话时后端自动创建）、task_id
+  event: meta      → 记录 conversation_id（UUID 格式，新对话时后端自动创建）、task_id
   event: thinking  → 展开思考过程框（黄色折叠面板），实时追加内容（仅 KNOWLEDGE/CASUAL）
   event: message   → 逐字追加到助手消息内容区（Markdown 实时渲染）
   event: sources   → 在消息底部渲染引用来源卡片（仅 KNOWLEDGE 意图发送，CASUAL/META 无此事件）
@@ -275,7 +275,7 @@ ChatPage 支持两种进入方式：
 ```
 
 **会话自动创建**（Phase 3 单轮模式）：
-- 新对话时前端传 `conversation_id=null`，后端自动创建会话并通过 `event: meta` 返回新 `conversation_id`
+- 新对话时前端传 `conversation_id=null`，后端自动创建会话并通过 `event: meta` 返回新 `conversation_id`（UUID 格式）
 - 前端收到 `meta` 事件后更新 `chatStore.currentConversationId`，后续追问使用该 ID
 - Phase 3 单轮问答不注入历史（`history=[]`），Phase 4 开始支持多轮记忆
 
@@ -1366,7 +1366,7 @@ function parseSSEEvent(raw) {
 | ECharts 图表 | ✅ 已实现 | 问答量趋势/响应时间/Token 使用三个图表 + useECharts 组合式函数 + charts.js 配置常量 | — |
 | 状态轮询 | ✅ 已实现 | — | Phase 6：可选升级 WebSocket |
 | SSE 流式输出 | ✅ 已实现 | fetch + ReadableStream 手动 SSE 解析、6 种事件类型处理、15s 心跳忽略、thinking 面板 | — |
-| 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 ID，自动同步到会话列表 Store | — |
+| 会话自动创建 | ✅ 已实现 | `conversation_id=null` 传参 → `event: meta` 返回新 UUID，自动同步到会话列表 Store | — |
 | 标题自动生成 | ✅ 已实现 | 首轮 `finish` 事件返回 title（截取 question[:12]），自动更新会话列表标题 | Phase 5：LLM 标题生成替换 |
 | Axios Refresh Token 拦截器 | ✅ 已实现 | 401+E5003 自动调 refresh → 重放原请求 + 并发防抖 + scheduleRefresh 定时器 + SSE 流式请求适配 | — |
 | authStore refresh/logout | ✅ 已实现 | `refresh()` 换取新 token 对 + `logout()` 调 `POST /api/auth/logout` 吊销 + 定时器启停 | — |
