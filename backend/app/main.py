@@ -20,6 +20,7 @@ from app.core.exceptions import AppException
 from app.core.logging_config import get_request_id, setup_logging
 from app.core.redis_client import close_async_redis, get_async_redis
 from app.middleware.auth_middleware import AuthMiddleware
+from app.middleware.rate_limit_middleware import RateLimitMiddleware
 from app.middleware.request_id_middleware import RequestIDMiddleware
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,9 @@ app.add_middleware(RequestIDMiddleware)
 
 # JWT 认证中间件
 app.add_middleware(AuthMiddleware)
+
+# 限流中间件（对齐 ARCHITECTURE.md §13.2，放在 RequestIDMiddleware 之后）
+app.add_middleware(RateLimitMiddleware)
 
 # 路由注册
 app.include_router(auth_router)

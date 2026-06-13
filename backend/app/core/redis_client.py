@@ -82,6 +82,18 @@ class ThreadedRedisClient:
         """异步 DELETE"""
         return await asyncio.to_thread(self._sync.delete, key)
 
+    async def incr(self, key: str) -> int:
+        """异步 INCR（原子递增）"""
+        return await asyncio.to_thread(self._sync.incr, key)
+
+    async def expire(self, key: str, ttl: int) -> Any:
+        """异步 EXPIRE（设置过期时间）"""
+        return await asyncio.to_thread(self._sync.expire, key, ttl)
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> Any:
+        """异步 EVAL（执行 Lua 脚本）"""
+        return await asyncio.to_thread(self._sync.eval, script, numkeys, *args)
+
     async def ping(self) -> Any:
         """异步 PING"""
         return await asyncio.to_thread(self._sync.ping)

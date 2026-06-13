@@ -18,7 +18,10 @@ def init_chroma() -> Collection:
     """
     global _client, _collection
 
-    _client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+    _client = chromadb.PersistentClient(
+        path=settings.CHROMA_PERSIST_DIR,
+        settings=chromadb.config.Settings(anonymized_telemetry=False),
+    )
     _collection = _client.get_or_create_collection(
         name="docmind",
         metadata={"hnsw:space": "cosine"},

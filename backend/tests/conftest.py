@@ -18,6 +18,18 @@ def mock_chroma_init():
         yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def mock_rate_limit_redis():
+    """全局 Mock 限流 Redis — 使 eval() 始终返回 1（未超限），避免测试间限流干扰。
+
+    test_rate_limit.py 中的测试自行 mock，不受此 fixture 影响。
+    """
+    mock_redis = AsyncMock()
+    mock_redis.eval = AsyncMock(return_value=1)
+    with patch("app.middleware.rate_limit_middleware.get_async_redis", return_value=mock_redis):
+        yield
+
+
 @pytest.fixture
 def mock_db():
     """Mock 异步 DB session — 各测试用例可自定义其返回值"""
