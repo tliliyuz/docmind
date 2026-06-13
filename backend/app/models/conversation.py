@@ -12,6 +12,11 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    uuid: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True,
+        server_default=text("(UUID())"),
+        comment="外部暴露标识符（UUID v4），API/URL 使用"
+    )
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True
@@ -27,6 +32,10 @@ class Conversation(Base):
     original_kb_name: Mapped[str | None] = mapped_column(
         String(128), nullable=True,
         comment="KB 删除前的原始名称，用于孤儿会话 Banner 展示"
+    )
+    original_kb_uuid: Mapped[str | None] = mapped_column(
+        String(36), nullable=True,
+        comment="KB 删除前的原始 UUID，用于孤儿会话审计追踪"
     )
     title: Mapped[str] = mapped_column(
         String(256), default="新对话", server_default=text("'新对话'")
@@ -54,6 +63,11 @@ class Conversation(Base):
     messages = relationship(
         "Message", back_populates="conversation", passive_deletes=True
     )
+
+    @property
+    def kb_uuid(self) -> str | None:
+        """关联知识库的 UUID（需 selectinload knowledge_base）"""
+        return self.knowledge_base.uuid if self.knowledge_base else None
 
     __table_args__ = (
         Index("idx_conversations_user_updated", "user_id", "updated_at"),

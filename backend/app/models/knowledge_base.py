@@ -15,6 +15,11 @@ class KnowledgeBase(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    uuid: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True,
+        server_default=text("(UUID())"),
+        comment="外部暴露标识符（UUID v4），API/URL 使用"
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     user_id: Mapped[int] = mapped_column(

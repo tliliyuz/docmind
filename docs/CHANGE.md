@@ -1,5 +1,68 @@
 # DocMind 变更日志
 
+## 2026-06-13 v0.34 — 外部资源 UUID 化后端实现
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/alembic/versions/e4f5a6b7c8d9_external资源uuid化.py` | Alembic 迁移脚本：knowledge_bases / documents / conversations 新增 `uuid CHAR(36) NOT NULL UNIQUE`，存量数据回填 `UUID()`，默认值 `(UUID())`；conversations 新增 `original_kb_uuid` 列 |
+| `backend/app/core/uuid_helpers.py` | UUID 解析工具：`validate_uuid_format()` / `resolve_uuid_to_id()` / `get_by_uuid()`，API 边界 UUID↔ID 转换 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/models/knowledge_base.py` | 新增 `uuid` 字段（String(36), unique, server_default=UUID()） |
+| `backend/app/models/document.py` | 新增 `uuid` 字段（String(36), unique, server_default=UUID()） |
+| `backend/app/models/conversation.py` | 新增 `uuid` 字段（String(36), unique, server_default=UUID()）+ `original_kb_uuid` 字段 |
+| `backend/app/schemas/knowledge_base.py` | 响应 Schema：`id` → `uuid`，`kb_id` → `kb_uuid` |
+| `backend/app/schemas/document.py` | 响应 Schema：`id` → `uuid`，`kb_id` → `kb_uuid`，`doc_id` → `doc_uuid` |
+| `backend/app/schemas/conversation.py` | 响应 Schema：`id` → `uuid`，`kb_id` → `kb_uuid`，新增 `original_kb_uuid` |
+| `backend/app/schemas/chat.py` | Chat 响应新增 `uuid` 字段 |
+| `backend/app/schemas/admin.py` | Admin Schema：`id` → `uuid`，`kb_id` → `kb_uuid` |
+| `backend/app/schemas/trace.py` | Trace Schema 新增 `conversation_uuid` / `kb_uuid`，移除自增 `id` |
+| `backend/app/api/knowledge_base.py` | 路径参数 `{id}` → `{kb_uuid}`，依赖注入 `resolve_uuid_to_id` 转换 |
+| `backend/app/api/document.py` | 路径参数 `{kb_id}/{doc_id}` → `{kb_uuid}/{doc_uuid}`，依赖注入 `resolve_uuid_to_id` 转换 |
+| `backend/app/api/conversation.py` | 路径参数 `{id}` → `{conv_uuid}`，依赖注入 `resolve_uuid_to_id` 转换 |
+| `backend/app/api/admin.py` | Trace 接口适配 UUID 响应；KB 管理接口 `kb_id` 支持 UUID 解析 |
+| `backend/app/services/chat_service.py` | `chat()` / `stream_chat()` 入口参数改为 UUID 字符串，内部转换为 integer；SSE meta 事件 `conversation_id` 输出 UUID；`get_selectable_kbs()` 返回 `uuid` |
+| `backend/app/services/knowledge_base_service.py` | 内部逻辑不变，API 边界 UUID↔ID 转换 |
+| `backend/app/services/document_service.py` | 内部逻辑不变，API 边界 UUID↔ID 转换 |
+| `backend/app/services/conversation_service.py` | 内部逻辑不变，API 边界 UUID↔ID 转换 |
+| `backend/app/services/trace_service.py` | 查询 JOIN 关联 `uuid` 字段，响应输出 `conversation_uuid` / `kb_uuid` |
+| `backend/app/services/admin_service.py` | 适配 UUID 响应字段 |
+
+### 修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/alembic/versions/e4f5a6b7c8d9_external资源uuid化.py` | 迁移脚本幂等化：`_column_exists()` / `_constraint_exists()` 检查防止重复执行报 1060 错误；回填逻辑独立于列创建步骤 |
+
+### 设计决策
+
+| 决策 | 说明 |
+|:---|:---|
+| 幂等迁移 | 迁移脚本每步操作前检查列/约束是否已存在，支持部分执行后重跑 |
+| 回填与建列分离 | `_add_uuid_column()` 中回填步骤独立于 `ADD COLUMN`，确保列已存在但数据为 NULL 时仍能正确回填 |
+| ChromaDB 不侵入 | 向量库内部继续使用 integer `kb_id` / `doc_id`，UUID 仅在 API 边界转换 |
+
+### 影响范围
+
+- **后端 9/9 任务完成**：Alembic 迁移、ORM 模型、Pydantic Schema、Service 层转换、API 路径参数、Chat API、Trace 响应、KB 选择器、ChromaDB 兼容
+- **前端 0/5 任务**：待实现
+- **测试 0/6 任务**：待实现
+
+### 文档更新
+
+| 文件 | 版本 | 说明 |
+|:---|:---|:---|
+| `backend/docs/DATABASE.md` | v0.16 → v0.17 | conversations 表 DDL + 字段说明表新增 `original_kb_uuid`；设计决策标题和批量 UPDATE 语句同步更新 |
+| `backend/docs/API.md` | v0.32 → v0.33 | 会话响应示例新增 `original_kb_uuid`；孤儿会话状态表新增 `original_kb_uuid` 列；后端实现说明补充备份字段 |
+| `docs/ARCHITECTURE.md` | v0.44 → v0.45 | §8.11 实现要点新增 `original_kb_uuid` 备份说明 |
+
+---
+
 ## 2026-06-13 v0.33 — 外部资源 UUID 化
 
 ### 设计决策

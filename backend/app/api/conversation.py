@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.uuid_helpers import resolve_uuid_to_id
 from app.dependencies import get_current_user, get_db
+from app.models.conversation import Conversation
 from app.schemas.conversation import ConversationCreate, ConversationUpdate
 from app.services.conversation_service import (
     create_conversation,
@@ -39,35 +41,38 @@ async def list_conv(
     return {"code": "0", "message": "ok", "data": data.model_dump()}
 
 
-@router.get("/{conv_id}")
+@router.get("/{conv_uuid}")
 async def get_conv(
-    conv_id: int,
+    conv_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """获取会话详情（含消息历史）"""
+    conv_id = await resolve_uuid_to_id(db, Conversation, conv_uuid)
     data = await get_conversation_detail(db, conv_id, current_user["user_id"])
     return {"code": "0", "message": "ok", "data": data.model_dump()}
 
 
-@router.put("/{conv_id}")
+@router.put("/{conv_uuid}")
 async def rename_conv(
-    conv_id: int,
+    conv_uuid: str,
     req: ConversationUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """重命名会话"""
+    conv_id = await resolve_uuid_to_id(db, Conversation, conv_uuid)
     data = await rename_conversation(db, conv_id, current_user["user_id"], req)
     return {"code": "0", "message": "ok", "data": data.model_dump()}
 
 
-@router.delete("/{conv_id}")
+@router.delete("/{conv_uuid}")
 async def delete_conv(
-    conv_id: int,
+    conv_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """删除会话及其全部消息"""
+    conv_id = await resolve_uuid_to_id(db, Conversation, conv_uuid)
     await delete_conversation(db, conv_id, current_user["user_id"])
     return {"code": "0", "message": "会话已删除", "data": None}

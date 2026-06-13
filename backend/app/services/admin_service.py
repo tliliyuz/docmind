@@ -140,7 +140,7 @@ async def list_all_kbs(
     items = []
     for kb, username in rows:
         items.append(AdminKBItem(
-            id=kb.id,
+            uuid=kb.uuid,
             name=kb.name,
             description=kb.description,
             visibility=kb.visibility,
@@ -177,6 +177,7 @@ async def list_all_documents(
         select(
             Document,
             KnowledgeBase.name.label("kb_name"),
+            KnowledgeBase.uuid.label("kb_uuid"),
             KnowledgeBase.visibility.label("kb_visibility"),
             KnowledgeBase.user_id.label("owner_id"),
             User.username.label("owner_username"),
@@ -222,10 +223,10 @@ async def list_all_documents(
     rows = (await db.execute(q)).all()
 
     items = []
-    for doc, kb_name, kb_visibility, owner_id, owner_username in rows:
+    for doc, kb_name, kb_uuid_val, kb_visibility, owner_id, owner_username in rows:
         items.append(AdminDocItem(
-            id=doc.id,
-            kb_id=doc.kb_id,
+            uuid=doc.uuid,
+            kb_uuid=kb_uuid_val,
             kb_name=kb_name,
             kb_visibility=kb_visibility,
             owner_id=owner_id,

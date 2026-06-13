@@ -71,7 +71,7 @@ async def list_admin_knowledge_bases(
 async def list_admin_documents(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页条数"),
-    kb_id: int | None = Query(None, description="按知识库过滤"),
+    kb_id: str | None = Query(None, description="按知识库 UUID 过滤"),
     status: str | None = Query(None, description="按状态过滤"),
     filename: str | None = Query(None, description="按文件名模糊搜索"),
     sort_by: str = Query("created_at", description="排序字段"),
@@ -80,11 +80,17 @@ async def list_admin_documents(
     current_user: dict = Depends(require_admin),
 ):
     """获取全部文档列表（跨知识库视图）"""
+    # UUID → integer ID（API 边界转换）
+    from app.core.uuid_helpers import resolve_uuid_to_id
+    from app.models.knowledge_base import KnowledgeBase
+    resolved_kb_id = None
+    if kb_id:
+        resolved_kb_id = await resolve_uuid_to_id(db, KnowledgeBase, kb_id)
     data = await list_all_documents(
         db,
         page=page,
         page_size=page_size,
-        kb_id=kb_id,
+        kb_id=resolved_kb_id,
         status=status,
         filename=filename,
         sort_by=sort_by,

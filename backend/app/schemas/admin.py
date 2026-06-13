@@ -38,7 +38,7 @@ class AdminKBItem(BaseModel):
 
     对齐 API.md §7.2：跨用户管理视图，含 owner 信息
     """
-    id: int
+    uuid: str
     name: str
     description: str | None = None
     visibility: str = Field(description="private / public")
@@ -67,8 +67,8 @@ class AdminDocItem(BaseModel):
 
     对齐 API.md §7.3：跨知识库视图，含 KB 名称和 owner 信息
     """
-    id: int
-    kb_id: int
+    uuid: str
+    kb_uuid: str
     kb_name: str = Field(description="所属知识库名称")
     kb_visibility: str = Field(description="所属知识库可见性")
     owner_id: int = Field(description="知识库 owner 用户 ID")

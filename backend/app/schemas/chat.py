@@ -7,13 +7,13 @@ class ChatRequest(BaseModel):
     """POST /api/chat 请求体
 
     对齐 API.md §6：
-    - conversation_id: null 时自动创建会话
-    - kb_id: 目标知识库 ID
+    - conversation_id: UUID 字符串或 null（新对话传 null）
+    - kb_id: 目标知识库 UUID（字段名保持 kb_id 但类型为 UUID 字符串）
     - question: 用户问题（≤2000 字符）
     - deep_thinking: 是否启用深度思考模式
     """
-    conversation_id: int | None = Field(None, description="会话 ID，新对话传 null")
-    kb_id: int = Field(..., description="目标知识库 ID")
+    conversation_id: str | None = Field(None, description="会话 UUID，新对话传 null")
+    kb_id: str = Field(..., description="目标知识库 UUID")
     question: str = Field(
         ..., min_length=1, max_length=2000, description="用户问题"
     )
@@ -68,7 +68,7 @@ class ChatFinishData(BaseModel):
 
 class SelectableKBItem(BaseModel):
     """KB 选择器中的单个知识库项"""
-    id: int
+    uuid: str
     name: str
     visibility: str = "private"
     doc_count: int = 0

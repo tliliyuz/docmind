@@ -21,7 +21,7 @@ class KnowledgeBaseUpdate(BaseModel):
 
 class KnowledgeBaseResponse(BaseModel):
     """知识库响应"""
-    id: int
+    uuid: str
     name: str
     description: str | None
     user_id: int
@@ -45,13 +45,13 @@ class KnowledgeBaseListResponse(BaseModel):
 
 class KnowledgeBaseDeleteResponse(BaseModel):
     """知识库删除响应数据"""
-    kb_id: int
+    kb_uuid: str
     status: str
 
 
 class PublicKnowledgeBaseResponse(BaseModel):
     """公共知识库响应（含 owner 用户名）"""
-    id: int
+    uuid: str
     name: str
     description: str | None
     user_id: int

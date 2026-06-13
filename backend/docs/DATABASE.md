@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.16 |
+| 文档版本 | v0.17 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现 + last_message_at 排序字段新增） |
@@ -236,6 +236,7 @@ CREATE TABLE conversations (
     user_id BIGINT NOT NULL,
     kb_id BIGINT COMMENT '关联的知识库',
     original_kb_id BIGINT NULL COMMENT 'KB 删除前的原始 kb_id，用于孤儿会话检测',
+    original_kb_uuid CHAR(36) NULL COMMENT 'KB 删除前的原始 UUID，用于孤儿会话审计追踪',
     original_kb_name VARCHAR(128) NULL COMMENT 'KB 删除前的原始名称，用于孤儿会话 Banner 展示',
     title VARCHAR(256) DEFAULT '新对话',
     message_count INT DEFAULT 0,
@@ -257,6 +258,7 @@ CREATE TABLE conversations (
 | user_id | BIGINT | 所属用户 ID，有索引 |
 | kb_id | BIGINT | 关联的知识库 ID（可选，表示对话的知识域） |
 | original_kb_id | BIGINT | KB 删除前的原始 ID，用于孤儿会话检测。KB 物理删除前由 Celery 批量备份 |
+| original_kb_uuid | CHAR(36) | KB 删除前的原始 UUID，用于孤儿会话审计追踪。与 `original_kb_id` 同步备份 |
 | original_kb_name | VARCHAR(128) | KB 删除前的原始名称，用于孤儿会话 Banner 展示 |
 | title | VARCHAR(256) | 对话标题（可由首条消息自动生成） |
 | message_count | INT | 消息总数（冗余缓存） |
@@ -276,17 +278,17 @@ CREATE TABLE conversations (
 > - 不受 FK 级联、管理员操作、标题修改等"非消息 UPDATE"影响
 > - 配合 `idx_conversations_user_last_msg (user_id, last_message_at)` 复合索引，实现高效的会话列表排序查询
 
-**设计决策：为什么新增 `original_kb_id` / `original_kb_name`？**
+**设计决策：为什么新增 `original_kb_id` / `original_kb_uuid` / `original_kb_name`？**
 
 > FK `ON DELETE SET NULL` 在 MySQL 层自动将 `conversations.kb_id` 置空，导致信息不可逆丢失——无法区分「从未关联 KB」和「KB 已删除」。
 >
-> 解决方案：在 Celery 物理删除 KB **之前**，批量备份 `kb_id` → `original_kb_id` 和 `kb.name` → `original_kb_name`。MySQL FK SET NULL 随后清空 `kb_id`，但 `original_kb_id` 保留原值。
+> 解决方案：在 Celery 物理删除 KB **之前**，批量备份 `kb_id` → `original_kb_id`、`kb.uuid` → `original_kb_uuid` 和 `kb.name` → `original_kb_name`。MySQL FK SET NULL 随后清空 `kb_id`，但 `original_kb_id` 保留原值。
 >
 > `_enrich_kb_status` 据此判断：
 > - `kb_id=NULL` + `original_kb_id` 非空 → `kb_status="deleted"`（孤儿会话）
 > - `kb_id=NULL` + `original_kb_id` 为空 → `kb_status=None`（从未关联 KB）
 >
-> 使用批量 UPDATE（`UPDATE conversations SET original_kb_id=?, original_kb_name=? WHERE kb_id=?`）而非 ORM 逐行循环，避免 N 对象实例化 + N 次脏检查。
+> 使用批量 UPDATE（`UPDATE conversations SET original_kb_id=?, original_kb_uuid=?, original_kb_name=? WHERE kb_id=?`）而非 ORM 逐行循环，避免 N 对象实例化 + N 次脏检查。
 
 **设计决策：为什么使用双字段方案（id + uuid）？**
 

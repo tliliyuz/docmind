@@ -10,12 +10,11 @@ class TraceListItem(BaseModel):
 
     对齐 API.md §7.5：列表项（不含 JSON 详情字段）
     """
-    id: int
     trace_id: str
     user_id: int
     username: str = Field(description="用户名")
-    conversation_id: int | None = None
-    kb_id: int | None = None
+    conversation_uuid: str | None = None
+    kb_uuid: str | None = None
     kb_name: str | None = Field(None, description="知识库名称")
     question: str | None = None
     status: str = Field(description="success / error / partial")
@@ -88,13 +87,12 @@ class TraceDetailResponse(BaseModel):
 
     对齐 API.md §7.5：Trace 详情（含各阶段 JSON 详情）
     """
-    id: int
     trace_id: str
     user_id: int
     username: str = Field(description="用户名")
-    conversation_id: int | None = None
+    conversation_uuid: str | None = None
     conversation_title: str | None = Field(None, description="会话标题")
-    kb_id: int | None = None
+    kb_uuid: str | None = None
     kb_name: str | None = Field(None, description="知识库名称")
     question: str | None = None
     status: str = Field(description="success / error / partial")

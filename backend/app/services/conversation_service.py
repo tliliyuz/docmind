@@ -34,21 +34,23 @@ async def _get_owned_conversation(
 
 
 def _enrich_kb_status(resp: ConversationResponse, conv: Conversation, user_id: int) -> None:
-    """就地填充 kb_status / kb_name 字段。
+    """就地填充 kb_status / kb_name / kb_uuid 字段。
 
     规则：
-    - kb_id 为 null 且 original_kb_id 非 null → kb_status="deleted"（孤儿会话）
-    - kb_id 为 null 且 original_kb_id 为 null → kb_status=None（从未关联 KB）
+    - kb_id 为 null 且 original_kb_uuid 非 null → kb_status="deleted"（孤儿会话）
+    - kb_id 为 null 且 original_kb_uuid 为 null → kb_status=None（从未关联 KB）
     - KB 存在且可访问 → kb_status="active"
     - KB 存在但 visibility=private 且非 owner → kb_status="unavailable"
     """
     if conv.kb_id is None:
-        if conv.original_kb_id is not None:
+        if conv.original_kb_uuid is not None:
             resp.kb_status = "deleted"
             resp.kb_name = conv.original_kb_name
+            resp.kb_uuid = None
         else:
             resp.kb_status = None
             resp.kb_name = None
+            resp.kb_uuid = None
         return
 
     kb = conv.knowledge_base  # 由 selectinload 预加载
@@ -56,8 +58,10 @@ def _enrich_kb_status(resp: ConversationResponse, conv: Conversation, user_id: i
         # 不应发生（FK 约束保证 kb_id 非 null 时 KB 一定存在），但防御性处理
         resp.kb_status = "deleted"
         resp.kb_name = None
+        resp.kb_uuid = None
         return
 
+    resp.kb_uuid = kb.uuid
     resp.kb_name = kb.name
     if kb.visibility == "private" and kb.user_id != user_id:
         resp.kb_status = "unavailable"
@@ -69,14 +73,21 @@ async def create_conversation(
     db: AsyncSession, user_id: int, data: ConversationCreate
 ) -> ConversationResponse:
     """创建会话"""
+    from app.core.uuid_helpers import resolve_uuid_to_id
+
+    # UUID → integer ID（API 边界转换）
+    kb_id = await resolve_uuid_to_id(db, KnowledgeBase, data.kb_uuid)
+
     conv = Conversation(
         user_id=user_id,
-        kb_id=data.kb_id,
+        kb_id=kb_id,
         title=data.title or "新对话",
     )
     db.add(conv)
     await db.flush()
     await db.refresh(conv)
+    # 预加载 KB 关系（kb_uuid 属性需要）
+    await db.refresh(conv, ["knowledge_base"])
     resp = ConversationResponse.model_validate(conv)
     _enrich_kb_status(resp, conv, user_id)
     return resp
@@ -160,6 +171,8 @@ async def rename_conversation(
     conv.title = data.title
     await db.flush()
     await db.refresh(conv)
+    # 预加载 KB 关系（kb_uuid 属性需要）
+    await db.refresh(conv, ["knowledge_base"])
     resp = ConversationResponse.model_validate(conv)
     _enrich_kb_status(resp, conv, user_id)
     return resp

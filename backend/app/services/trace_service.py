@@ -66,9 +66,12 @@ async def list_traces(
             Trace,
             User.username,
             KnowledgeBase.name.label("kb_name"),
+            KnowledgeBase.uuid.label("kb_uuid"),
+            Conversation.uuid.label("conversation_uuid"),
         )
         .join(User, Trace.user_id == User.id)
         .outerjoin(KnowledgeBase, Trace.kb_id == KnowledgeBase.id)
+        .outerjoin(Conversation, Trace.conversation_id == Conversation.id)
     )
 
     # 筛选条件
@@ -105,14 +108,13 @@ async def list_traces(
     rows = (await db.execute(q)).all()
 
     items = []
-    for trace, username, kb_name in rows:
+    for trace, username, kb_name, kb_uuid_val, conv_uuid in rows:
         items.append(TraceListItem(
-            id=trace.id,
             trace_id=trace.trace_id,
             user_id=trace.user_id,
             username=username,
-            conversation_id=trace.conversation_id,
-            kb_id=trace.kb_id,
+            conversation_uuid=conv_uuid,
+            kb_uuid=kb_uuid_val,
             kb_name=kb_name,
             question=trace.question,
             status=trace.status,
@@ -141,7 +143,9 @@ async def get_trace_detail(
             Trace,
             User.username,
             KnowledgeBase.name.label("kb_name"),
+            KnowledgeBase.uuid.label("kb_uuid"),
             Conversation.title.label("conversation_title"),
+            Conversation.uuid.label("conversation_uuid"),
         )
         .join(User, Trace.user_id == User.id)
         .outerjoin(KnowledgeBase, Trace.kb_id == KnowledgeBase.id)
@@ -152,16 +156,15 @@ async def get_trace_detail(
     if row is None:
         return None
 
-    trace, username, kb_name, conversation_title = row
+    trace, username, kb_name, kb_uuid_val, conversation_title, conv_uuid = row
 
     return TraceDetailResponse(
-        id=trace.id,
         trace_id=trace.trace_id,
         user_id=trace.user_id,
         username=username,
-        conversation_id=trace.conversation_id,
+        conversation_uuid=conv_uuid,
         conversation_title=conversation_title,
-        kb_id=trace.kb_id,
+        kb_uuid=kb_uuid_val,
         kb_name=kb_name,
         question=trace.question,
         status=trace.status,

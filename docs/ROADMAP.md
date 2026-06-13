@@ -5,7 +5,7 @@
 | 文档版本 | v0.56 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ✅ / 外部资源 UUID 化 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ✅ / 外部资源 UUID 化 后端✅ 前端⬜ 测试⬜） |
 
 ---
 
@@ -583,15 +583,15 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | Alembic 迁移 | knowledge_bases / documents / conversations 新增 `uuid CHAR(36) NOT NULL` + `UNIQUE INDEX idx_uuid (uuid)`，存量数据回填 `uuid()`，默认值 `gen_random_uuid()`（MySQL 8.0+）或 `UUID()` |
-| ⬜ | ORM 模型更新 | 三表新增 `uuid = Column(String(36), ...)` 字段 + `default=uuid4` 生成逻辑 |
-| ⬜ | Pydantic Schema 更新 | 响应 Schema：`id` → `uuid`，`kb_id` → `kb_uuid`，`conversation_id` → UUID 字符串类型。请求 Schema：`kb_id: int` → `kb_uuid: str`，`conversation_id: int\|None` → `str\|None` |
-| ⬜ | Service 层 UUID↔ID 转换 | 新增辅助函数：`uuid_to_id(db, model, uuid)` / `get_by_uuid(db, model, uuid)`；Chat Service / Document Service / Conversation Service 内部继续用 integer id，仅在 API 入口/出口转换 |
-| ⬜ | API 路径参数更新 | 所有 `{id}` / `{kb_id}` / `{doc_id}` 路径参数改为 `{uuid}` / `{kb_uuid}` / `{doc_uuid}`；FastAPI 路由 + 依赖注入适配 |
-| ⬜ | Chat API 适配 | `POST /api/chat`：`kb_id: int` → `kb_uuid: str`，`conversation_id: int\|None` → `str\|None`；SSE meta 事件 `conversation_id` 输出 UUID |
-| ⬜ | Trace 响应清理 | `GET /api/admin/traces` / `GET /api/admin/traces/{trace_id}` 响应移除自增 `id` 字段（保留 `trace_id` UUID） |
-| ⬜ | KB 选择器适配 | `GET /api/knowledge-bases/selectable` 返回 `uuid` 替代 `id` |
-| ⬜ | ChromaDB metadata 兼容 | ChromaDB 中 `kb_id` / `doc_id` 仍为 int（内部检索性能），UUID 仅在 API 边界转换，不侵入向量库 |
+| ✅ | Alembic 迁移 | knowledge_bases / documents / conversations 新增 `uuid CHAR(36) NOT NULL` + `UNIQUE INDEX idx_uuid (uuid)`，存量数据回填 `uuid()`，默认值 `gen_random_uuid()`（MySQL 8.0+）或 `UUID()` |
+| ✅ | ORM 模型更新 | 三表新增 `uuid = Column(String(36), ...)` 字段 + `default=uuid4` 生成逻辑 |
+| ✅ | Pydantic Schema 更新 | 响应 Schema：`id` → `uuid`，`kb_id` → `kb_uuid`，`conversation_id` → UUID 字符串类型。请求 Schema：`kb_id: int` → `kb_uuid: str`，`conversation_id: int\|None` → `str\|None` |
+| ✅ | Service 层 UUID↔ID 转换 | 新增辅助函数：`resolve_uuid_to_id(db, model, uuid)` / `get_by_uuid(db, model, uuid)`；Chat Service / Document Service / Conversation Service 内部继续用 integer id，仅在 API 入口/出口转换 |
+| ✅ | API 路径参数更新 | 所有 `{id}` / `{kb_id}` / `{doc_id}` 路径参数改为 `{uuid}` / `{kb_uuid}` / `{doc_uuid}`；FastAPI 路由 + 依赖注入适配 |
+| ✅ | Chat API 适配 | `POST /api/chat`：`kb_id: int` → `kb_uuid: str`，`conversation_id: int\|None` → `str\|None`；SSE meta 事件 `conversation_id` 输出 UUID |
+| ✅ | Trace 响应清理 | `GET /api/admin/traces` / `GET /api/admin/traces/{trace_id}` 响应移除自增 `id` 字段（保留 `trace_id` UUID） |
+| ✅ | KB 选择器适配 | `GET /api/knowledge-bases/selectable` 返回 `uuid` 替代 `id` |
+| ✅ | ChromaDB metadata 兼容 | ChromaDB 中 `kb_id` / `doc_id` 仍为 int（内部检索性能），UUID 仅在 API 边界转换，不侵入向量库 |
 
 #### 前端
 

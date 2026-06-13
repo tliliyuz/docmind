@@ -630,10 +630,14 @@ async def _delete_kb_async(kb_id: int) -> dict:
             await db.execute(
                 update(Conversation)
                 .where(Conversation.kb_id == kb_id)
-                .values(original_kb_id=kb_id, original_kb_name=kb.name)
+                .values(
+                    original_kb_id=kb_id,
+                    original_kb_name=kb.name,
+                    original_kb_uuid=kb.uuid,
+                )
             )
             await db.commit()
-            logger.info("知识库 %d 关联会话已批量备份 original_kb_id", kb_id)
+            logger.info("知识库 %d 关联会话已批量备份 original_kb_id/original_kb_uuid", kb_id)
 
     # 4. 物理删除 KB（FK CASCADE 自动清理 documents + chunks，conversations.kb_id SET NULL）
     async with async_session() as db:

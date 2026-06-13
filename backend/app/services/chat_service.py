@@ -281,9 +281,9 @@ async def _generate_sse_stream(
     t_stream_end = None
     t_sources_end = None
 
-    # 发送 meta 事件
+    # 发送 meta 事件（conversation_id 使用 UUID，对齐 API.md §6.1）
     yield format_sse_event("meta", {
-        "conversation_id": conv.id,
+        "conversation_id": conv.uuid,
         "task_id": task_id,
     })
 
@@ -530,7 +530,7 @@ async def _generate_meta_response(
     与 _generate_sse_stream 一致：保存 assistant 消息到数据库，
     保证对话历史完整性（用户消息已在 _validate_and_prepare 中保存）。
     """
-    yield format_sse_event("meta", {"conversation_id": conv.id, "task_id": str(uuid4())})
+    yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
     yield format_sse_event("message", {"delta": _META_RESPONSE})
 
     # 保存 assistant 消息（对齐主流程，保持消息成对）
@@ -581,8 +581,8 @@ async def _validate_and_prepare(
     db: AsyncSession,
     user_id: int,
     role: str,
-    conversation_id: int | None,
-    kb_id: int,
+    conversation_id: str | None,
+    kb_id: str,
     question: str,
     recorder: TraceRecorder | None = None,
 ) -> tuple[Conversation, RetrievalOutput, PromptBuildResult, dict[int, str]]:
@@ -590,36 +590,48 @@ async def _validate_and_prepare(
 
     所有校验在 SSE 连接建立前执行，失败直接抛 HTTP 异常。
 
+    Args:
+        conversation_id: 会话 UUID 字符串或 None
+        kb_id: 知识库 UUID 字符串
+
     Returns:
         (conv, is_first_turn, reranked_output, prompt_result, doc_map)
     """
+    from app.core.uuid_helpers import resolve_uuid_to_id
+
     t_prep = time.perf_counter()
+
+    # UUID → integer ID（API 边界转换）
+    real_kb_id = await resolve_uuid_to_id(db, KnowledgeBase, kb_id)
+    real_conv_id = None
+    if conversation_id:
+        real_conv_id = await resolve_uuid_to_id(db, Conversation, conversation_id)
 
     # 基础校验
     if not question or not question.strip():
         raise QuestionEmptyException()
 
     # 权限检查（visibility 优先于 ownership，对齐 PRD §5.4）
-    kb = await db.get(KnowledgeBase, kb_id)
+    kb = await db.get(KnowledgeBase, real_kb_id)
     if kb is None or kb.status != "active":
-        raise KnowledgeBaseNotFoundException(kb_id)
+        raise KnowledgeBaseNotFoundException(real_kb_id)
     if kb.visibility == "private" and kb.user_id != user_id and role != "admin":
         raise PermissionDeniedException()
 
     # 检查 KB 是否有可检索文档（含 partial_failed：部分分块可用）
 
     # 会话处理 + 历史消息加载
-    if conversation_id:
-        conv = await db.get(Conversation, conversation_id)
+    if real_conv_id:
+        conv = await db.get(Conversation, real_conv_id)
         if conv is None:
-            raise ConversationNotFoundException(conversation_id)
+            raise ConversationNotFoundException(real_conv_id)
         if conv.user_id != user_id:
             raise ConversationAccessDeniedException()
         is_first_turn = (conv.message_count == 0)  # 在插入用户消息前判定
         # 加载历史消息（在保存用户消息之前！避免当前消息被重复注入）
         history_messages = await _load_history(db, conv.id)
     else:
-        conv = Conversation(user_id=user_id, kb_id=kb_id)
+        conv = Conversation(user_id=user_id, kb_id=real_kb_id)
         db.add(conv)
         await db.flush()
         is_first_turn = True
@@ -718,21 +730,21 @@ async def _validate_and_prepare(
             select(func.count())
             .select_from(Document)
             .where(
-                Document.kb_id == kb_id,
+                Document.kb_id == real_kb_id,
                 Document.status.in_(RETRIEVABLE_STATUSES),
             )
         )
         doc_count = (await db.execute(doc_count_q)).scalar()
         if doc_count == 0:
-            raise KnowledgeBaseEmptyException(kb_id)
+            raise KnowledgeBaseEmptyException(real_kb_id)
 
         # 多路检索（失败包装为 E4003）
         try:
             t_retrieve_start = t_rewrite
-            vector_output = await _vector_retriever.search(question, kb_id)
+            vector_output = await _vector_retriever.search(question, real_kb_id)
             t_vector = time.perf_counter()
             bm25_retriever = await _get_bm25_retriever()
-            bm25_output = await bm25_retriever.search(question, kb_id)
+            bm25_output = await bm25_retriever.search(question, real_kb_id)
             t_bm25 = time.perf_counter()
             fused_output = rrf_fusion(vector_output, bm25_output)
             t_fusion = time.perf_counter()
@@ -803,8 +815,8 @@ async def chat(
     db: AsyncSession,
     user_id: int,
     role: str,
-    conversation_id: int | None,
-    kb_id: int,
+    conversation_id: str | None,
+    kb_id: str,
     question: str,
     deep_thinking: bool,
 ) -> StreamingResponse:
@@ -815,14 +827,18 @@ async def chat(
     - 检索也在 SSE 之外执行（检索失败包装为 E4003）
     - LLM 流式输出通过 SSE 事件推送
     - LLM 失败时先发 sources 再发 error
+
+    Args:
+        conversation_id: 会话 UUID 字符串或 None
+        kb_id: 知识库 UUID 字符串
     """
     trace_id = str(uuid4())
 
     # Trace: 提前创建 recorder，传入 _validate_and_prepare 记录各阶段数据
-    # conversation_id 用原始参数（新会话时为 None），_validate_and_prepare 返回后回写 conv.id
+    # conversation_id / kb_id 此时为 UUID 字符串，_validate_and_prepare 内部转换为 integer
     recorder = TraceRecorder(
         trace_id=trace_id, user_id=user_id,
-        conversation_id=conversation_id, kb_id=kb_id, question=question,
+        conversation_id=None, kb_id=None, question=question,
     )
 
     try:
@@ -926,7 +942,7 @@ async def get_selectable_kbs(
     return {
         "mine": [
             {
-                "id": kb.id,
+                "uuid": kb.uuid,
                 "name": kb.name,
                 "visibility": kb.visibility,
                 "doc_count": kb.doc_count,
@@ -935,7 +951,7 @@ async def get_selectable_kbs(
         ],
         "public": [
             {
-                "id": kb.id,
+                "uuid": kb.uuid,
                 "name": kb.name,
                 "visibility": kb.visibility,
                 "doc_count": kb.doc_count,

@@ -16,6 +16,11 @@ class Document(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    uuid: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True,
+        server_default=text("(UUID())"),
+        comment="外部暴露标识符（UUID v4），API/URL 使用"
+    )
     kb_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
         nullable=False, index=True, comment="所属知识库"
@@ -55,3 +60,8 @@ class Document(Base):
 
     knowledge_base = relationship("KnowledgeBase", back_populates="documents")
     chunks = relationship("Chunk", back_populates="document", passive_deletes=True)
+
+    @property
+    def kb_uuid(self) -> str:
+        """所属知识库的 UUID（需 selectinload knowledge_base）"""
+        return self.knowledge_base.uuid if self.knowledge_base else ""

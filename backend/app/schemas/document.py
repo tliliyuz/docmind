@@ -10,8 +10,8 @@ from app.models.enums import DocumentStatus
 
 class DocumentResponse(BaseModel):
     """文档响应（列表 & 详情共用）"""
-    id: int
-    kb_id: int
+    uuid: str
+    kb_uuid: str
     filename: str
     file_type: str
     file_size: int | None = None
@@ -34,8 +34,8 @@ class DocumentListResponse(BaseModel):
 
 class DocumentUploadResponse(BaseModel):
     """文档上传响应数据"""
-    id: int
-    kb_id: int
+    uuid: str
+    kb_uuid: str
     filename: str
     file_type: str
     file_size: int | None = None
@@ -46,19 +46,19 @@ class DocumentUploadResponse(BaseModel):
 
 class DocumentDeleteResponse(BaseModel):
     """文档删除响应数据"""
-    doc_id: int
+    doc_uuid: str
     status: DocumentStatus
 
 
 class DocumentReprocessResponse(BaseModel):
     """文档重新处理响应数据"""
-    doc_id: int
+    doc_uuid: str
     status: DocumentStatus
 
 
 class DocumentBatchUploadItem(BaseModel):
     """批量上传 — 单个成功项"""
-    id: int
+    uuid: str
     filename: str
     status: DocumentStatus
 

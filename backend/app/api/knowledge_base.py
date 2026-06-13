@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.uuid_helpers import resolve_uuid_to_id
 from app.dependencies import get_current_user, get_db
+from app.models.knowledge_base import KnowledgeBase
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseResponse, KnowledgeBaseUpdate
 from app.services.chat_service import get_selectable_kbs
 from app.services.knowledge_base_service import (
@@ -68,35 +70,38 @@ async def list_selectable_knowledge_bases(
     return {"code": "0", "message": "ok", "data": data}
 
 
-@router.get("/{kb_id}")
+@router.get("/{kb_uuid}")
 async def get_knowledge_base(
-    kb_id: int,
+    kb_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """获取知识库详情。public KB 所有登录用户可查看，private KB 仅 owner 或 admin 可查看。"""
+    kb_id = await resolve_uuid_to_id(db, KnowledgeBase, kb_uuid)
     kb = await get_kb(db, kb_id, current_user["user_id"], current_user["role"])
     return {"code": "0", "message": "ok", "data": KnowledgeBaseResponse.model_validate(kb).model_dump()}
 
 
-@router.put("/{kb_id}")
+@router.put("/{kb_uuid}")
 async def update_knowledge_base(
-    kb_id: int,
+    kb_uuid: str,
     req: KnowledgeBaseUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """更新知识库元数据（名称/描述/可见性）。owner 可修改自己的 KB，admin 可修正任意 KB。"""
+    kb_id = await resolve_uuid_to_id(db, KnowledgeBase, kb_uuid)
     kb = await update_kb(db, kb_id, current_user["user_id"], current_user["role"], req)
     return {"code": "0", "message": "知识库更新成功", "data": kb.model_dump()}
 
 
-@router.delete("/{kb_id}", status_code=202)
+@router.delete("/{kb_uuid}", status_code=202)
 async def delete_knowledge_base(
-    kb_id: int,
+    kb_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """删除知识库（标记 status=deleting，异步清理由 Celery 处理）"""
+    kb_id = await resolve_uuid_to_id(db, KnowledgeBase, kb_uuid)
     data = await delete_kb(db, kb_id, current_user["user_id"], current_user["role"])
     return {"code": "0", "message": "知识库删除任务已提交", "data": data.model_dump()}

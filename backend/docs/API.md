@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.32 |
+| 文档版本 | v0.33 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ✅） |
@@ -941,6 +941,7 @@ Celery Worker（异步）:
     "kb_status": "active",
     "kb_name": "公司内部知识库",
     "original_kb_id": null,
+    "original_kb_uuid": null,
     "original_kb_name": null,
     "message_count": 0,
     "last_message_at": null,
@@ -1092,20 +1093,20 @@ Celery Worker（异步）:
 
 **孤儿会话状态**：
 
-| 场景 | `kb_id` | `original_kb_id` | `kb_status` | `kb_name` | 前端行为 |
-|:---|:---|:---|:---|:---|:---|
-| 知识库正常 | `1` | `null` | `"active"` | `"公司内部知识库"` | 正常展示，可继续问答 |
-| 知识库已删除 | `null` | `1` | `"deleted"` | `"公司内部知识库"` | 展示 Banner「关联知识库已删除」，禁止继续问答 |
+| 场景 | `kb_id` | `original_kb_id` | `original_kb_uuid` | `kb_status` | `kb_name` | 前端行为 |
+|:---|:---|:---|:---|:---|:---|:---|
+| 知识库正常 | `1` | `null` | `null` | `"active"` | `"公司内部知识库"` | 正常展示，可继续问答 |
+| 知识库已删除 | `null` | `1` | `"550e8400-..."` | `"deleted"` | `"公司内部知识库"` | 展示 Banner「关联知识库已删除」，禁止继续问答 |
 | 知识库不可访问（权限变更） | `1` | `null` | `"unavailable"` | `"公司内部知识库"` | 展示提示「知识库不可访问」，禁止继续问答 |
 | 无关联知识库 | `null` | `null` | `null` | `null` | 正常展示（独立会话） |
 
 **后端实现**：
 
 - 会话列表/详情接口通过 `selectinload(Conversation.knowledge_base)` 加载 KB 关系，`_enrich_kb_status()` 动态计算 `kb_status` / `kb_name`
-- 知识库删除时 FK `ON DELETE SET NULL` 自动清空 `kb_id`；Celery 任务在物理删除前批量备份 `original_kb_id` / `original_kb_name`
+- 知识库删除时 FK `ON DELETE SET NULL` 自动清空 `kb_id`；Celery 任务在物理删除前批量备份 `original_kb_id` / `original_kb_uuid` / `original_kb_name`
 - 问答接口校验：若 `kb_status != "active"`，拒绝新消息并返回错误提示
 
-> **注意**：`kb_status` 和 `kb_name` 是**动态计算字段**（非数据库存储），`_enrich_kb_status()` 根据 `kb_id` + `original_kb_id` 实时判断。
+> **注意**：`kb_status` 和 `kb_name` 是**动态计算字段**（非数据库存储），`_enrich_kb_status()` 根据 `kb_id` + `original_kb_id` 实时判断。`original_kb_uuid` 为持久化字段，由 Celery 在 KB 物理删除前同步备份。
 
 ---
 

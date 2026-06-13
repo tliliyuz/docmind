@@ -10,12 +10,12 @@ from pydantic import BaseModel, Field
 
 class ConversationCreate(BaseModel):
     """POST /api/conversations 请求体"""
-    kb_id: int = Field(..., description="关联知识库 ID")
+    kb_uuid: str = Field(..., description="关联知识库 UUID")
     title: str | None = Field(None, max_length=256, description="会话标题，不传则默认'新对话'")
 
 
 class ConversationUpdate(BaseModel):
-    """PUT /api/conversations/{id} 请求体"""
+    """PUT /api/conversations/{uuid} 请求体"""
     title: str = Field(..., min_length=1, max_length=256, description="新标题")
 
 
@@ -23,7 +23,7 @@ class ConversationUpdate(BaseModel):
 
 
 class MessageResponse(BaseModel):
-    """消息响应"""
+    """消息响应（Message 不改造，保持 integer id）"""
     id: int
     role: str
     content: str
@@ -35,22 +35,25 @@ class MessageResponse(BaseModel):
 
 class ConversationResponse(BaseModel):
     """会话响应（列表项 + 详情共用）"""
-    id: int
+    uuid: str
     user_id: int
-    kb_id: int | None
+    kb_uuid: str | None = Field(
+        None,
+        description="关联知识库 UUID（kb 删除后为 null）",
+    )
     kb_status: str | None = Field(
         None,
         description="关联知识库状态：active=正常 / deleted=已删除 / unavailable=不可访问。"
-                    "kb_id 为 null 且 original_kb_id 非 null 时为 deleted",
+                    "kb_id 为 null 且 original_kb_uuid 非 null 时为 deleted",
     )
     kb_name: str | None = Field(
         None,
         description="关联知识库名称（含已删除/不可访问的），前端用于孤儿会话提示。"
                     "孤儿会话从 original_kb_name 读取",
     )
-    original_kb_id: int | None = Field(
+    original_kb_uuid: str | None = Field(
         None,
-        description="KB 删除前的原始 ID，用于孤儿会话检测",
+        description="KB 删除前的原始 UUID，用于孤儿会话审计追踪",
     )
     original_kb_name: str | None = Field(
         None,

@@ -154,7 +154,7 @@ async def list_public_kbs(
 
     items = [
         PublicKnowledgeBaseResponse(
-            id=kb.id,
+            uuid=kb.uuid,
             name=kb.name,
             description=kb.description,
             user_id=kb.user_id,
@@ -220,7 +220,7 @@ async def delete_kb(
     # 分发 Celery 异步删除任务（commit 后再分发，避免 Worker 在事务提交前读到旧状态）
     delete_kb_task.delay(kb.id)
 
-    return KnowledgeBaseDeleteResponse(kb_id=kb.id, status=kb.status)
+    return KnowledgeBaseDeleteResponse(kb_uuid=kb.uuid, status=kb.status)
 
 
 async def check_kb_active(db: AsyncSession, kb_id: int) -> KnowledgeBase:

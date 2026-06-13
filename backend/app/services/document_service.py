@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.chroma_client import get_collection
@@ -203,7 +204,18 @@ async def upload_document(
     # 分发 Celery 入库任务
     _ingest_doc_task.delay(doc.id)
 
-    return DocumentUploadResponse.model_validate(doc)
+    # 获取 KB uuid 用于响应（关系未预加载，直接查 KB）
+    kb = await db.get(KnowledgeBase, kb_id)
+    kb_uuid = kb.uuid if kb else ""
+
+    return DocumentUploadResponse(
+        uuid=doc.uuid,
+        kb_uuid=kb_uuid,
+        filename=doc.filename,
+        file_type=doc.file_type,
+        file_size=doc.file_size,
+        status=doc.status,
+    )
 
 
 
@@ -225,7 +237,7 @@ async def batch_upload_documents(
             result = await upload_document(db, kb_id, user_id, role, file, force=False)
             success.append(
                 DocumentBatchUploadItem(
-                    id=result.id,
+                    uuid=result.uuid,
                     filename=result.filename,
                     status=result.status,
                 )
@@ -290,9 +302,10 @@ async def list_documents(
     )
     total = (await db.execute(count_q)).scalar() or 0
 
-    # 分页
+    # 分页（selectinload KB 用于 kb_uuid 属性）
     q = (
         select(Document)
+        .options(selectinload(Document.knowledge_base))
         .where(*conditions)
         .order_by(sort_expr)
         .offset((page - 1) * page_size)
@@ -323,7 +336,9 @@ async def _get_doc_in_kb(
 ) -> Document:
     """按 kb_id + doc_id 查文档，不存在抛 DocumentNotFoundException"""
     result = await db.execute(
-        select(Document).where(Document.id == doc_id, Document.kb_id == kb_id)
+        select(Document)
+        .options(selectinload(Document.knowledge_base))
+        .where(Document.id == doc_id, Document.kb_id == kb_id)
     )
     doc = result.scalar_one_or_none()
     if doc is None:
@@ -403,7 +418,7 @@ async def delete_document(
     # 分发 Celery 异步删除任务
     _delete_doc_task.delay(doc.id)
 
-    return DocumentDeleteResponse(doc_id=doc.id, status=doc.status)
+    return DocumentDeleteResponse(doc_uuid=doc.uuid, status=doc.status)
 
 
 async def reprocess_document(
@@ -445,4 +460,4 @@ async def reprocess_document(
     # 分发 Celery 入库任务（重新处理）
     _ingest_doc_task.delay(doc.id)
 
-    return DocumentReprocessResponse(doc_id=doc.id, status=doc.status)
+    return DocumentReprocessResponse(doc_uuid=doc.uuid, status=doc.status)
