@@ -31,7 +31,7 @@ from sqlalchemy import select
 
 from app.core.chroma_client import get_collection
 from app.core.database import async_session
-from app.core.redis_client import get_redis
+from app.core.redis_client import get_async_redis
 from app.models.document import Document
 from app.rag.bm25 import BM25Retriever
 from app.rag.fusion import rrf_fusion
@@ -101,11 +101,12 @@ class RetrievalEvaluator:
             self._vector_retriever = VectorRetriever(get_collection())
         return self._vector_retriever
 
-    @property
-    def bm25_retriever(self) -> BM25Retriever:
+    async def _ensure_bm25_retriever(self) -> BM25Retriever:
+        """懒加载 BM25Retriever（需要异步获取 Redis 客户端）"""
         if self._bm25_retriever is None:
+            async_redis = await get_async_redis()
             self._bm25_retriever = BM25Retriever(
-                redis_client=get_redis(),
+                async_redis=async_redis,
                 session_factory=async_session,
             )
         return self._bm25_retriever
@@ -322,9 +323,10 @@ class RetrievalEvaluator:
 
         # BM25 检索
         print("🔍 运行 BM25 检索评估...")
+        bm25 = await self._ensure_bm25_retriever()
         bm25_summary = await self.evaluate_retriever(
             "BM25 关键词 (jieba + rank-bm25)",
-            lambda q, kb, k: self.bm25_retriever.search(q, kb, top_k=k),
+            lambda q, kb, k: bm25.search(q, kb, top_k=k),
         )
 
         # RRF 融合（向量 + BM25）
@@ -341,6 +343,7 @@ class RetrievalEvaluator:
         """评估 RRF 融合（向量 + BM25 → RRF 融合）"""
         summary = RetrieverEvalSummary(name="RRF 融合 (k=60)")
         results: list[EvalResult] = []
+        bm25 = await self._ensure_bm25_retriever()
 
         for item in EVAL_TEST_SET:
             qid = item["id"]
@@ -351,7 +354,7 @@ class RetrievalEvaluator:
                 vector_out = await self.vector_retriever.search(
                     item["question"], self.kb_id, top_k=self.top_k,
                 )
-                bm25_out = await self.bm25_retriever.search(
+                bm25_out = await bm25.search(
                     item["question"], self.kb_id, top_k=self.top_k,
                 )
                 fused = rrf_fusion(vector_out, bm25_out)

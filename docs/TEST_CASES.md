@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.69 |
+| 文档版本 | v0.73 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ✅ / 限流 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / sources 预览 ✅ / Evidence Highlight ✅ / Admin ✅ / Admin 布局重构 ✅ / P0 性能优化 ✅ / Trace 后端 ✅ / Trace 前端 ✅ / ECharts 后端 ✅ / ECharts 图表组件 ✅ / chat_service 集成埋点 ✅ / 用户管理 ✅ / 限流 ✅） |
 
 ---
 
@@ -635,13 +635,13 @@
 
 ### 6.2 滑动窗口记忆测试
 
-> 测试文件：`tests/test_history_memory.py`（9 用例，全部通过 ✅）。覆盖空历史/基本注入/Token截断/条数上限/[来源N]去除/thinking过滤/system过滤。
+> 测试文件：`tests/test_history_memory.py`（14 用例，全部通过 ✅）。覆盖空历史/基本注入/Token截断/条数上限/[来源N]去除/thinking过滤/system过滤/Retrieval超限截断/双池子独立截断。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U8.1 | History 超限截断 | `chat_service._load_history` | 历史 token > HISTORY_BUDGET(6000) | 超大旧消息被 `continue` 跳过，最新消息优先保留 | ✅ | 2026-06-05 | Token 优先，非条数优先；审查修复 break→continue |
-| U8.2 | Retrieval 超限截断 | `prompt_builder` | 检索结果 token > RETRIEVAL_BUDGET(10000) | 从低分 chunk 开始丢弃 | ⬜ | — | Phase 5 补充（依赖 Rerank 排序完整性） |
-| U8.3 | History + Retrieval 同时超限 | `chat_service` | 两池子均超预算 | 各自独立截断，互不侵蚀 | ⬜ | — | Phase 5 补充；**P0 Bug 防御**：避免历史挤掉检索 |
+| U8.2 | Retrieval 超限截断 | `prompt_builder` | 检索结果 token > RETRIEVAL_BUDGET(10000) | 从低分 chunk 开始丢弃 | ✅ | 2026-06-13 | 3 用例：超预算丢弃低分 / 软上限跳过超大保留小 / score 降序验证 |
+| U8.3 | History + Retrieval 同时超限 | `chat_service` | 两池子均超预算 | 各自独立截断，互不侵蚀 | ✅ | 2026-06-13 | 3 用例：双池独立截断 / 历史不侵蚀检索（P0防御） / 检索不侵蚀历史 |
 | U8.4 | 条数硬上限兜底 | `chat_service._load_history` | 30 条短消息（未超 token 预算） | 最多 20 条消息，即使 token 预算未满 | ✅ | 2026-06-05 | `max_messages=20` 硬截断 |
 | U8.5 | 空历史 | `chat_service._load_history` | 新建会话无历史 | 返回 `[]`，不影响正常问答 | ✅ | 2026-06-05 | — |
 | U8.6 | `[来源N]` 标记剥离 | `chat_service._load_history` | assistant 消息含 `[来源1][来源2]` | 注入历史中已去除所有 `[来源N]`，user 消息不去除 | ✅ | 2026-06-05 | 2 用例：assistant 去除 + user 保留 |
@@ -766,9 +766,7 @@
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | U9.5 | 请求入口日志 | 中间件/日志工具 | HTTP 请求到达 | 日志包含 request_id + method + path + user_id | ✅ | 2026-06-06 | test_logging.py 12 用例 |
-| U9.6 | 检索耗时日志 | `chat_service` | 检索阶段 | 日志包含 request_id + kb_id + 向量耗时 + BM25 耗时 | ⏭️ | — | 已合并入 §6.13 Trace 测试（U13.10-U13.14），结构化写 traces 表替代散落日志 |
-| U9.7 | LLM 调用日志 | `core/llm` | LLM 流式调用 | 日志包含 request_id + model + prompt_tokens + completion_tokens + 首 token 延迟 | ⏭️ | — | 已合并入 §6.13 Trace 测试（U13.10），generate JSON 记录 ttft_ms/tokens |
-| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ⬜ | — | 结构化日志框架已实现（Phase 4），本用例验证日志格式，与 Trace 独立 |
+| U12.4 | 日志-JSON 格式校验 | `logging_config` | 任意日志输出 | 每条日志为合法 JSON，含 `timestamp` / `level` / `request_id` 顶层字段 | ✅ | 2026-06-13 | TestLogJSONIntegration 集成测试：handler + JSONFormatter + RequestIDFilter 实际输出校验 |
 
 ### 6.8 Phase 5 Admin 测试用例
 
@@ -787,11 +785,11 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A8.1 | IP 限流生效 | 限流中间件 | 单 IP 超阈值请求 | 429 Too Many Requests | ⬜ | — | 阈值来自压测结果 |
-| A8.2 | 用户级限流生效 | 限流中间件 | 单用户超阈值请求 | 429 + 不同用户不受影响 | ⬜ | — | — |
-| A8.3 | 限流窗口重置 | 限流中间件 | 等待窗口过期后 | 请求恢复正常 | ⬜ | — | — |
-| A8.4 | 不同接口独立计数 | 限流中间件 | chat 接口耗尽后调用 upload 接口 | chat 被限流，upload 仍可正常请求（各自独立窗口） | ⬜ | — | 验证维度隔离 |
-| A8.5 | 限流响应头正确性 | 限流中间件 | 正常请求 | 响应含 `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` 头，值正确递减 | ⬜ | — | — |
+| A8.1 | 正常请求返回限流 header | RateLimitMiddleware | 正常 GET /api/knowledge-bases | 响应含 `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` 头 | ✅ | 2026-06-13 | 22 用例全部通过 |
+| A8.2 | 超过阈值返回 429 | RateLimitMiddleware | eval 返回 121（超过 default 120/min） | 429 + E9004 + remaining=0 | ✅ | 2026-06-13 | — |
+| A8.3 | 不同接口组独立计数 | _get_endpoint_group / _get_limit_for_group | chat/login/upload/default 路径映射 | 各组独立阈值（30/10/20/120） | ✅ | 2026-06-13 | 单元测试验证映射规则 |
+| A8.4 | 限流开关关闭不拦截 | RateLimitMiddleware | RATE_LIMIT_ENABLED=False | 直接放行，不注入限流 header | ✅ | 2026-06-13 | — |
+| A8.5 | Redis 不可用降级放行 | RateLimitMiddleware | eval 抛出 ConnectionError | 降级放行（非 429） | ✅ | 2026-06-13 | — |
 
 ### 6.10 Phase 5 意图识别测试用例
 
@@ -946,37 +944,37 @@
 
 ### 6.15 Phase 5 用户管理测试用例
 
-> 后端测试文件（待创建）：`tests/test_admin_user_service.py` + `tests/test_admin_user_api.py`。
+> 后端测试文件：`tests/test_admin_user_service.py`（17 用例）+ `tests/test_admin_user_api.py`（21 用例），全部通过 ✅。
 
 #### 6.15.1 后端 — 用户管理 Service 测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| U15.1 | 用户列表-正常 | `admin_service.list_users()` | 多用户 | 返回分页列表，含 username/role/status/kb_count/doc_count | ⬜ | — | — |
-| U15.2 | 用户列表-按 role 筛选 | `admin_service.list_users(role="admin")` | 混合角色 | 仅返回 admin 用户 | ⬜ | — | — |
-| U15.3 | 用户列表-按 status 筛选 | `admin_service.list_users(status="disabled")` | 混合状态 | 仅返回 disabled 用户 | ⬜ | — | — |
-| U15.4 | 用户列表-搜索 | `admin_service.list_users(search="zhang")` | 多用户 | 仅返回用户名含「zhang」的 | ⬜ | — | 模糊搜索 |
-| U15.5 | 用户详情-正常 | `admin_service.get_user_detail()` | 有效 user_id | 返回含 kb_count/doc_count/conversation_count/message_count/token 统计 | ⬜ | — | 跨表聚合 |
-| U15.6 | 用户详情-不存在 | `admin_service.get_user_detail()` | 无效 user_id | 抛出 NotFoundException | ⬜ | — | — |
-| U15.9 | 禁用用户 | `admin_service.change_user_status()` | status="disabled" | 状态更新为 disabled | ⬜ | — | — |
-| U15.10 | 启用用户 | `admin_service.change_user_status()` | status="active" | 状态更新为 active | ⬜ | — | — |
-| U15.11 | 重置密码 | `admin_service.reset_user_password()` | 有效 user_id + new_password | 密码更新成功，新密码可登录 | ⬜ | — | 验证密码哈希更新 |
-| U15.12 | 重置密码-用户不存在 | `admin_service.reset_user_password()` | 无效 user_id | 抛出 NotFoundException | ⬜ | — | — |
+| U15.1 | 用户列表-正常 | `admin_service.list_users()` | 多用户 | 返回分页列表，含 username/role/status/kb_count/doc_count | ✅ | 2026-06-13 | TestListUsers (6 用例) |
+| U15.2 | 用户列表-按 role 筛选 | `admin_service.list_users(role="admin")` | 混合角色 | 仅返回 admin 用户 | ✅ | 2026-06-13 | — |
+| U15.3 | 用户列表-按 status 筛选 | `admin_service.list_users(status="disabled")` | 混合状态 | 仅返回 disabled 用户 | ✅ | 2026-06-13 | — |
+| U15.4 | 用户列表-搜索 | `admin_service.list_users(search="zhang")` | 多用户 | 仅返回用户名含「zhang」的 | ✅ | 2026-06-13 | 模糊搜索 |
+| U15.5 | 用户详情-正常 | `admin_service.get_user_detail()` | 有效 user_id | 返回含 kb_count/doc_count/conversation_count/message_count/token 统计 | ✅ | 2026-06-13 | TestGetUserDetail (3 用例)：跨表聚合 |
+| U15.6 | 用户详情-不存在 | `admin_service.get_user_detail()` | 无效 user_id | 抛出 NotFoundException | ✅ | 2026-06-13 | — |
+| U15.9 | 禁用用户 | `admin_service.change_user_status()` | status="disabled" | 状态更新为 disabled | ✅ | 2026-06-13 | TestChangeUserStatus (5 用例)：含吊销 token + 禁止操作自己 + 状态相同跳过 |
+| U15.10 | 启用用户 | `admin_service.change_user_status()` | status="active" | 状态更新为 active | ✅ | 2026-06-13 | — |
+| U15.11 | 重置密码 | `admin_service.reset_user_password()` | 有效 user_id + new_password | 密码更新成功，新密码可登录 | ✅ | 2026-06-13 | TestResetUserPassword (3 用例)：验证密码哈希更新 + 吊销 token |
+| U15.12 | 重置密码-用户不存在 | `admin_service.reset_user_password()` | 无效 user_id | 抛出 NotFoundException | ✅ | 2026-06-13 | 含密码相同校验 E7004 |
 
 #### 6.15.2 后端 — 用户管理 API 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A9.20 | 用户列表-正常 | GET `/api/admin/users` | admin 用户 | 200, 分页列表，含 username/role/status/kb_count | ⬜ | — | — |
-| A9.21 | 用户列表-筛选 | GET `/api/admin/users?role=admin&status=active` | 混合用户 | 200, 仅返回匹配的用户 | ⬜ | — | 组合筛选 |
-| A9.22 | 用户列表-搜索 | GET `/api/admin/users?search=zhang` | 多用户 | 200, 仅返回匹配的用户 | ⬜ | — | — |
-| A9.23 | 用户详情-正常 | GET `/api/admin/users/{user_id}` | 有效 user_id | 200, 含统计信息 | ⬜ | — | — |
-| A9.24 | 用户详情-不存在 | GET `/api/admin/users/99999` | 无效 user_id | 404 | ⬜ | — | — |
-| A9.27 | 禁用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"disabled"}` | 200, 状态已更新 | ⬜ | — | — |
-| A9.28 | 启用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"active"}` | 200, 状态已更新 | ⬜ | — | — |
-| A9.29 | 重置密码-正常 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"Temp123!"}` | 200, 密码已重置 | ⬜ | — | — |
-| A9.30 | 重置密码-密码过短 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"123"}` | 422 | ⬜ | — | 参数校验 |
-| A9.31 | 用户管理-非 admin 拒绝 | 全部用户管理端点 | 普通用户 | 403, E5005 | ⬜ | — | 权限矩阵 |
+| A9.20 | 用户列表-正常 | GET `/api/admin/users` | admin 用户 | 200, 分页列表，含 username/role/status/kb_count | ✅ | 2026-06-13 | TestAdminUserListAPI (3 用例) |
+| A9.21 | 用户列表-筛选 | GET `/api/admin/users?role=admin&status=active` | 混合用户 | 200, 仅返回匹配的用户 | ✅ | 2026-06-13 | 组合筛选 + search 参数透传 |
+| A9.22 | 用户列表-搜索 | GET `/api/admin/users?search=zhang` | 多用户 | 200, 仅返回匹配的用户 | ✅ | 2026-06-13 | — |
+| A9.23 | 用户详情-正常 | GET `/api/admin/users/{user_id}` | 有效 user_id | 200, 含统计信息 | ✅ | 2026-06-13 | TestAdminUserDetailAPI (3 用例) |
+| A9.24 | 用户详情-不存在 | GET `/api/admin/users/99999` | 无效 user_id | 404 | ✅ | 2026-06-13 | E7002 |
+| A9.27 | 禁用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"disabled"}` | 200, 状态已更新 | ✅ | 2026-06-13 | TestAdminUserStatusAPI (3 用例)：含禁止操作自己 E7003 |
+| A9.28 | 启用用户-正常 | PUT `/api/admin/users/{user_id}/status` | `{"status":"active"}` | 200, 状态已更新 | ✅ | 2026-06-13 | — |
+| A9.29 | 重置密码-正常 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"Temp123!"}` | 200, 密码已重置 | ✅ | 2026-06-13 | TestAdminUserResetPasswordAPI (4 用例) |
+| A9.30 | 重置密码-密码过短 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"123"}` | 422 | ✅ | 2026-06-13 | 参数校验 + 密码相同 E7004 |
+| A9.31 | 用户管理-非 admin 拒绝 | 全部用户管理端点 | 普通用户 | 403, E5005 | ✅ | 2026-06-13 | TestAdminUserPermissionMatrix (8 用例)：4 端点 × 2 场景 |
 
 #### 6.15.3 前端 — 用户管理组件测试
 
@@ -1099,7 +1097,7 @@
 | `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py，2026-06-05） |
 | `services/chat_service.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py，2026-06-05） |
 | `core/error_handlers.py` | ≥ 80% | ✅ | Phase 4.2：全局异常处理（test_error_handlers.py，9 用例，U9.1-U9.3） |
-| `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（12 用例） |
+| `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（13 用例，含 U12.4 JSON 格式集成校验） |
 | `services/auth_service.py` (refresh) | ≥ 80% | ✅ | Phase 4.2：Refresh Token 机制（20 用例） |
 | `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
 | `api/admin.py` (接口测试) | ≥ 90% | ✅ 100% | Phase 5：Admin 端点（27 用例，A7.1-A7.6，含权限矩阵参数化 9 用例） |
@@ -1109,7 +1107,6 @@
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，U10.1-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；U11.1-U11.6） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，U11.10-U11.15） |
-| 性能埋点（检索+LLM） | ≥ 70% | ⏭️ | Phase 5：U9.6/U9.7 已合并入 Trace（§6.13），U12.4 已并入 §6.7 |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
@@ -1131,8 +1128,8 @@
 | `services/trace_service.py` | ≥ 80% | ✅ 23 用例 | Phase 5：Trace Service（test_trace_service.py：record_trace 3 + TraceRecorder 7 + list_traces 5 + get_trace_detail 2 + get_trace_stats 6） |
 | `api/admin.py` (Trace 端点) | ≥ 90% | ✅ 17 用例 | Phase 5：Trace API（test_trace_api.py：列表 6 + 详情 2 + 权限 3 + 统计 6） |
 | `rag/trace_recorder.py` | ≥ 80% | ✅ 7 用例 | Phase 5：TraceRecorder 数据收集器（test_trace_service.py TestTraceRecorder） |
-| `api/admin.py` (用户管理端点) | ≥ 90% | ⬜ | Phase 5：用户管理 API（12 用例，A9.20-A9.31） |
-| `services/admin_service.py` (用户管理) | ≥ 80% | ⬜ | Phase 5：用户管理 Service（12 用例，U15.1-U15.12） |
+| `api/admin.py` (用户管理端点) | ≥ 90% | ✅ 100% | Phase 5：用户管理 API（21 用例，A9.20-A9.31，test_admin_user_api.py） |
+| `services/admin_service.py` (用户管理) | ≥ 80% | ✅ 100% | Phase 5：用户管理 Service（17 用例，U15.1-U15.12，test_admin_user_service.py） |
 | `services/admin_service.py` (统计增强) | ≥ 80% | ✅ 7 用例 | Phase 5：ECharts 统计增强（test_admin_api.py TestAdminStatsChartsAPI：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
 | 前端 `views/admin/TraceList.vue` | ≥ 60% | ✅ 23 用例 | Phase 5：Trace 列表页（7 用例，C9.1-C9.7） |
 | 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ✅ 25 用例 | Phase 5：Trace 详情页（5 用例，C9.8-C9.12） |

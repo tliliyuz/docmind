@@ -1,5 +1,96 @@
 # DocMind 变更日志
 
+## 2026-06-13 — 检索评估脚本 BM25 初始化修复 + ChromaDB 遥测噪音消除
+
+### 修复
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/eval_retrieval.py` | BM25Retriever 初始化参数名错误（`redis_client`→`async_redis`）+ 同步客户端改异步客户端（`get_redis()`→`get_async_redis()`）+ `bm25_retriever` property 改为 `_ensure_bm25_retriever()` 异步方法 |
+| `backend/app/core/chroma_client.py` | ChromaDB PersistentClient 添加 `anonymized_telemetry=False`，消除 `capture() takes 1 positional argument but 3 were given` 遥测报错噪音 |
+
+---
+
+## 2026-06-13 — §6.2 滑动窗口记忆测试 U8.2/U8.3 补全
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_history_memory.py` — `TestRetrievalBudgetTruncation` | U8.2 Retrieval 超限截断测试（3 用例）：超预算从低分 chunk 丢弃 / 软上限跳过超大保留更小低分 chunk / 保留 chunk score 严格降序验证 |
+| `backend/tests/test_history_memory.py` — `TestHistoryRetrievalDualBudget` | U8.3 History + Retrieval 双池子独立截断测试（3 用例）：双池独立截断 / 历史不侵蚀检索预算（P0 Bug 防御） / 检索不侵蚀历史预算 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `docs/TEST_CASES.md` | v0.72→v0.73。§6.2 U8.2 ⬜→✅、U8.3 ⬜→✅；用例数 9→14 |
+| `docs/ROADMAP.md` | v0.54→v0.55。§7.5 U8.2/U8.3 ⬜→✅ |
+
+---
+
+## 2026-06-13 — §6.7 结构化日志 U12.4 补全 + U9.6/U9.7 清理
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_logging.py` — `TestLogJSONIntegration` | U12.4 日志 JSON 格式集成校验（1 用例）：通过 handler + JSONFormatter + RequestIDFilter 实际输出 3 条日志，逐条验证合法 JSON + `timestamp`/`level`/`request_id` 顶层字段 + extra 字段透传 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_logging.py` | 修复 10 个测试方法命名：`test输出有效JSON` 等 → `test_输出有效JSON` 等（`pytest.ini` 要求 `test_*` 下划线前缀，原方法从未被收集执行） |
+| `docs/TEST_CASES.md` | v0.71→v0.72。§6.7 移除已合并入 §6.13 的 U9.6（检索耗时日志）/ U9.7（LLM 调用日志），U12.4 ⬜→✅；§8 `core/logging_config.py` 用例数 12→13；性能埋点条目精简 |
+
+---
+
+## 2026-06-13 — §7.3.1 限流后端实现
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/middleware/rate_limit_middleware.py` | 限流中间件（纯 ASGI）：固定窗口计数器 + Redis Lua 脚本原子 INCR+EXPIRE。4 接口组（chat/upload/login/default）独立阈值，IP 级限流，`X-RateLimit-*` 响应头，E9004 错误码，Redis 故障降级放行 |
+| `backend/tests/test_rate_limit.py` | 限流测试 22 用例：IP 提取 4 + 路由规则 6 + 阈值获取 3 + A8.1-A8.5 集成 5 + OPTIONS/health/WebSocket/Lua 参数 4 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/config.py` | 新增 6 个限流配置字段：`RATE_LIMIT_ENABLED` / `RATE_LIMIT_CHAT_PER_MINUTE` / `RATE_LIMIT_UPLOAD_PER_MINUTE` / `RATE_LIMIT_LOGIN_PER_MINUTE` / `RATE_LIMIT_DEFAULT_PER_MINUTE` / `RATE_LIMIT_WINDOW_SECONDS` |
+| `backend/app/main.py` | 注册 `RateLimitMiddleware`（执行顺序：RequestID → RateLimit → Auth） |
+| `backend/app/core/redis_client.py` | `ThreadedRedisClient` 新增 `incr()` / `expire()` / `eval()` 方法，支持限流 Lua 脚本 |
+| `backend/tests/conftest.py` | 新增 `mock_rate_limit_redis` session fixture — 全局 mock 限流 Redis 避免测试间干扰 |
+| `docs/TEST_CASES.md` | v0.70→v0.71。§A8.1-A8.5 限流用例全部 ✅ |
+| `docs/ROADMAP.md` | §7.3.1 限流 3 子任务全部 ✅；§7.5 限流测试 ✅ |
+| `docs/ARCHITECTURE.md` | §1 限流状态 `[Planned: Phase 5]` → `[Implemented]`；§13.2.6 实现文件更新 |
+
+---
+
+## 2026-06-13 — Phase 5 用户管理测试（§6.15.1 + §6.15.2）
+
+### 背景
+
+TEST_CASES.md §6.15 Phase 5 用户管理测试用例（U15.1-U15.12 / A9.20-A9.31）标记为 ⬜ 待编写。API 层测试此前已在 `test_admin_api.py` 中实现（21 用例），按文档要求迁移到独立文件；Service 层测试为新建。
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_admin_user_service.py` | 用户管理 Service 单元测试（17 用例）：`TestListUsers` (6) 覆盖分页/role筛选/status筛选/搜索/空结果/聚合为零；`TestGetUserDetail` (3) 覆盖正常返回/不存在异常/token 统计为零；`TestChangeUserStatus` (5) 覆盖禁用/启用/禁止操作自己/用户不存在/状态相同跳过；`TestResetUserPassword` (3) 覆盖重置成功/用户不存在/密码相同异常 |
+| `backend/tests/test_admin_user_api.py` | 用户管理 API 接口测试（21 用例）：从 `test_admin_api.py` 迁移 `TestAdminUserListAPI` (3) + `TestAdminUserDetailAPI` (3) + `TestAdminUserStatusAPI` (3) + `TestAdminUserResetPasswordAPI` (4) + `TestAdminUserPermissionMatrix` (8，4端点 × 2场景参数化) |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/tests/test_admin_api.py` | 移除已迁移的用户管理测试类（5 个 class + 2 个 helper），保留统计/KB/文档/权限/ECharts 测试（34 用例） |
+| `docs/TEST_CASES.md` | v0.69→v0.70。§6.15.1 Service 测试 U15.1-U15.12 全部 ✅；§6.15.2 API 测试 A9.20-A9.31 全部 ✅；§8 覆盖率表更新为 ✅ |
+
+---
+
 ## 2026-06-13 — §8 交互规范补全 + 全项目危险操作交互对齐
 
 ### 背景

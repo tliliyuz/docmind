@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.53 |
+| 文档版本 | v0.55 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ⬜） |
+| 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / P0 性能优化 ✅ / Trace ✅ / ECharts ✅ / Docker 部署 ✅ / 性能埋点 ✅ / 用户管理 ✅ / 限流 ✅） |
 
 ---
 
@@ -474,9 +474,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `rate_limit.py` 中间件 | `backend/app/middleware/rate_limit.py` — 固定窗口计数器 + Redis 原子操作（`INCR` + `EXPIRE`） |
-| ⬜ | 配置项 | `config.py` 新增 6 个限流配置字段（含启用开关 + 各接口默认阈值） |
-| ⬜ | 中间件注册 | `main.py` 注册 `RateLimitMiddleware`（放在 `RequestIDMiddleware` 之后） |
+| ✅ | `rate_limit_middleware.py` 中间件 | `backend/app/middleware/rate_limit_middleware.py` — 固定窗口计数器 + Redis 原子操作（`INCR` + `EXPIRE`），纯 ASGI 中间件，Lua 脚本原子性，降级放行策略 |
+| ✅ | 配置项 | `config.py` 新增 6 个限流配置字段（`RATE_LIMIT_ENABLED` + 4 接口组阈值 + `RATE_LIMIT_WINDOW_SECONDS`） |
+| ✅ | 中间件注册 | `main.py` 注册 `RateLimitMiddleware`（放在 `RequestIDMiddleware` 之后，执行顺序：RequestID → RateLimit → Auth） |
 
 #### 7.3.2 README + 部署文档（4 子任务）
 
@@ -485,7 +485,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ⬜ | README.md 部署章节 | 项目简介 + 快速开始（Docker Compose）+ 文档索引 |
 | ✅ | Dockerfile × 2 | `Dockerfile.backend`（FastAPI + Celery Worker）+ `Dockerfile.frontend`（Nginx + 静态资源） |
 | ✅ | docker-compose.yml | 5 服务编排（MySQL + Redis + Backend + Celery + Nginx）+ ChromaDB 挂卷 |
-| ✅ | nginx.conf | 反向代理 + SSL 终结 + SSE buffering 关闭 + 静态资源 SPA fallback |
+| ✅ | nginx.conf | 反向代理 + SSE buffering 关闭 + 静态资源 SPA fallback + client_max_body_size 50m（SSL 终结 [Planned: Phase 6]） |
 
 ### 7.4a Trace 链路追踪（P0，v1 MVP）
 
@@ -579,7 +579,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 = 10 用例（`test_intent.py`），全部通过 |
 | ✅ | sources Evidence 预览测试 | 单元测试 | Evidence 定位集成 3 + 降级 3 + 短 chunk 2 + 格式 3 + 边界 5 + Schema 5 = 21 用例（`test_sources_preview.py`）+ 句级定位 14 用例（`test_sentence_matcher.py`）= 35 用例，全部通过；前端零改动 |
 | ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
-| ⬜ | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值参数化待压测后填入） |
+| ✅ | 限流测试 | 接口+单元 | 限流中间件 22 用例（`test_rate_limit.py`）：IP 提取 4 + 路由规则 6 + 阈值获取 3 + A8.1-A8.5 集成测试 5 + OPTIONS/health/WebSocket/Lua 参数 4，全部通过 |
 | ✅ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4，独立于 Trace）。chat_service 全链路集成埋点测试 5 用例（§6.14.4，U13.10-U13.14）— 验证 KNOWLEDGE/CASUAL/META/错误/retrieve 细粒度各路径 Trace 数据收集正确性。原检索/LLM 耗时埋点（U12.1-U12.3）已合并入 Trace 测试（§6.14，✅） |
 | ✅ | Trace 接口测试 | 接口+单元 | Service 层 23 用例（`test_trace_service.py`）+ API 层 17 用例（`test_trace_api.py`）= 40 用例，全部通过。覆盖 U13.1-U13.5, A9.1-A9.15 |
 | ✅ | Trace 前端组件测试 | 前端组件 | TraceList 23 用例（C9.1-C9.7）+ TraceDetail 25 用例（C9.8-C9.12）= 48 用例，全部通过。覆盖渲染/空状态/搜索防抖/筛选/分页/行跳转/剪贴板复制/阶段卡片/JSON 展开折叠/返回导航 |
@@ -587,8 +587,8 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | ECharts 统计接口测试 | 单元测试 | trend 聚合 2 + latency 分位数 3 + tokens 聚合 2 = 7 用例（test_admin_api.py TestAdminStatsChartsAPI），全部通过 |
 | ✅ | 用户管理接口测试 | 接口+单元 | 用户列表 3 + 详情 3 + 禁用启用 3 + 重置密码 3 + 权限矩阵 8 = 20 用例（`test_admin_api.py`），全部通过 |
 | ✅ | 用户管理前端组件测试 | 前端组件 | AdminUserList 15 用例（C8.1-C8.9）+ AdminUserDetail 16 用例（C8.10-C8.14）= 31 用例，全部通过。覆盖渲染/空状态/筛选/分页/行点击/操作菜单/错误处理/加载状态/导航/禁用启用 |
-| ⬜ | U8.2 Retrieval 超限截断测试 | 单元测试 | 检索结果 token > RETRIEVAL_BUDGET(10000) 时从低分 chunk 开始丢弃。**P0 Bug 防御** |
-| ⬜ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 两池子均超预算时各自独立截断互不侵蚀。**P0 Bug 防御** |
+| ✅ | U8.2 Retrieval 超限截断测试 | 单元测试 | 3 用例（`test_history_memory.py` TestRetrievalBudgetTruncation）：超预算从低分丢弃 / 软上限跳过超大保留小 / score 降序验证。**P0 Bug 防御** |
+| ✅ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 3 用例（`test_history_memory.py` TestHistoryRetrievalDualBudget）：双池独立截断 / 历史不侵蚀检索（P0防御） / 检索不侵蚀历史。**P0 Bug 防御** |
 | ⬜ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
 | ⬜ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** |
 | ⬜ | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 |
