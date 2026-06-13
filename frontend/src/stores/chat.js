@@ -39,6 +39,12 @@ export const useChatStore = defineStore('chat', () => {
   /** 加载知识库列表中 */
   const loadingKBs = ref(false)
 
+  /** 当前会话关联的知识库状态（active/deleted/unavailable/null） */
+  const kbStatus = ref(null)
+
+  /** 当前会话关联的知识库名称（含已删除/不可访问的） */
+  const kbName = ref(null)
+
   // ===== 计算属性 =====
 
   /** 消息列表是否为空 */
@@ -52,6 +58,11 @@ export const useChatStore = defineStore('chat', () => {
   /** 是否有正在流式接收的助手消息 */
   const hasStreamingMessage = computed(() => {
     return messages.value.some(m => m.role === 'assistant' && m.status === 'streaming')
+  })
+
+  /** 当前会话是否为孤儿会话（关联的 KB 已删除或不可访问） */
+  const isKbOrphaned = computed(() => {
+    return kbStatus.value === 'deleted' || kbStatus.value === 'unavailable'
   })
 
   // ===== 知识库相关 =====
@@ -173,10 +184,13 @@ export const useChatStore = defineStore('chat', () => {
               convStore.addConversation({
                 id: data.conversation_id,
                 kb_id: selectedKBId.value,
+                kb_status: 'active',
+                kb_name: null,
                 title: '新对话',
                 message_count: 1,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                last_message_at: new Date().toISOString(),
               })
             } catch (err) {
               console.error('添加会话到侧边栏失败:', err)
@@ -293,6 +307,8 @@ export const useChatStore = defineStore('chat', () => {
     abort()
     messages.value = []
     conversationId.value = null
+    kbStatus.value = null
+    kbName.value = null
   }
 
   /** 设置当前会话（用于加载历史会话） */
@@ -308,6 +324,8 @@ export const useChatStore = defineStore('chat', () => {
 
       conversationId.value = data.id
       selectedKBId.value = data.kb_id
+      kbStatus.value = data.kb_status || null
+      kbName.value = data.kb_name || null
 
       // 转换后端消息格式为前端格式
       messages.value = (data.messages || []).map(msg => ({
@@ -356,6 +374,8 @@ export const useChatStore = defineStore('chat', () => {
     selectedKBId.value = null
     selectableKBs.value = { mine: [], public: [] }
     loadingKBs.value = false
+    kbStatus.value = null
+    kbName.value = null
     localStorage.removeItem('last_kb_id')
     // 重置会话列表 Store
     try {
@@ -374,11 +394,14 @@ export const useChatStore = defineStore('chat', () => {
     selectedKBId,
     selectableKBs,
     loadingKBs,
+    kbStatus,
+    kbName,
 
     // 计算属性
     isEmpty,
     lastMessage,
     hasStreamingMessage,
+    isKbOrphaned,
 
     // 方法
     loadSelectableKBs,

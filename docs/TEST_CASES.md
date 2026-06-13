@@ -624,14 +624,36 @@
 
 ### 6.1 会话 CRUD API 接口测试
 
-> 测试文件：`tests/test_conversation_api.py`（20 用例，全部通过 ✅）。覆盖创建(4)/列表(3)/详情(4)/重命名(5)/删除(4)。
+> 测试文件：`tests/test_conversation_api.py`（23 用例，全部通过 ✅）。覆盖创建(4)/列表(3)/详情(4)/重命名(5)/删除(4)/kb_status 字段(3)。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| A5.1 | 会话 CRUD 全套 | API | 创建/列表/详情/重命名/删除 | 各端点正常响应 | ✅ | 2026-06-05 | 硬删除，DELETE 后会话及消息全部清理 |
-| A5.2 | 越权访问会话 | API | 访问他人会话 | 403, E3002 | ✅ | 2026-06-05 | detail/rename/delete 三个入口均覆盖 |
-| A5.3 | 会话列表排序 | API | 多发会话 | 按 `updated_at DESC` 排列 | ✅ | 2026-06-05 | Service 层逻辑，API 层 mock 验证 |
-| A5.4 | 会话列表仅返回自己 | API | user_A 列表 | 不含 user_B 的会话 | ✅ | 2026-06-05 | Service 层 `WHERE user_id=` 保证 |
+| A5.1 | 会话 CRUD 全套 | API | 创建/列表/详情/重命名/删除 | 各端点正常响应 | ✅ | 2026-06-13 | 硬删除，DELETE 后会话及消息全部清理 |
+| A5.2 | 越权访问会话 | API | 访问他人会话 | 403, E3002 | ✅ | 2026-06-13 | detail/rename/delete 三个入口均覆盖 |
+| A5.3 | 会话列表排序 | API | 多发会话 | 按 `last_message_at DESC` 排列 | ✅ | 2026-06-13 | 排序字段从 updated_at 改为 last_message_at |
+| A5.4 | 会话列表仅返回自己 | API | user_A 列表 | 不含 user_B 的会话 | ✅ | 2026-06-13 | Service 层 `WHERE user_id=` 保证 |
+| A5.5 | 孤儿会话字段 | API | kb_id=None + original_kb_id 非空 | kb_status="deleted", kb_name="已删除知识库" | ✅ | 2026-06-13 | KB 删除后 FK SET NULL + original_kb_id 备份 |
+| A5.6 | 不可访问 KB 会话 | API | private KB 非 owner | kb_status=unavailable | ✅ | 2026-06-13 | 详情接口验证 |
+| A5.7 | last_message_at 字段 | API | 列表含会话 | 响应含 last_message_at | ✅ | 2026-06-13 | 列表排序依据 |
+
+### 6.1b 会话 Service 层测试
+
+> 测试文件：`tests/test_conversation_service.py`（12 用例，全部通过 ✅）。覆盖 _enrich_kb_status(5)/list_conversations(3)/create_conversation(1)/get_conversation_detail(3)。
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| U5.1 | 从未关联 KB | `_enrich_kb_status` | kb_id=None + original_kb_id=None | kb_status=None, kb_name=None | ✅ | 2026-06-13 | — |
+| U5.1b | 孤儿会话（KB 已删除） | `_enrich_kb_status` | kb_id=None + original_kb_id=5 | kb_status="deleted", kb_name="已删除知识库" | ✅ | 2026-06-13 | — |
+| U5.2 | KB public 可访问 | `_enrich_kb_status` | public KB 非 owner | kb_status=active | ✅ | 2026-06-13 | — |
+| U5.3 | private KB owner | `_enrich_kb_status` | private KB owner | kb_status=active | ✅ | 2026-06-13 | — |
+| U5.4 | private KB 非 owner | `_enrich_kb_status` | private KB 非 owner | kb_status=unavailable | ✅ | 2026-06-13 | — |
+| U5.5 | 列表分页含新字段 | `list_conversations` | 2 条会话 | 含 kb_status/kb_name/last_message_at | ✅ | 2026-06-13 | — |
+| U5.6 | 空列表 | `list_conversations` | 无会话 | total=0, items=[] | ✅ | 2026-06-13 | — |
+| U5.7 | 孤儿会话列表 | `list_conversations` | kb_id=None + original_kb_id 非空 | kb_status="deleted", kb_name="已删除知识库" | ✅ | 2026-06-13 | — |
+| U5.8 | 创建会话 | `create_conversation` | 正常创建 | last_message_at=None | ✅ | 2026-06-13 | — |
+| U5.9 | 详情含消息 | `get_conversation_detail` | conv + 2 条消息 | 含 kb_status/kb_name + messages | ✅ | 2026-06-13 | — |
+| U5.10 | 详情不存在 | `get_conversation_detail` | conv_id 不存在 | ConversationNotFoundException | ✅ | 2026-06-13 | — |
+| U5.11 | 详情越权 | `get_conversation_detail` | 非 owner | ConversationAccessDeniedException | ✅ | 2026-06-13 | — |
 
 ### 6.2 滑动窗口记忆测试
 

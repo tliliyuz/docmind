@@ -44,22 +44,44 @@
       </div>
     </div>
 
+    <!-- 孤儿会话警告 Banner -->
+    <div v-if="chatStore.isKbOrphaned && !chatStore.isEmpty" class="orphan-banner">
+      <i class="fas fa-exclamation-triangle orphan-banner-icon"></i>
+      <div class="orphan-banner-text">
+        <span v-if="chatStore.kbStatus === 'deleted'">
+          该会话关联的知识库「{{ chatStore.kbName || '未知' }}」已被删除。
+        </span>
+        <span v-else-if="chatStore.kbStatus === 'unavailable'">
+          该会话关联的知识库「{{ chatStore.kbName || '未知' }}」已不可访问。
+        </span>
+        <span>历史消息仍可查看，如需继续提问，请重新选择一个知识库。</span>
+      </div>
+      <button class="orphan-banner-btn" @click="handleOrphanNewChat">
+        <i class="fas fa-plus"></i>
+        新建对话
+      </button>
+    </div>
+
     <!-- 消息区域：空态 or 消息列表 -->
-    <WelcomeScreen
-      v-if="chatStore.isEmpty"
-      @select="handleQuickQuestion"
-    />
-    <MessageList
-      v-else
-      ref="messageListRef"
-      :messages="chatStore.messages"
-      @regenerate="chatStore.regenerate()"
-    />
+    <div class="chat-message-area">
+      <WelcomeScreen
+        v-if="chatStore.isEmpty"
+        @select="handleQuickQuestion"
+      />
+      <MessageList
+        v-else
+        ref="messageListRef"
+        :messages="chatStore.messages"
+        @regenerate="chatStore.regenerate()"
+      />
+    </div>
 
     <!-- 输入框 -->
     <ChatInput
       ref="chatInputRef"
       :streaming="chatStore.streaming"
+      :placeholder="orphanInputPlaceholder"
+      :disabled="chatStore.isKbOrphaned && !chatStore.isEmpty"
       @send="handleSend"
       @stop="chatStore.abort()"
     />
@@ -69,7 +91,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useChatStore } from '@/stores/chat'
 import WelcomeScreen from '@/components/chat/WelcomeScreen.vue'
 import MessageList from '@/components/chat/MessageList.vue'
@@ -99,6 +121,15 @@ const selectedPublicKBId = computed(() => {
 /** 是否有任何可选知识库 */
 const hasAnyKB = computed(() => {
   return chatStore.selectableKBs.mine.length > 0 || chatStore.selectableKBs.public.length > 0
+})
+
+/** 孤儿会话时的输入框 placeholder */
+const orphanInputPlaceholder = computed(() => {
+  if (!chatStore.isKbOrphaned) return undefined
+  if (chatStore.kbStatus === 'deleted') {
+    return '此会话关联的知识库已删除，无法继续提问'
+  }
+  return '此会话关联的知识库不可访问，无法继续提问'
 })
 
 /**
@@ -171,8 +202,36 @@ function handleKBChange(kbId) {
   router.push('/chat')
 }
 
+/** 孤儿会话新建对话 */
+async function handleOrphanNewChat() {
+  try {
+    await ElMessageBox.confirm(
+      '当前会话关联的知识库已不可用。你可以新建一个对话并选择知识库，或继续查看当前会话的历史消息。',
+      '新建对话',
+      {
+        distinguishCancelAndClose: true,
+        confirmButtonText: '新建对话',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    // 用户选择「新建对话」→ 清除消息，进入新对话
+    chatStore.clearMessages()
+    router.push('/chat')
+  } catch (action) {
+    if (action === 'cancel') {
+      // 用户选择「取消」→ 保持在当前页面（只读查看历史消息）
+    }
+    // 关闭弹窗 → 不做任何操作
+  }
+}
+
 /** 发送消息 */
 function handleSend({ question, deepThinking }) {
+  if (chatStore.isKbOrphaned && !chatStore.isEmpty) {
+    ElMessage.warning('此会话关联的知识库已不可用，请新建对话')
+    return
+  }
   if (!chatStore.selectedKBId) {
     ElMessage.warning('请先选择一个知识库')
     return
@@ -203,8 +262,12 @@ function handleQuickQuestion(question) {
 }
 
 /* flex 子元素 min-height: 0 防止内容撑开父容器导致外层滚动 */
-.chat-page > :nth-child(2) {
+.chat-message-area {
   min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 知识库选择器 */
@@ -245,5 +308,53 @@ function handleQuickQuestion(question) {
 .kb-empty-hint {
   font-size: var(--dm-text-xs);
   color: var(--dm-text-tertiary);
+}
+
+/* 孤儿会话警告 Banner */
+.orphan-banner {
+  flex-shrink: 0;
+  padding: var(--dm-space-3) var(--dm-space-6);
+  background: #FFF8E1;
+  border-bottom: 1px solid #FFE082;
+  display: flex;
+  align-items: center;
+  gap: var(--dm-space-3);
+  max-width: 100%;
+}
+
+.orphan-banner-icon {
+  color: #F57F17;
+  font-size: var(--dm-text-sm);
+  flex-shrink: 0;
+}
+
+.orphan-banner-text {
+  flex: 1;
+  font-size: var(--dm-text-xs);
+  color: #5D4037;
+  line-height: 1.5;
+}
+
+.orphan-banner-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1px solid #F57F17;
+  border-radius: var(--dm-radius-sm);
+  background: transparent;
+  color: #F57F17;
+  font-size: var(--dm-text-xs);
+  font-weight: var(--dm-weight-medium);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all var(--dm-transition-fast);
+}
+
+.orphan-banner-btn:hover {
+  background: #FFF3E0;
+  border-color: #E65100;
+  color: #E65100;
 }
 </style>

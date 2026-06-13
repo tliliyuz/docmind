@@ -5,8 +5,8 @@
         ref="textareaRef"
         v-model="inputText"
         class="input-textarea"
-        placeholder="输入你的问题…"
-        :disabled="streaming"
+        :placeholder="displayPlaceholder"
+        :disabled="streaming || disabled"
         maxlength="2000"
         @input="autoResize"
         @keydown="handleKeydown"
@@ -48,6 +48,8 @@ import { ref, computed, nextTick, watch } from 'vue'
 
 const props = defineProps({
   streaming: { type: Boolean, default: false },
+  disabled: { type: Boolean, default: false },
+  placeholder: { type: String, default: null },
 })
 
 const emit = defineEmits(['send', 'stop'])
@@ -56,6 +58,11 @@ const textareaRef = ref(null)
 const inputText = ref('')
 const deepThinking = ref(false)
 const isShaking = ref(false)
+
+/** 输入框 placeholder：优先使用 prop，否则默认文案 */
+const displayPlaceholder = computed(() => {
+  return props.placeholder || '输入你的问题…'
+})
 
 const charCount = computed(() => inputText.value.length)
 const canSend = computed(() => inputText.value.trim().length > 0 && charCount.value <= 2000)
@@ -70,7 +77,7 @@ function autoResize() {
 
 /** 处理 Enter / Shift+Enter */
 function handleKeydown(e) {
-  if (props.streaming) return
+  if (props.streaming || props.disabled) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()

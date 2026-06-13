@@ -80,8 +80,8 @@
         </div>
       </div>
 
-      <!-- 操作栏（仅 assistant 完成后 hover 显示） -->
-      <div v-if="msg.role === 'assistant' && msg.status === 'complete'" class="message-actions">
+      <!-- 操作栏（仅 assistant 完成后 hover 显示，孤儿会话隐藏重新生成） -->
+      <div v-if="msg.role === 'assistant' && msg.status === 'complete' && !chatStore.isKbOrphaned" class="message-actions">
         <button class="action-btn" title="重新生成" @click="$emit('regenerate')">
           <i class="fas fa-redo"></i>
           <span>重新生成</span>
@@ -94,6 +94,9 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { renderMarkdown, wrapCodeBlocks } from '@/utils/markdown'
+import { useChatStore } from '@/stores/chat'
+
+const chatStore = useChatStore()
 
 const props = defineProps({
   msg: { type: Object, required: true },

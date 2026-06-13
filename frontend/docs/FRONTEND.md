@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.30 |
+| 文档版本 | v0.32 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
-| 状态 | 进行中（Phase 5 实现阶段 — §8 交互规范补全：危险操作统一流程 / 列表刷新策略 / 前后台差异约定 / Admin 交互约定） |
+| 状态 | 进行中（Phase 5 实现阶段 — §8 交互规范补全：危险操作统一流程 / 列表刷新策略 / 前后台差异约定 / Admin 交互约定 / 孤儿会话指示器） |
 
 ---
 
@@ -36,11 +36,18 @@
 │ • isAdmin   │  │ • streaming │  │ • docList   │
 │ • login()   │  │ • send()    │  │ • upload()  │
 │ • logout()  │  │ • abort()   │  │ • create()  │
-│ • refresh() │  │             │  │             │
+│ • refresh() │  │ • kbStatus  │  │             │
+│             │  │ • kbName    │  │             │
+│             │  │ •isKbOrphaned│ │             │
 └─────────────┘  └─────────────┘  └─────────────┘
 ```
 
 > **Phase 4 新增**：`authStore` 新增 `refresh()` action（调 `POST /api/auth/refresh` 换取新 token 对）+ `scheduleRefresh()` 定时器（access_token 到期前 1 分钟自动刷新）。`refresh_token` 通过 `localStorage` 持久化，页面刷新后仍可用。
+>
+> **Phase 5 新增（孤儿会话）**：`chatStore` 新增以下状态字段：
+> - `kbStatus`（`ref`）：当前会话关联知识库的状态，值为 `'active' | 'deleted' | 'unavailable'`。从会话详情 API 或会话列表 API 中获取。
+> - `kbName`（`ref`）：当前会话关联知识库的名称，用于在孤儿会话横幅中展示。
+> - `isKbOrphaned`（`computed`）：派生计算属性，当 `kbStatus === 'deleted' || kbStatus === 'unavailable'` 时为 `true`，用于控制 ChatInput 禁用状态和孤儿横幅的显示。
 
 **规则**：组件内不直接调用 axios，所有请求走 `api/` 目录封装；状态提升到 Pinia，不用 props 透传超过两层。
 
@@ -288,6 +295,15 @@ ChatPage 支持两种进入方式：
 
 ### 4.3 输入框行为（ChatInput）
 
+**Props**：
+
+| Prop | 类型 | 默认值 | 说明 |
+|:---|:---|:---|:---|
+| `disabled` | `Boolean` | `false` | 禁用输入框（孤儿会话时由父组件传入 `isKbOrphaned`） |
+| `placeholder` | `String` | `'输入你的问题…'` | 自定义占位提示文字（孤儿会话时显示上下文提示，如「该会话关联的知识库已删除，无法继续提问」） |
+
+**交互行为**：
+
 | 操作 | 行为 |
 |:---|:---|
 | 输入文字 | 实时显示字数统计（≤ 2000 字符）|
@@ -296,6 +312,50 @@ ChatPage 支持两种进入方式：
 | 发送中 | 输入框禁用，按钮变为「停止生成」|
 | 空内容发送 | 输入框轻微抖动，不触发请求 |
 | 深度思考开关 | 切换 `deep_thinking` 参数，默认关闭 |
+| `disabled=true` | textarea 设为 `disabled`，发送按钮隐藏，显示 `placeholder` 提示文字（由父组件通过 prop 传入上下文信息）|
+
+**孤儿会话禁用态**（`isKbOrphaned === true` 时）：
+
+- ChatPage 向 `<ChatInput>` 传入 `:disabled="chatStore.isKbOrphaned"` + 动态 `:placeholder`
+- `kb_status === 'deleted'` 时 placeholder：`'该会话关联的知识库已删除，无法继续提问'`
+- `kb_status === 'unavailable'` 时 placeholder：`'该会话关联的知识库不可访问，无法继续提问'`
+- textarea 置灰（Element Plus disabled 样式），发送按钮不渲染
+
+### 4.3b 孤儿会话警告横幅（OrphanBanner）
+
+当 `chatStore.isKbOrphaned === true` 时，在 MessageList 上方（知识库选择器下方）显示一条全宽警告横幅，提示用户当前会话关联的知识库已不可用。
+
+**横幅样式**：
+
+| `kb_status` | 背景色 | 图标 | 文案 |
+|:---|:---|:---|:---|
+| `'deleted'` | `--dm-warning-light`（浅橙） | `fa-exclamation-triangle`（橙色） | `该会话关联的知识库「{kbName}」已被删除，无法继续提问。` |
+| `'unavailable'` | `--dm-info-light`（浅紫） | `fa-lock`（紫色） | `该会话关联的知识库「{kbName}」不可访问，无法继续提问。` |
+
+**横幅布局**：
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ ⚠ 该会话关联的知识库「公司制度」已被删除，无法继续提问。      │
+│                                            [新建对话]     │
+└──────────────────────────────────────────────────────────┘
+```
+
+**「新建对话」按钮**：
+
+点击后弹出确认对话框（`ElMessageBox.confirm`），提供两个选项：
+
+| 选项 | 按钮 | 行为 |
+|:---|:---|:---|
+| 新建对话 | 确认按钮（primary） | `router.push('/chat')` → 清空消息列表 + `conversation_id=null`，进入新建对话状态 |
+| 取消 | 取消按钮 | 关闭对话框，保持在当前页面（只读查看历史消息，ChatInput 保持禁用） |
+
+**对话框文案**：
+
+- 标题：`'新建对话'`
+- 内容：`'当前会话关联的知识库已不可用。你可以新建一个对话并选择知识库，或继续查看当前会话的历史消息。'`
+- 确认按钮文字：`'新建对话'`（跳转 `/chat`，用户在新对话中选择 KB）
+- 取消按钮文字：`'取消'`
 
 ### 4.4 消息列表行为（MessageList）
 
@@ -315,10 +375,24 @@ ChatPage 支持两种进入方式：
 |:---|:---|
 | 点击「新建对话」| 清空当前消息列表，重置 `conversation_id=null`，首轮问答时后端自动创建会话并通过 `event: meta` 返回新 ID，标题由首轮 `finish` 事件自动生成 |
 | 点击历史会话 | 加载该会话的消息历史，切换 conversation_id |
-| 悬停会话项 | 显示重命名和删除图标按钮 |
+| 悬停会话项 | 显示重命名和删除图标按钮（孤儿会话额外显示状态标签，见下方） |
 | 重命名 | 点击后标题变为可编辑输入框，Enter 保存，Esc 取消 |
 | 删除 | 确认弹窗 `ElMessageBox.confirm`，确认后删除并清空当前会话（如果是当前打开的）|
-| 会话分组 | 按时间分组：今天 / 昨天 / 近 7 天 / 更早 |
+| 会话分组 | 按时间分组：今天 / 昨天 / 近 7 天 / 更早。分组依据字段为 `last_message_at`（最后一条消息的创建时间），若 `last_message_at` 为空则 fallback 到 `updated_at` |
+
+**孤儿会话视觉指示器**（`kb_status` 字段）：
+
+会话列表项根据 `kb_status` 字段替换左侧会话图标，帮助用户识别关联知识库已不可用的会话。侧边栏宽度有限，不额外显示文字标签，仅通过图标替换 + hover tooltip 提示。
+
+| `kb_status` 值 | 左侧图标 | 图标颜色 | hover tooltip | 说明 |
+|:---|:---|:---|:---|:---|
+| `'active'` | `fa-comment-dots`（默认会话图标） | 默认色 | — | 知识库正常可用，显示默认会话图标 |
+| `'deleted'` | `fa-exclamation-triangle` | 橙色（`--dm-warning`） | `知识库已删除` | 关联知识库已被物理删除，会话变为只读 |
+| `'unavailable'` | `fa-lock` | 紫色（`--dm-purple` / `#8b5cf6`） | `知识库不可访问` | 关联知识库存在但当前用户无权访问（如 KB 转为 private 或用户被移除），会话变为只读 |
+
+- 孤儿会话的左侧图标从默认会话图标（`fa-comment-dots`）替换为对应状态图标，移除标题右侧的文字标签，仅保留 `title` 属性实现 hover tooltip
+- 孤儿会话仍可点击查看历史消息（只读），ChatInput 自动禁用（见 §4.3），并显示孤儿警告横幅（见 §4.3b）
+- `kb_status` 数据来源：会话列表 API `GET /api/conversations` 返回的每条会话记录中包含 `kb_status` 字段
 
 #### 4.5.2 知识库导航（所有用户可见）
 
@@ -1272,9 +1346,9 @@ function parseSSEEvent(raw) {
 
 | 模块 | 当前状态 | Phase 3 实现 | 后续 Phase |
 |:---|:---|:---|:---|
-| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示、会话路由（`?conversation_id=`） | — |
-| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮 + 历史会话列表（按时间分组）、重命名（双击编辑）、删除（确认弹窗）、高亮当前会话 | — |
-| ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 | — |
+| ChatPage | ✅ 已实现 | KB 选择器、ChatInput、MessageList、MessageItem、WelcomeScreen、SSE 解析器、Markdown 渲染器、sources 展示、会话路由（`?conversation_id=`）、孤儿会话警告横幅（§4.3b）、`chatStore.kbStatus/kbName/isKbOrphaned` 状态 | — |
+| ChatPage Sidebar | ✅ 已实现 | 会话区域空态 + 「新建对话」按钮 + 历史会话列表（按 `last_message_at` 时间分组）、重命名（双击编辑）、删除（确认弹窗）、高亮当前会话、孤儿会话标签（`kb_status` 已删除/不可访问） | — |
+| ChatInput | ✅ 已实现 | 输入框 ≤2000字计数 + Enter发送/Shift+Enter换行 + 深度思考开关 + 停止生成按钮 + 空输入抖动 + `disabled`/`placeholder` props（孤儿会话禁用态） | — |
 | MessageList | ✅ 已实现 | 自动滚动底部 + 手动上滚「新消息」浮动按钮 + MessageItem 渲染 | — |
 | MessageItem | ✅ 已实现 | 角色头像 + Markdown 渲染 + thinking 折叠面板 + sources 引用卡片（后端 `highlight_start/end` → 前端纯 slice 渲染 `<mark>` 高亮）+ typing 动画 + 重新生成按钮 | — |
 | WelcomeScreen | ✅ 已实现 | 欢迎语 + 4 个快捷问题卡片 → emit 触发发送 | — |

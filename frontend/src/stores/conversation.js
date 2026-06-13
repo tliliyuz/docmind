@@ -16,7 +16,7 @@ import {
 export const useConversationStore = defineStore('conversation', () => {
   // ===== 状态 =====
 
-  /** 全部会话列表（按 updated_at DESC 排序） */
+  /** 全部会话列表（按 last_message_at DESC 排序） */
   const conversations = ref([])
 
   /** 加载中 */
@@ -39,12 +39,14 @@ export const useConversationStore = defineStore('conversation', () => {
     }
 
     for (const conv of conversations.value) {
-      const updatedAt = new Date(conv.updated_at)
-      if (updatedAt >= today) {
+      // 使用 last_message_at 分组（排序字段），降级到 updated_at 或 created_at
+      const timeStr = conv.last_message_at || conv.updated_at || conv.created_at
+      const ts = new Date(timeStr)
+      if (ts >= today) {
         groups.today.push(conv)
-      } else if (updatedAt >= yesterday) {
+      } else if (ts >= yesterday) {
         groups.yesterday.push(conv)
-      } else if (updatedAt >= sevenDaysAgo) {
+      } else if (ts >= sevenDaysAgo) {
         groups.recent.push(conv)
       } else {
         groups.older.push(conv)

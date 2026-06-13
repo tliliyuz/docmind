@@ -79,8 +79,10 @@
               :class="{ active: isActive(conv.id) }"
               @click="handleSelectConversation(conv)"
             >
-              <div class="conv-icon">
-                <i class="fas fa-message"></i>
+              <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
+                <i v-if="conv.kb_status === 'deleted'" class="fas fa-exclamation-triangle"></i>
+                <i v-else-if="conv.kb_status === 'unavailable'" class="fas fa-lock"></i>
+                <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
                 <div v-if="editingId === conv.id" class="conv-edit-wrap">
@@ -94,8 +96,10 @@
                   />
                 </div>
                 <template v-else>
-                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
-                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                  <div class="conv-title">
+                    {{ conv.title || '新对话' }}
+                  </div>
+                  <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
               <div class="conv-actions" v-if="editingId !== conv.id">
@@ -119,8 +123,10 @@
               :class="{ active: isActive(conv.id) }"
               @click="handleSelectConversation(conv)"
             >
-              <div class="conv-icon">
-                <i class="fas fa-message"></i>
+              <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
+                <i v-if="conv.kb_status === 'deleted'" class="fas fa-exclamation-triangle"></i>
+                <i v-else-if="conv.kb_status === 'unavailable'" class="fas fa-lock"></i>
+                <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
                 <div v-if="editingId === conv.id" class="conv-edit-wrap">
@@ -134,8 +140,10 @@
                   />
                 </div>
                 <template v-else>
-                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
-                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                  <div class="conv-title">
+                    {{ conv.title || '新对话' }}
+                  </div>
+                  <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
               <div class="conv-actions" v-if="editingId !== conv.id">
@@ -159,8 +167,10 @@
               :class="{ active: isActive(conv.id) }"
               @click="handleSelectConversation(conv)"
             >
-              <div class="conv-icon">
-                <i class="fas fa-message"></i>
+              <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
+                <i v-if="conv.kb_status === 'deleted'" class="fas fa-exclamation-triangle"></i>
+                <i v-else-if="conv.kb_status === 'unavailable'" class="fas fa-lock"></i>
+                <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
                 <div v-if="editingId === conv.id" class="conv-edit-wrap">
@@ -174,8 +184,10 @@
                   />
                 </div>
                 <template v-else>
-                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
-                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                  <div class="conv-title">
+                    {{ conv.title || '新对话' }}
+                  </div>
+                  <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
               <div class="conv-actions" v-if="editingId !== conv.id">
@@ -199,8 +211,10 @@
               :class="{ active: isActive(conv.id) }"
               @click="handleSelectConversation(conv)"
             >
-              <div class="conv-icon">
-                <i class="fas fa-message"></i>
+              <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
+                <i v-if="conv.kb_status === 'deleted'" class="fas fa-exclamation-triangle"></i>
+                <i v-else-if="conv.kb_status === 'unavailable'" class="fas fa-lock"></i>
+                <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
                 <div v-if="editingId === conv.id" class="conv-edit-wrap">
@@ -214,8 +228,10 @@
                   />
                 </div>
                 <template v-else>
-                  <div class="conv-title">{{ conv.title || '新对话' }}</div>
-                  <div class="conv-meta">{{ formatTime(conv.updated_at) }}</div>
+                  <div class="conv-title">
+                    {{ conv.title || '新对话' }}
+                  </div>
+                  <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
               <div class="conv-actions" v-if="editingId !== conv.id">
@@ -910,6 +926,15 @@ async function handleChangePassword() {
   font-size: var(--dm-text-3xs);
   color: var(--dm-text-tertiary);
   margin-top: var(--dm-space-1);
+}
+
+/* 孤儿会话图标（替换左侧会话图标） */
+.conv-icon-orphan {
+  color: #E65100;
+}
+
+.conv-icon-orphan .fa-lock {
+  color: #6A1B9A;
 }
 
 /* 重命名输入框 */

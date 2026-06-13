@@ -15,6 +15,15 @@ vi.mock('@/utils/markdown', () => ({
   wrapCodeBlocks: (html) => mockWrapCodeBlocks(html),
 }))
 
+// Mock chatStore（MessageItem 引用 isKbOrphaned 控制重新生成按钮）
+const { mockStore } = vi.hoisted(() => {
+  const mockStore = { isKbOrphaned: false }
+  return { mockStore }
+})
+vi.mock('@/stores/chat', () => ({
+  useChatStore: () => mockStore,
+}))
+
 import MessageItem from '@/components/chat/MessageItem.vue'
 
 function getComponent(msg = {}) {
