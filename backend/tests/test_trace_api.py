@@ -97,6 +97,7 @@ def _make_trace_detail(
         user_id=1,
         username="testuser",
         conversation_id=100,
+        conversation_title="报销流程咨询",
         kb_id=10,
         kb_name="测试KB",
         question="报销需要哪些材料？",

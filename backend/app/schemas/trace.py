@@ -93,6 +93,7 @@ class TraceDetailResponse(BaseModel):
     user_id: int
     username: str = Field(description="用户名")
     conversation_id: int | None = None
+    conversation_title: str | None = Field(None, description="会话标题")
     kb_id: int | None = None
     kb_name: str | None = Field(None, description="知识库名称")
     question: str | None = None

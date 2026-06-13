@@ -575,7 +575,7 @@ class TestGetTraceDetail:
         )
 
         result_mock = MagicMock()
-        result_mock.first.return_value = (trace, "testuser", "测试KB")
+        result_mock.first.return_value = (trace, "testuser", "测试KB", "报销流程咨询")
         db.execute = AsyncMock(return_value=result_mock)
 
         result = await get_trace_detail(db, trace_id="trace-detail-001")
@@ -584,6 +584,7 @@ class TestGetTraceDetail:
         assert result.trace_id == "trace-detail-001"
         assert result.username == "testuser"
         assert result.kb_name == "测试KB"
+        assert result.conversation_title == "报销流程咨询"
         assert result.intent is not None
         assert result.retrieve is not None
 

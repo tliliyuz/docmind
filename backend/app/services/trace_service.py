@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.knowledge_base import KnowledgeBase
 from app.models.trace import Trace
 from app.models.user import User
+from app.models.conversation import Conversation
 from app.schemas.trace import (
     TraceDetailResponse,
     TraceIntentDistItem,
@@ -140,16 +141,18 @@ async def get_trace_detail(
             Trace,
             User.username,
             KnowledgeBase.name.label("kb_name"),
+            Conversation.title.label("conversation_title"),
         )
         .join(User, Trace.user_id == User.id)
         .outerjoin(KnowledgeBase, Trace.kb_id == KnowledgeBase.id)
+        .outerjoin(Conversation, Trace.conversation_id == Conversation.id)
         .where(Trace.trace_id == trace_id)
     )
     row = (await db.execute(q)).first()
     if row is None:
         return None
 
-    trace, username, kb_name = row
+    trace, username, kb_name, conversation_title = row
 
     return TraceDetailResponse(
         id=trace.id,
@@ -157,6 +160,7 @@ async def get_trace_detail(
         user_id=trace.user_id,
         username=username,
         conversation_id=trace.conversation_id,
+        conversation_title=conversation_title,
         kb_id=trace.kb_id,
         kb_name=kb_name,
         question=trace.question,
