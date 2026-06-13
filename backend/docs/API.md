@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.29 |
+| 文档版本 | v0.30 |
 | 最后更新 | 2026-06-13 |
 | 作者 | yuz |
 | 状态 | 进行中（Phase 5 实现阶段 — 意图识别 ✅ / Evidence Highlight ✅ / Admin ✅ / Trace ✅ / ECharts 后端 ✅ / 用户管理 ✅） |
@@ -1386,6 +1386,7 @@ backend/app/main.py                    ← 修改：注册 admin_router
     "user_id": 3,
     "username": "zhangsan",
     "conversation_id": 123,
+    "conversation_title": "报销流程咨询",
     "kb_id": 1,
     "kb_name": "公司内部知识库",
     "question": "报销流程是怎样的？",
@@ -1449,6 +1450,7 @@ backend/app/main.py                    ← 修改：注册 admin_router
 ```
 
 > **字段说明**：
+> - `conversation_title`：通过 `conversation_id` LEFT JOIN `conversations` 表获取。会话不存在时为 `null`，前端显示为 `—`
 > - `generate` 阶段不存储 `output`（LLM 回答内容），完整对话内容通过 `conversation_id` JOIN `messages` 表获取
 > - `intent.metadata.model`：规则路径为 `null`，LLM 路径为实际模型名（如 `"deepseek-v4-flash"`）
 > - `intent.metadata.confidence`：当前始终为 `null`（模型不返回置信度），预留字段

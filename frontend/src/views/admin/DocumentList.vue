@@ -136,8 +136,8 @@
       </el-table-column>
       <el-table-column label="操作" width="80" align="center" fixed="right">
         <template #default="{ row }">
-          <button class="action-btn danger" title="删除文档" :disabled="deletingId === row.id" @click="confirmDelete(row)">
-            <i :class="deletingId === row.id ? 'fas fa-spinner fa-spin' : 'fas fa-trash'"></i>
+          <button class="action-btn danger" title="删除文档" @click="confirmDelete(row)">
+            <i class="fas fa-trash"></i>
           </button>
         </template>
       </el-table-column>
@@ -158,7 +158,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getAdminDocuments } from '@/api/admin'
 import { deleteDocument } from '@/api/knowledge'
 
@@ -173,7 +173,6 @@ const searchFilename = ref('')
 const filterStatus = ref('')
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
-const deletingId = ref(null) // 正在删除的文档 ID，用于按钮 loading 状态
 
 let searchTimer = null
 
@@ -249,19 +248,25 @@ async function confirmDelete(row) {
     return // 用户取消
   }
 
-  deletingId.value = row.id
+  const loadingInstance = ElLoading.service({
+    fullscreen: true,
+    text: `正在删除文档「${row.filename}」…`,
+    background: 'rgba(0, 0, 0, 0.5)',
+  })
   try {
     const { data } = await deleteDocument(row.kb_id, row.id)
     if (data.code === '0') {
+      // 本地移除，无需重新请求后端
+      list.value = list.value.filter(d => d.id !== row.id)
+      total.value--
       ElMessage.success('文档已删除')
-      loadList()
     } else {
       ElMessage.error(data.message || '删除失败')
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '网络异常，请稍后重试')
   } finally {
-    deletingId.value = null
+    loadingInstance.close()
   }
 }
 

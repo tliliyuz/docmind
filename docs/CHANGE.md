@@ -1,5 +1,65 @@
 # DocMind 变更日志
 
+## 2026-06-13 — Admin 管理页面删除交互优化：全屏阻塞 + 本地即时移除
+
+### 背景
+
+后台管理页面（/admin/knowledge 和 /admin/documents）的删除操作存在两个交互问题：
+
+1. **缺少阻塞操作**：只有按钮级 loading，无全屏遮罩，用户可能误以为页面可继续操作
+2. **列表不即时刷新**：删除成功后调用 `loadList()` 重新请求后端，存在延迟或缓存问题，删除的项目仍显示在列表中
+
+前台页面（KnowledgeDetail.vue 删除文档）使用 `ElLoading.service` 全屏阻塞 + store 本地 filter 移除，交互体验一致。
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `frontend/src/views/admin/KnowledgeList.vue` | 导入 `ElLoading`；删除知识库改用 `ElLoading.service({ fullscreen: true })` 全屏阻塞；删除成功后本地 `list.filter()` 移除 + `total--`，不再调用 `loadList()`；移除 `deletingId` 变量和按钮级 loading |
+| `frontend/src/views/admin/DocumentList.vue` | 导入 `ElLoading`；删除文档改用 `ElLoading.service({ fullscreen: true })` 全屏阻塞；删除成功后本地 `list.filter()` 移除 + `total--`，不再调用 `loadList()`；移除 `deletingId` 变量和按钮级 loading |
+
+## 2026-06-13 — Admin Trace 会话字段：移除跨域跳转，改为纯文本审计信息
+
+### 背景
+
+Admin Trace 详情页的「会话」字段原先以可点击链接形式展示 `#conversation_id`，点击后跳转到前台 `/chat?conversation_id=xxx`。该设计存在三个问题：
+
+1. **产品域混用**：Admin Trace 是运营审计视角，前台 Chat 是用户视角，跨域跳转不合理
+2. **越权风险**：Admin 看到的 trace 可能属于其他用户，跳转前台 Chat 会 403/404；且该设计天然诱导开发者做危险的兼容逻辑
+3. **信息价值低**：`#533` 这样的数据库主键对 Admin 没有任何业务含义
+
+### 方案
+
+保留 `conversation_id` 作为审计辅助信息，但取消跳转链接，改为纯文本展示「会话标题 (ID: xxx)」格式。会话标题通过 LEFT JOIN `conversations` 表获取，标题为空时显示 `—`。
+
+### 新增
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/schemas/trace.py` | `TraceDetailResponse` 新增 `conversation_title: str \| None` 字段，描述为「会话标题」 |
+
+### 修改
+
+| 文件 | 说明 |
+|:---|:---|
+| `backend/app/services/trace_service.py` | `get_trace_detail()` 查询增加 `LEFT JOIN conversations` 取 `Conversation.title`，返回 4 元组 `(trace, username, kb_name, conversation_title)` |
+| `frontend/src/views/admin/TraceDetail.vue` | 会话字段从可点击链接（`#id` → 跳转 `/chat?conversation_id=xxx`）改为纯文本展示「标题 (ID: xxx)」。删除 `goToConversation()` 函数。新增 `.conversation-id-hint` CSS 样式（小号灰色辅助文本） |
+| `frontend/tests/TraceDetail.test.js` | Mock 数据增加 `conversation_title`。原「显示会话 ID」用例重写为两个用例：验证标题+ID 纯文本展示（无可点击链接类名）+ 标题为空时显示破折号 |
+| `backend/tests/test_trace_service.py` | `get_trace_detail` mock 结果从 3 元组改为 4 元组，新增 `conversation_title` 断言 |
+| `backend/tests/test_trace_api.py` | `_make_trace_detail()` 辅助函数补充 `conversation_title="报销流程咨询"` |
+| `frontend/docs/FRONTEND.md` | v0.28→v0.29。§7.7.1 布局示意图「会话: #123」→「会话: 报销流程咨询 (ID:123)」；§7.7.2 交互表删除「点击会话 ID 跳转」行，补充设计决策说明 |
+| `backend/docs/API.md` | v0.29→v0.30。§7.5 Trace 详情响应示例新增 `conversation_title` 字段 + 字段说明 |
+
+### 测试结果
+
+| 指标 | 值 |
+|:---|:---|
+| 前端测试 | TraceDetail.test.js 26 用例全部通过 |
+| 后端测试 | test_trace_service.py 20 用例 + test_trace_api.py 20 用例全部通过 |
+| 新增用例 | 2（会话标题+ID 纯文本展示、标题为空显示破折号） |
+
+---
+
 ## 2026-06-13 — Phase 5：用户管理前端组件测试（7.4c 前端测试）
 
 ### 新增

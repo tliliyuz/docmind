@@ -39,12 +39,9 @@
           </div>
           <div class="info-item">
             <span class="info-label">会话</span>
-            <span
-              v-if="trace.conversation_id"
-              class="info-value link"
-              @click="goToConversation(trace.conversation_id)"
-            >
-              #{{ trace.conversation_id }}
+            <span v-if="trace.conversation_id" class="info-value">
+              {{ trace.conversation_title || '—' }}
+              <span class="conversation-id-hint">(ID: {{ trace.conversation_id }})</span>
             </span>
             <span v-else class="info-value">--</span>
           </div>
@@ -233,10 +230,6 @@ function goToUser(userId) {
   router.push(`/admin/users/${userId}`)
 }
 
-function goToConversation(conversationId) {
-  router.push(`/chat?conversation_id=${conversationId}`)
-}
-
 function toggleJson(key) {
   expandedJson[key] = !expandedJson[key]
 }
@@ -388,6 +381,12 @@ onMounted(loadDetail)
 
 .info-value.duration {
   font-family: var(--dm-font-mono);
+}
+
+.conversation-id-hint {
+  font-size: var(--dm-text-2xs);
+  color: var(--dm-text-tertiary);
+  font-weight: var(--dm-weight-normal);
 }
 
 .info-question {

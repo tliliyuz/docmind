@@ -43,6 +43,7 @@ const MOCK_TRACE = {
   user_id: 10,
   username: 'alice',
   conversation_id: 42,
+  conversation_title: '报销流程咨询',
   kb_id: 1,
   kb_name: 'HR知识库',
   question: '报销流程是什么样的？',
@@ -125,13 +126,30 @@ describe('TraceDetail', () => {
       expect(userItem.find('.info-value').text()).toBe('alice')
     })
 
-    it('显示会话 ID', async () => {
+    it('显示会话标题和 ID（纯文本，不可点击）', async () => {
       mockSuccessResponse()
       const wrapper = getComponent()
       await flushPromises()
       const infoItems = wrapper.findAll('.info-item')
       const convItem = infoItems.find(i => i.find('.info-label').text() === '会话')
-      expect(convItem.find('.info-value').text()).toContain('42')
+      const valueEl = convItem.find('.info-value')
+      // 显示会话标题
+      expect(valueEl.text()).toContain('报销流程咨询')
+      // 显示会话 ID
+      expect(valueEl.text()).toContain('42')
+      // 不是可点击链接
+      expect(valueEl.classes()).not.toContain('link')
+    })
+
+    it('会话标题为空时显示破折号', async () => {
+      mockSuccessResponse({ ...MOCK_TRACE, conversation_title: null })
+      const wrapper = getComponent()
+      await flushPromises()
+      const infoItems = wrapper.findAll('.info-item')
+      const convItem = infoItems.find(i => i.find('.info-label').text() === '会话')
+      const valueEl = convItem.find('.info-value')
+      expect(valueEl.text()).toContain('—')
+      expect(valueEl.text()).toContain('42')
     })
 
     it('显示知识库名称', async () => {

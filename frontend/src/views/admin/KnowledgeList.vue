@@ -110,8 +110,8 @@
             <button class="action-btn" title="编辑" @click="openEditDialog(row)">
               <i class="fas fa-pen"></i>
             </button>
-            <button class="action-btn danger" title="删除" :disabled="deletingId === row.id" @click="confirmDelete(row)">
-              <i :class="deletingId === row.id ? 'fas fa-spinner fa-spin' : 'fas fa-trash'"></i>
+            <button class="action-btn danger" title="删除" @click="confirmDelete(row)">
+              <i class="fas fa-trash"></i>
             </button>
           </div>
         </template>
@@ -186,7 +186,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getAdminKnowledgeBases } from '@/api/admin'
 import { updateKnowledgeBase, deleteKnowledgeBase } from '@/api/knowledge'
 
@@ -200,7 +200,6 @@ const pageSize = 20
 const searchText = ref('')
 const filterVisibility = ref('')
 const filterStatus = ref('')
-const deletingId = ref(null) // 正在删除的 KB ID，用于按钮 loading 状态
 
 let searchTimer = null
 
@@ -318,19 +317,25 @@ async function confirmDelete(row) {
     return // 用户取消
   }
 
-  deletingId.value = row.id
+  const loadingInstance = ElLoading.service({
+    fullscreen: true,
+    text: `正在删除知识库「${row.name}」…`,
+    background: 'rgba(0, 0, 0, 0.5)',
+  })
   try {
     const { data } = await deleteKnowledgeBase(row.id)
     if (data.code === '0') {
+      // 本地移除，无需重新请求后端
+      list.value = list.value.filter(k => k.id !== row.id)
+      total.value--
       ElMessage.success('知识库已删除')
-      loadList()
     } else {
       ElMessage.error(data.message || '删除失败')
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '网络异常，请稍后重试')
   } finally {
-    deletingId.value = null
+    loadingInstance.close()
   }
 }
 
