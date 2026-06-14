@@ -36,19 +36,19 @@ import KnowledgeListAdmin from '@/views/admin/KnowledgeList.vue'
 
 const MOCK_ITEMS = [
   {
-    id: 1, name: '测试知识库A', description: '描述A',
+    uuid: 'kb-admin-1', name: '测试知识库A', description: '描述A',
     user_id: 10, username: 'alice', visibility: 'public',
     doc_count: 5, chunk_count: 200, status: 'active',
     created_at: '2026-06-01T08:00:00+00:00',
   },
   {
-    id: 2, name: '测试知识库B', description: '',
+    uuid: 'kb-admin-2', name: '测试知识库B', description: '',
     user_id: 20, username: null, visibility: 'private',
     doc_count: 0, chunk_count: 0, status: 'active',
     created_at: '2026-06-02T12:30:00+00:00',
   },
   {
-    id: 3, name: '删除中的知识库', description: null,
+    uuid: 'kb-admin-3', name: '删除中的知识库', description: null,
     user_id: 30, username: 'bob', visibility: 'private',
     doc_count: 10, chunk_count: 500, status: 'deleting',
     created_at: '2026-06-03T16:45:00+00:00',
@@ -227,7 +227,7 @@ describe('KnowledgeListAdmin', () => {
       await wrapper.vm.handleEditSubmit()
       await flushPromises()
 
-      expect(mockUpdateKB).toHaveBeenCalledWith(1, {
+      expect(mockUpdateKB).toHaveBeenCalledWith('kb-admin-1', {
         name: '测试知识库A',
         description: '描述A',
         visibility: 'public',
@@ -275,7 +275,7 @@ describe('KnowledgeListAdmin', () => {
       await flushPromises()
       await flushPromises()
 
-      expect(mockDeleteKB).toHaveBeenCalledWith(1)
+      expect(mockDeleteKB).toHaveBeenCalledWith('kb-admin-1')
       expect(mockMessageSuccess).toHaveBeenCalledWith('知识库已删除')
     })
 

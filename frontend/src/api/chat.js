@@ -19,8 +19,8 @@ function getToken() {
  * 发送问答请求（SSE 流式）
  *
  * @param {object} params
- * @param {number|null} params.conversation_id - 会话 ID，新对话传 null
- * @param {number} params.kb_id - 知识库 ID
+ * @param {string|null} params.conversation_id - 会话 UUID，新对话传 null
+ * @param {string} params.kb_id - 知识库 UUID
  * @param {string} params.question - 用户问题（≤2000 字符）
  * @param {boolean} [params.deep_thinking=false] - 是否启用深度思考
  * @param {object} callbacks

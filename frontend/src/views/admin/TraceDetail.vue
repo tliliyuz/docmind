@@ -39,9 +39,9 @@
           </div>
           <div class="info-item">
             <span class="info-label">会话</span>
-            <span v-if="trace.conversation_id" class="info-value">
+            <span v-if="trace.conversation_uuid" class="info-value">
               {{ trace.conversation_title || '—' }}
-              <span class="conversation-id-hint">(ID: {{ trace.conversation_id }})</span>
+              <span class="conversation-id-hint">(UUID: {{ trace.conversation_uuid }})</span>
             </span>
             <span v-else class="info-value">--</span>
           </div>

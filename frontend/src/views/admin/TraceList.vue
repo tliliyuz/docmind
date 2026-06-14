@@ -134,7 +134,7 @@
       :data="list"
       v-loading="loading"
       style="width: 100%"
-      row-key="id"
+      row-key="trace_id"
       highlight-current-row
       @row-click="goToDetail"
     >

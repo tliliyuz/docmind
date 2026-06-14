@@ -79,9 +79,8 @@
       :data="list"
       v-loading="loading"
       style="width: 100%"
-      row-key="id"
+      row-key="uuid"
     >
-      <el-table-column prop="id" label="ID" width="60" align="center" />
       <el-table-column prop="filename" label="文件名" min-width="200">
         <template #default="{ row }">
           <div class="filename-cell">
@@ -95,7 +94,7 @@
       <el-table-column prop="kb_name" label="所属知识库" min-width="150">
         <template #default="{ row }">
           <div class="kb-cell">
-            <span class="kb-link">{{ row.kb_name || `KB #${row.kb_id}` }}</span>
+            <span class="kb-link">{{ row.kb_name || `KB ${row.kb_uuid}` }}</span>
             <span v-if="row.kb_visibility" class="kb-visibility-badge" :class="row.kb_visibility">
               {{ row.kb_visibility === 'public' ? '公开' : '私有' }}
             </span>
@@ -254,10 +253,10 @@ async function confirmDelete(row) {
     background: 'rgba(0, 0, 0, 0.5)',
   })
   try {
-    const { data } = await deleteDocument(row.kb_id, row.id)
+    const { data } = await deleteDocument(row.kb_uuid, row.uuid)
     if (data.code === '0') {
       // 本地移除，无需重新请求后端
-      list.value = list.value.filter(d => d.id !== row.id)
+      list.value = list.value.filter(d => d.uuid !== row.uuid)
       total.value--
       ElMessage.success('文档已删除')
     } else {

@@ -80,7 +80,7 @@ describe('PublicKnowledgeList', () => {
 
   it('C5.1 不包含新建卡片（虚线）', () => {
     mockPublicKbList.push({
-      id: 1, name: '公开库', description: '', username: 'zhangsan',
+      uuid: 1, name: '公开库', description: '', username: 'zhangsan',
       doc_count: 3, chunk_count: 50, visibility: 'public'
     })
     const wrapper = getComponent()
@@ -97,8 +97,8 @@ describe('PublicKnowledgeList', () => {
 
   it('C5.3 有公开知识库时渲染卡片网格', () => {
     mockPublicKbList.push(
-      { id: 1, name: 'HR制度库', description: '人事文档', username: 'zhangsan', doc_count: 3, chunk_count: 50, visibility: 'public' },
-      { id: 2, name: 'IT文档', description: '技术文档', username: 'lisi', doc_count: 1, chunk_count: 20, visibility: 'public' },
+      { uuid: 1, name: 'HR制度库', description: '人事文档', username: 'zhangsan', doc_count: 3, chunk_count: 50, visibility: 'public' },
+      { uuid: 2, name: 'IT文档', description: '技术文档', username: 'lisi', doc_count: 1, chunk_count: 20, visibility: 'public' },
     )
     const wrapper = getComponent()
     expect(wrapper.find('.empty-state').exists()).toBe(false)
@@ -108,7 +108,7 @@ describe('PublicKnowledgeList', () => {
 
   it('C5.3 卡片显示知识库名称和 owner 用户名', () => {
     mockPublicKbList.push({
-      id: 1, name: 'HR制度库', description: '人事相关文档',
+      uuid: 1, name: 'HR制度库', description: '人事相关文档',
       username: 'zhangsan', doc_count: 3, chunk_count: 50, visibility: 'public'
     })
     const wrapper = getComponent()
@@ -118,7 +118,7 @@ describe('PublicKnowledgeList', () => {
 
   it('C5.3 卡片显示公开标识', () => {
     mockPublicKbList.push({
-      id: 1, name: '测试库', description: '', username: 'zhangsan',
+      uuid: 1, name: '测试库', description: '', username: 'zhangsan',
       doc_count: 0, chunk_count: 0, visibility: 'public'
     })
     const wrapper = getComponent()
@@ -127,7 +127,7 @@ describe('PublicKnowledgeList', () => {
 
   it('C5.3 卡片无操作菜单（无编辑/删除按钮）', () => {
     mockPublicKbList.push({
-      id: 1, name: '测试库', description: '', username: 'zhangsan',
+      uuid: 1, name: '测试库', description: '', username: 'zhangsan',
       doc_count: 0, chunk_count: 0, visibility: 'public'
     })
     const wrapper = getComponent()
@@ -137,7 +137,7 @@ describe('PublicKnowledgeList', () => {
 
   it('C5.4 点击卡片跳转到详情页', async () => {
     mockPublicKbList.push({
-      id: 8, name: '公开库', description: '', username: 'zhangsan',
+      uuid: 8, name: '公开库', description: '', username: 'zhangsan',
       doc_count: 1, chunk_count: 10, visibility: 'public'
     })
     const wrapper = getComponent()

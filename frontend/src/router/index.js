@@ -27,7 +27,7 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
-    path: '/knowledge-bases/:id',
+    path: '/knowledge-bases/:uuid',
     name: 'KnowledgeDetail',
     component: () => import('@/views/KnowledgeDetail.vue'),
     meta: { requiresAuth: true }

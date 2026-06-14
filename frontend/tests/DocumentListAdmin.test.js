@@ -34,22 +34,22 @@ import DocumentListAdmin from '@/views/admin/DocumentList.vue'
 
 const MOCK_ITEMS = [
   {
-    id: 1, filename: 'report.pdf', file_type: 'pdf', file_size: 1048576,
-    kb_id: 10, kb_name: 'HR制度库', kb_visibility: 'public',
+    uuid: 'doc-uuid-1', filename: 'report.pdf', file_type: 'pdf', file_size: 1048576,
+    kb_uuid: 'kb-uuid-10', kb_name: 'HR制度库', kb_visibility: 'public',
     owner_id: 100, owner_username: 'alice',
     status: 'completed', chunk_count: 50, error_message: null,
     created_at: '2026-06-01T08:00:00+00:00',
   },
   {
-    id: 2, filename: '技术手册.docx', file_type: 'docx', file_size: 524288,
-    kb_id: 20, kb_name: 'IT文档', kb_visibility: 'private',
+    uuid: 'doc-uuid-2', filename: '技术手册.docx', file_type: 'docx', file_size: 524288,
+    kb_uuid: 'kb-uuid-20', kb_name: 'IT文档', kb_visibility: 'private',
     owner_id: 200, owner_username: null,
     status: 'failed', chunk_count: 0, error_message: '解析失败: 格式不支持',
     created_at: '2026-06-02T12:30:00+00:00',
   },
   {
-    id: 3, filename: 'notes.txt', file_type: 'txt', file_size: 1024,
-    kb_id: 30, kb_name: null, kb_visibility: null,
+    uuid: 'doc-uuid-3', filename: 'notes.txt', file_type: 'txt', file_size: 1024,
+    kb_uuid: 'kb-uuid-30', kb_name: null, kb_visibility: null,
     owner_id: 300, owner_username: 'bob',
     status: 'deleting', chunk_count: 0, error_message: null,
     created_at: '2026-06-03T16:45:00+00:00',
@@ -239,7 +239,7 @@ describe('DocumentListAdmin', () => {
       await flushPromises()
       await flushPromises()
 
-      expect(mockDeleteDoc).toHaveBeenCalledWith(10, 1)
+      expect(mockDeleteDoc).toHaveBeenCalledWith('kb-uuid-10', 'doc-uuid-1')
       expect(mockMessageSuccess).toHaveBeenCalledWith('文档已删除')
     })
 

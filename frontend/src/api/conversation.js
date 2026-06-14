@@ -21,7 +21,7 @@ export function fetchConversations(page = 1, pageSize = 20) {
 
 /**
  * 获取会话详情（含消息历史）
- * @param {number} id - 会话 ID
+ * @param {string} id - 会话 UUID
  */
 export function fetchConversationDetail(id) {
   return api.get(`/conversations/${id}`)
@@ -29,7 +29,7 @@ export function fetchConversationDetail(id) {
 
 /**
  * 重命名会话
- * @param {number} id - 会话 ID
+ * @param {string} id - 会话 UUID
  * @param {string} title - 新标题
  */
 export function renameConversation(id, title) {
@@ -38,7 +38,7 @@ export function renameConversation(id, title) {
 
 /**
  * 删除会话（硬删除，含全部消息）
- * @param {number} id - 会话 ID
+ * @param {string} id - 会话 UUID
  */
 export function deleteConversation(id) {
   return api.delete(`/conversations/${id}`)

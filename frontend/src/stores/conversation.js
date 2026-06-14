@@ -88,7 +88,7 @@ export const useConversationStore = defineStore('conversation', () => {
   async function renameConversation(id, title) {
     await renameApi(id, title)
     // 更新本地状态
-    const conv = conversations.value.find(c => c.id === id)
+    const conv = conversations.value.find(c => c.uuid === id)
     if (conv) {
       conv.title = title
     }
@@ -98,7 +98,7 @@ export const useConversationStore = defineStore('conversation', () => {
   async function deleteConversation(id) {
     await deleteApi(id)
     // 从本地列表移除
-    const idx = conversations.value.findIndex(c => c.id === id)
+    const idx = conversations.value.findIndex(c => c.uuid === id)
     if (idx >= 0) {
       conversations.value.splice(idx, 1)
     }
@@ -107,7 +107,7 @@ export const useConversationStore = defineStore('conversation', () => {
   /** 新会话 prepend 到列表头部（SSE finish 事件后调用） */
   function addConversation(conv) {
     // 去重：如果已存在则更新
-    const existing = conversations.value.find(c => c.id === conv.id)
+    const existing = conversations.value.find(c => c.uuid === conv.uuid)
     if (existing) {
       Object.assign(existing, conv)
       return
@@ -117,7 +117,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
   /** 更新会话标题（LLM 生成标题后调用） */
   function updateConversationTitle(id, title) {
-    const conv = conversations.value.find(c => c.id === id)
+    const conv = conversations.value.find(c => c.uuid === id)
     if (conv) {
       conv.title = title
     }

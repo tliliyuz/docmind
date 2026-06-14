@@ -16,16 +16,24 @@ from app.core.exceptions import (
     KnowledgeBaseNotFoundException,
 )
 
-# UUID v4 格式校验（含连字符的 36 字符标准格式）
+# UUID 格式校验（RFC 4122，支持 v1/v3/v4/v5）
+# MySQL UUID() 生成 v1，不能用仅 v4 的正则
+
 _UUID_PATTERN = re.compile(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
     re.IGNORECASE,
 )
 
 
 def validate_uuid_format(uuid_str: str) -> bool:
-    """校验 UUID 字符串格式是否合法（UUID v4 标准格式）"""
-    return bool(_UUID_PATTERN.match(uuid_str))
+    """校验 UUID 字符串格式是否合法（RFC 4122，支持 v1/v3/v4/v5）"""
+    if not _UUID_PATTERN.match(uuid_str):
+        return False
+    try:
+        UUID(uuid_str)
+        return True
+    except (ValueError, AttributeError):
+        return False
 
 
 def _get_not_found_exception(model_class):

@@ -42,9 +42,9 @@
     <div v-else class="kb-grid">
       <div
         v-for="kb in filteredList"
-        :key="kb.id"
+        :key="kb.uuid"
         class="card card-clickable kb-card"
-        @click="goDetail(kb.id)"
+        @click="goDetail(kb.uuid)"
       >
         <div class="kb-card-header">
           <div

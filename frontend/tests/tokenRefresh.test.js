@@ -236,12 +236,12 @@ describe('conversationStore 会话管理', () => {
     const { useConversationStore } = await import('@/stores/conversation')
     const store = useConversationStore()
 
-    store.addConversation({ id: 1, title: '会话1' })
-    store.addConversation({ id: 2, title: '会话2' })
+    store.addConversation({ uuid: 'uuid-1', title: '会话1' })
+    store.addConversation({ uuid: 'uuid-2', title: '会话2' })
 
     expect(store.conversations).toHaveLength(2)
-    expect(store.conversations[0].id).toBe(2)  // 新增的在头部
-    expect(store.conversations[1].id).toBe(1)
+    expect(store.conversations[0].uuid).toBe('uuid-2')  // 新增的在头部
+    expect(store.conversations[1].uuid).toBe('uuid-1')
   })
 
   it('addConversation 去重：重复 ID 更新而非新增', async () => {
@@ -251,8 +251,8 @@ describe('conversationStore 会话管理', () => {
     const { useConversationStore } = await import('@/stores/conversation')
     const store = useConversationStore()
 
-    store.addConversation({ id: 1, title: '原标题' })
-    store.addConversation({ id: 1, title: '更新标题' })
+    store.addConversation({ uuid: 'uuid-dup', title: '原标题' })
+    store.addConversation({ uuid: 'uuid-dup', title: '更新标题' })
 
     expect(store.conversations).toHaveLength(1)
     expect(store.conversations[0].title).toBe('更新标题')
@@ -265,8 +265,8 @@ describe('conversationStore 会话管理', () => {
     const { useConversationStore } = await import('@/stores/conversation')
     const store = useConversationStore()
 
-    store.addConversation({ id: 1, title: '旧标题' })
-    store.updateConversationTitle(1, '新标题')
+    store.addConversation({ uuid: 'uuid-title', title: '旧标题' })
+    store.updateConversationTitle('uuid-title', '新标题')
 
     expect(store.conversations[0].title).toBe('新标题')
   })
@@ -278,8 +278,8 @@ describe('conversationStore 会话管理', () => {
     const { useConversationStore } = await import('@/stores/conversation')
     const store = useConversationStore()
 
-    store.addConversation({ id: 1, title: '标题' })
-    store.updateConversationTitle(999, '不存在')
+    store.addConversation({ uuid: 'uuid-noexist', title: '标题' })
+    store.updateConversationTitle('uuid-nonexist', '不存在')
 
     expect(store.conversations[0].title).toBe('标题')
   })

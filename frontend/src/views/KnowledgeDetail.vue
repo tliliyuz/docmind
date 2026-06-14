@@ -160,7 +160,7 @@
         v-loading="store.docLoading"
         style="width: 100%"
         @row-click="toggleRowExpand"
-        row-key="id"
+        row-key="uuid"
       >
         <el-table-column prop="filename" label="文件名" min-width="200">
           <template #default="{ row }">
@@ -217,10 +217,10 @@
               <button
                 class="action-btn danger"
                 title="删除"
-                :disabled="deletingId === row.id"
+                :disabled="deletingId === row.uuid"
                 @click.stop="confirmDeleteDoc(row)"
               >
-                <i :class="deletingId === row.id ? 'fas fa-spinner fa-spin' : 'fas fa-trash'"></i>
+                <i :class="deletingId === row.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-trash'"></i>
               </button>
             </div>
           </template>
@@ -340,7 +340,7 @@ const router = useRouter()
 const store = useKnowledgeStore()
 const authStore = useAuthStore()
 
-const kbId = computed(() => Number(route.params.id))
+const kbId = computed(() => route.params.uuid)
 
 /** 返回目标路由（根据来源区分公共/私有） */
 const backRoute = computed(() => {
@@ -373,7 +373,7 @@ async function loadPage() {
       // 对非终态文档启动轮询
       store.docList.forEach(doc => {
         if (!isTerminal(doc.status)) {
-          store.startPolling(kbId.value, doc.id)
+          store.startPolling(kbId.value, doc.uuid)
         }
       })
     }
@@ -478,7 +478,7 @@ async function uploadFiles(files) {
       // 对新上传的非终态文档启动状态轮询
       store.docList.forEach(doc => {
         if (!isTerminal(doc.status)) {
-          store.startPolling(kbId.value, doc.id)
+          store.startPolling(kbId.value, doc.uuid)
         }
       })
       ElMessage.success(`"${file.name}" 上传成功`)
@@ -492,9 +492,9 @@ async function uploadFiles(files) {
 // ==================== 文档操作 ====================
 async function handleReprocess(doc) {
   try {
-    await store.reprocessDoc(kbId.value, doc.id)
+    await store.reprocessDoc(kbId.value, doc.uuid)
     ElMessage.success('重新处理已提交')
-    store.startPolling(kbId.value, doc.id)
+    store.startPolling(kbId.value, doc.uuid)
     await reloadDocList()
   } catch (err) {
     const msg = err.response?.data?.message || '操作失败'
@@ -524,8 +524,8 @@ async function confirmDeleteDoc(doc) {
     background: 'rgba(0, 0, 0, 0.5)',
   })
   try {
-    await store.removeDoc(kbId.value, doc.id)
-    store.stopPolling(doc.id)
+    await store.removeDoc(kbId.value, doc.uuid)
+    store.stopPolling(doc.uuid)
     ElMessage.success('文档已删除')
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '删除失败')
@@ -626,9 +626,9 @@ const chunkPageSize = 20
 
 async function openChunksDialog(doc) {
   chunksDocName.value = doc.filename
-  chunksDocId = doc.id
+  chunksDocId = doc.uuid
   chunkPage.value = 1
-  await store.fetchDocChunks(kbId.value, doc.id, { page: 1, page_size: chunkPageSize })
+  await store.fetchDocChunks(kbId.value, doc.uuid, { page: 1, page_size: chunkPageSize })
   chunksDialogVisible.value = true
 }
 

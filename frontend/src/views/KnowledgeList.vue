@@ -45,9 +45,9 @@
     <div v-else class="kb-grid">
       <div
         v-for="kb in filteredList"
-        :key="kb.id"
+        :key="kb.uuid"
         class="card card-clickable kb-card"
-        @click="goDetail(kb.id)"
+        @click="goDetail(kb.uuid)"
       >
         <div class="kb-card-header">
           <div
@@ -227,7 +227,7 @@ function openCreateDialog() {
 
 function openEditDialog(kb) {
   isEditing.value = true
-  editingId.value = kb.id
+  editingId.value = kb.uuid
   formData.value = { name: kb.name, description: kb.description || '', visibility: kb.visibility || 'private' }
   dialogVisible.value = true
 }
@@ -293,7 +293,7 @@ async function confirmDelete(kb) {
     background: 'rgba(0, 0, 0, 0.5)',
   })
   try {
-    await store.deleteKb(kb.id)
+    await store.deleteKb(kb.uuid)
     ElMessage.success('知识库已删除')
   } catch (e) {
     ElMessage.error(e.response?.data?.message || '删除失败')

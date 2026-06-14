@@ -79,7 +79,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const chunkTotal = ref(0)
 
   // ==================== 轮询管理 ====================
-  /** @type {Map<number, number>} docId → interval timer */
+  /** @type {Map<string, number>} docUuid → interval timer */
   const pollingTimers = new Map()
 
   // ==================== 知识库操作 ====================
@@ -127,19 +127,19 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   async function updateKb(id, kbData) {
     const { data } = await updateKnowledgeBase(id, kbData)
     // 更新列表中的项
-    const idx = kbList.value.findIndex(k => k.id === id)
+    const idx = kbList.value.findIndex(k => k.uuid === id)
     if (idx !== -1) kbList.value[idx] = data.data
     // 更新当前详情
-    if (currentKb.value?.id === id) currentKb.value = data.data
+    if (currentKb.value?.uuid === id) currentKb.value = data.data
     return data.data
   }
 
   /** 删除知识库 */
   async function deleteKb(id) {
     await deleteKnowledgeBase(id)
-    kbList.value = kbList.value.filter(k => k.id !== id)
+    kbList.value = kbList.value.filter(k => k.uuid !== id)
     kbTotal.value--
-    if (currentKb.value?.id === id) currentKb.value = null
+    if (currentKb.value?.uuid === id) currentKb.value = null
   }
 
   // ==================== 文档操作 ====================
@@ -209,7 +209,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   async function reprocessDoc(kbId, docId) {
     const { data } = await reprocessDocument(kbId, docId)
     // 更新列表中该文档状态
-    const doc = docList.value.find(d => d.id === docId)
+    const doc = docList.value.find(d => d.uuid === docId)
     if (doc) doc.status = data.data.status
     return data.data
   }
@@ -217,7 +217,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   /** 删除文档 */
   async function removeDoc(kbId, docId) {
     await deleteDocument(kbId, docId)
-    docList.value = docList.value.filter(d => d.id !== docId)
+    docList.value = docList.value.filter(d => d.uuid !== docId)
     docTotal.value--
     stopPolling(docId)
   }
@@ -258,7 +258,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         const { data } = await getDocument(kbId, docId)
         const doc = data.data
         // 更新列表中的文档
-        const idx = docList.value.findIndex(d => d.id === docId)
+        const idx = docList.value.findIndex(d => d.uuid === docId)
         if (idx !== -1) docList.value[idx] = doc
 
         if (isTerminal(doc.status)) {

@@ -78,12 +78,12 @@ export const useChatStore = defineStore('chat', () => {
       if (!selectedKBId.value) {
         const lastKBId = localStorage.getItem('last_kb_id')
         const allKBs = [...(data.mine || []), ...(data.public || [])]
-        if (lastKBId && allKBs.some(kb => kb.id === Number(lastKBId))) {
-          selectedKBId.value = Number(lastKBId)
+        if (lastKBId && allKBs.some(kb => kb.uuid === lastKBId)) {
+          selectedKBId.value = lastKBId
         } else if (data.mine && data.mine.length > 0) {
-          selectedKBId.value = data.mine[0].id
+          selectedKBId.value = data.mine[0].uuid
         } else if (data.public && data.public.length > 0) {
-          selectedKBId.value = data.public[0].id
+          selectedKBId.value = data.public[0].uuid
         }
       }
     } catch (err) {
@@ -182,8 +182,8 @@ export const useChatStore = defineStore('chat', () => {
             try {
               const convStore = useConversationStore()
               convStore.addConversation({
-                id: data.conversation_id,
-                kb_id: selectedKBId.value,
+                uuid: data.conversation_id,
+                kb_uuid: selectedKBId.value,
                 kb_status: 'active',
                 kb_name: null,
                 title: '新对话',
@@ -322,8 +322,8 @@ export const useChatStore = defineStore('chat', () => {
       const res = await fetchConversationDetail(id)
       const data = res.data.data
 
-      conversationId.value = data.id
-      selectedKBId.value = data.kb_id
+      conversationId.value = data.uuid
+      selectedKBId.value = data.kb_uuid
       kbStatus.value = data.kb_status || null
       kbName.value = data.kb_name || null
 

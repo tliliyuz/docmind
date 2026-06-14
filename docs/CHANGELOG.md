@@ -6,6 +6,29 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [0.46] - 2026-06-14
+
+### Changed
+- **前端 UUID 迁移**（ROADMAP §7.7 外部资源 UUID 化 — 前端适配，406 测试全绿）：
+  - **API 层**：`api/chat.js`、`api/conversation.js` JSDoc 类型 `number` → `string`
+  - **Router**：`router/index.js` 路由参数 `:id` → `:uuid`
+  - **Pinia Store**：
+    - `stores/chat.js`：移除 `Number()` 强制转换，`.id` → `.uuid`（KB 项），`id/kb_id` → `uuid/kb_uuid`（会话响应字段）
+    - `stores/knowledge.js`：JSDoc `Map<number, number>` → `Map<string, number>`，所有 `.id` → `.uuid`（findIndex/filter/find）
+    - `stores/conversation.js`：所有 `c.id` → `c.uuid`（renameConversation/deleteConversation/addConversation/updateConversationTitle）
+  - **视图组件**：
+    - `views/ChatPage.vue`：移除 5 处 `Number()` 强制转换，`.id` → `.uuid`（KB 选项），`kb_id` → `kb_uuid`（加载会话响应）
+    - `views/KnowledgeDetail.vue`：`Number(route.params.id)` → `route.params.uuid`，所有 `row.id/doc.id` → `.uuid`
+    - `views/KnowledgeList.vue`：`kb.id` → `kb.uuid`（模板 + 脚本）
+    - `views/PublicKnowledgeList.vue`：`kb.id` → `kb.uuid`
+  - **Sidebar 组件**：`components/layout/Sidebar.vue` 全部 `conv.id` → `conv.uuid`（~30+ 处）
+  - **Admin 页面**：
+    - `views/admin/DocumentList.vue`：移除 ID 列（60px），`row-key` 改为 `uuid`，`row.kb_id` → `row.kb_uuid`，`deleteDocument(row.kb_uuid, row.uuid)`
+    - `views/admin/KnowledgeList.vue`：移除 ID 列（70px），`row-key` 改为 `uuid`，`updateKnowledgeBase(editingRow.uuid)`，`deleteKnowledgeBase(row.uuid)`
+    - `views/admin/TraceDetail.vue`：`trace.conversation_id` → `trace.conversation_uuid`
+    - `views/admin/TraceList.vue`：`row-key` 改为 `trace_id`
+  - **测试适配**（7 个测试文件、13 个用例修复）：mock 数据 `id` → `uuid`、`kb_id` → `kb_uuid`、`conversation_id` → `conversation_uuid`，断言值同步更新
+
 ## [0.45] - 2026-06-14
 
 ### Changed

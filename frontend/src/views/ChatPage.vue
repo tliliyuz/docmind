@@ -18,9 +18,9 @@
         >
           <el-option
             v-for="kb in chatStore.selectableKBs.mine"
-            :key="'mine-' + kb.id"
+            :key="'mine-' + kb.uuid"
             :label="kb.name"
-            :value="kb.id"
+            :value="kb.uuid"
           />
         </el-select>
         <!-- 公共知识库 -->
@@ -34,9 +34,9 @@
         >
           <el-option
             v-for="kb in chatStore.selectableKBs.public"
-            :key="'public-' + kb.id"
+            :key="'public-' + kb.uuid"
             :label="kb.name + ' (' + (kb.username || '未知') + ')'"
-            :value="kb.id"
+            :value="kb.uuid"
           />
         </el-select>
         <!-- 无任何可选知识库 -->
@@ -107,15 +107,15 @@ const chatInputRef = ref(null)
 /** 当前选中的 KB 是否属于「我的知识库」分组 */
 const selectedMineKBId = computed(() => {
   if (!chatStore.selectedKBId) return null
-  const found = chatStore.selectableKBs.mine.find(k => k.id === chatStore.selectedKBId)
-  return found ? found.id : null
+  const found = chatStore.selectableKBs.mine.find(k => k.uuid === chatStore.selectedKBId)
+  return found ? found.uuid : null
 })
 
 /** 当前选中的 KB 是否属于「公共知识库」分组 */
 const selectedPublicKBId = computed(() => {
   if (!chatStore.selectedKBId) return null
-  const found = chatStore.selectableKBs.public.find(k => k.id === chatStore.selectedKBId)
-  return found ? found.id : null
+  const found = chatStore.selectableKBs.public.find(k => k.uuid === chatStore.selectedKBId)
+  return found ? found.uuid : null
 })
 
 /** 是否有任何可选知识库 */
@@ -143,16 +143,16 @@ async function initFromRoute() {
   if (conversationIdParam) {
     // 继续对话：加载历史消息
     try {
-      const data = await chatStore.loadConversation(Number(conversationIdParam))
-      // 如果路由同时指定了 kb_id，以会话的 kb_id 为准
-      if (data.kb_id) {
-        chatStore.setSelectedKB(data.kb_id)
+      const data = await chatStore.loadConversation(conversationIdParam)
+      // 如果路由同时指定了 kb_id，以会话的 kb_uuid 为准
+      if (data.kb_uuid) {
+        chatStore.setSelectedKB(data.kb_uuid)
       }
     } catch {
       // 会话不存在或无权限，降级为新对话
       ElMessage.warning('会话不存在或已删除')
       if (kbIdParam) {
-        chatStore.setSelectedKB(Number(kbIdParam))
+        chatStore.setSelectedKB(kbIdParam)
       }
       chatStore.clearMessages()
       // 清除无效的 conversation_id 参数
@@ -160,7 +160,7 @@ async function initFromRoute() {
     }
   } else if (kbIdParam) {
     // 新对话但指定了 KB
-    chatStore.setSelectedKB(Number(kbIdParam))
+    chatStore.setSelectedKB(kbIdParam)
     chatStore.clearMessages()
   }
   // 都没有 → 保持当前状态（新对话）
@@ -178,7 +178,14 @@ watch(
     // 仅在值变化时处理（避免 onMounted 后重复触发）
     if (newVal !== oldVal) {
       if (newVal) {
-        await chatStore.loadConversation(Number(newVal))
+        try {
+          await chatStore.loadConversation(newVal)
+        } catch {
+          // 会话不存在或无权限，降级为新对话
+          ElMessage.warning('会话不存在或已删除')
+          chatStore.clearMessages()
+          router.replace({ query: {} })
+        }
       } else {
         // conversation_id 被清除 → 新对话
         chatStore.clearMessages()

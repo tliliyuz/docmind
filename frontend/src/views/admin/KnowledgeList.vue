@@ -62,9 +62,8 @@
       :data="list"
       v-loading="loading"
       style="width: 100%"
-      row-key="id"
+      row-key="uuid"
     >
-      <el-table-column prop="id" label="ID" width="70" align="center" />
       <el-table-column prop="name" label="名称" min-width="180">
         <template #default="{ row }">
           <div class="kb-name-cell">
@@ -281,7 +280,7 @@ async function handleEditSubmit() {
 
   editSubmitting.value = true
   try {
-    const { data } = await updateKnowledgeBase(editingRow.value.id, {
+    const { data } = await updateKnowledgeBase(editingRow.value.uuid, {
       name: editFormData.name,
       description: editFormData.description,
       visibility: editFormData.visibility,
@@ -290,7 +289,7 @@ async function handleEditSubmit() {
       ElMessage.success('知识库已更新')
       editDialogVisible.value = false
       // 本地 patch：直接更新行数据，避免全量重拉
-      const idx = list.value.findIndex(k => k.id === editingRow.value.id)
+      const idx = list.value.findIndex(k => k.uuid === editingRow.value.uuid)
       if (idx !== -1) {
         list.value[idx] = {
           ...list.value[idx],
@@ -332,10 +331,10 @@ async function confirmDelete(row) {
     background: 'rgba(0, 0, 0, 0.5)',
   })
   try {
-    const { data } = await deleteKnowledgeBase(row.id)
+    const { data } = await deleteKnowledgeBase(row.uuid)
     if (data.code === '0') {
       // 本地移除，无需重新请求后端
-      list.value = list.value.filter(k => k.id !== row.id)
+      list.value = list.value.filter(k => k.uuid !== row.uuid)
       total.value--
       ElMessage.success('知识库已删除')
     } else {

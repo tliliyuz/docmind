@@ -74,9 +74,9 @@
             <div class="conv-group-label">今天</div>
             <div
               v-for="conv in convStore.groupedConversations.today"
-              :key="conv.id"
+              :key="conv.uuid"
               class="conv-item"
-              :class="{ active: isActive(conv.id) }"
+              :class="{ active: isActive(conv.uuid) }"
               @click="handleSelectConversation(conv)"
             >
               <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
@@ -85,14 +85,14 @@
                 <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
-                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                <div v-if="editingId === conv.uuid" class="conv-edit-wrap">
                   <input
                     ref="editInputRef"
                     v-model="editingTitle"
                     class="conv-edit-input"
-                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.enter="handleSaveRename(conv.uuid)"
                     @keydown.escape="cancelRename"
-                    @blur="handleSaveRename(conv.id)"
+                    @blur="handleSaveRename(conv.uuid)"
                   />
                 </div>
                 <template v-else>
@@ -102,7 +102,7 @@
                   <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
-              <div class="conv-actions" v-if="editingId !== conv.id">
+              <div class="conv-actions" v-if="editingId !== conv.uuid">
                 <button title="重命名" @click.stop="startRename(conv)">
                   <i class="fas fa-pen"></i>
                 </button>
@@ -118,9 +118,9 @@
             <div class="conv-group-label">昨天</div>
             <div
               v-for="conv in convStore.groupedConversations.yesterday"
-              :key="conv.id"
+              :key="conv.uuid"
               class="conv-item"
-              :class="{ active: isActive(conv.id) }"
+              :class="{ active: isActive(conv.uuid) }"
               @click="handleSelectConversation(conv)"
             >
               <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
@@ -129,14 +129,14 @@
                 <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
-                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                <div v-if="editingId === conv.uuid" class="conv-edit-wrap">
                   <input
                     ref="editInputRef"
                     v-model="editingTitle"
                     class="conv-edit-input"
-                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.enter="handleSaveRename(conv.uuid)"
                     @keydown.escape="cancelRename"
-                    @blur="handleSaveRename(conv.id)"
+                    @blur="handleSaveRename(conv.uuid)"
                   />
                 </div>
                 <template v-else>
@@ -146,7 +146,7 @@
                   <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
-              <div class="conv-actions" v-if="editingId !== conv.id">
+              <div class="conv-actions" v-if="editingId !== conv.uuid">
                 <button title="重命名" @click.stop="startRename(conv)">
                   <i class="fas fa-pen"></i>
                 </button>
@@ -162,9 +162,9 @@
             <div class="conv-group-label">近 7 天</div>
             <div
               v-for="conv in convStore.groupedConversations.recent"
-              :key="conv.id"
+              :key="conv.uuid"
               class="conv-item"
-              :class="{ active: isActive(conv.id) }"
+              :class="{ active: isActive(conv.uuid) }"
               @click="handleSelectConversation(conv)"
             >
               <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
@@ -173,14 +173,14 @@
                 <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
-                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                <div v-if="editingId === conv.uuid" class="conv-edit-wrap">
                   <input
                     ref="editInputRef"
                     v-model="editingTitle"
                     class="conv-edit-input"
-                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.enter="handleSaveRename(conv.uuid)"
                     @keydown.escape="cancelRename"
-                    @blur="handleSaveRename(conv.id)"
+                    @blur="handleSaveRename(conv.uuid)"
                   />
                 </div>
                 <template v-else>
@@ -190,7 +190,7 @@
                   <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
-              <div class="conv-actions" v-if="editingId !== conv.id">
+              <div class="conv-actions" v-if="editingId !== conv.uuid">
                 <button title="重命名" @click.stop="startRename(conv)">
                   <i class="fas fa-pen"></i>
                 </button>
@@ -206,9 +206,9 @@
             <div class="conv-group-label">更早</div>
             <div
               v-for="conv in convStore.groupedConversations.older"
-              :key="conv.id"
+              :key="conv.uuid"
               class="conv-item"
-              :class="{ active: isActive(conv.id) }"
+              :class="{ active: isActive(conv.uuid) }"
               @click="handleSelectConversation(conv)"
             >
               <div class="conv-icon" :class="{ 'conv-icon-orphan': conv.kb_status === 'deleted' || conv.kb_status === 'unavailable' }" :title="conv.kb_status === 'deleted' ? '知识库已删除' : conv.kb_status === 'unavailable' ? '知识库不可访问' : undefined">
@@ -217,14 +217,14 @@
                 <i v-else class="fas fa-message"></i>
               </div>
               <div class="conv-info">
-                <div v-if="editingId === conv.id" class="conv-edit-wrap">
+                <div v-if="editingId === conv.uuid" class="conv-edit-wrap">
                   <input
                     ref="editInputRef"
                     v-model="editingTitle"
                     class="conv-edit-input"
-                    @keydown.enter="handleSaveRename(conv.id)"
+                    @keydown.enter="handleSaveRename(conv.uuid)"
                     @keydown.escape="cancelRename"
-                    @blur="handleSaveRename(conv.id)"
+                    @blur="handleSaveRename(conv.uuid)"
                   />
                 </div>
                 <template v-else>
@@ -234,7 +234,7 @@
                   <div class="conv-meta">{{ formatTime(conv.last_message_at || conv.updated_at) }}</div>
                 </template>
               </div>
-              <div class="conv-actions" v-if="editingId !== conv.id">
+              <div class="conv-actions" v-if="editingId !== conv.uuid">
                 <button title="重命名" @click.stop="startRename(conv)">
                   <i class="fas fa-pen"></i>
                 </button>
@@ -525,12 +525,12 @@ function handleNewChat() {
 
 /** 选择历史会话（即使已选中也执行导航，解决从其他页面返回时无法点击的问题） */
 function handleSelectConversation(conv) {
-  router.push(`/chat?conversation_id=${conv.id}`)
+  router.push(`/chat?conversation_id=${conv.uuid}`)
 }
 
 /** 开始重命名 */
 async function startRename(conv) {
-  editingId.value = conv.id
+  editingId.value = conv.uuid
   editingTitle.value = conv.title || ''
   await nextTick()
   // 聚焦输入框
@@ -576,9 +576,9 @@ async function handleDelete(conv) {
         confirmButtonClass: 'el-button--danger',
       }
     )
-    await convStore.deleteConversation(conv.id)
+    await convStore.deleteConversation(conv.uuid)
     // 如果删除的是当前会话，清空并跳转到 /chat
-    if (isActive(conv.id)) {
+    if (isActive(conv.uuid)) {
       chatStore.clearMessages()
       router.push('/chat')
     }
