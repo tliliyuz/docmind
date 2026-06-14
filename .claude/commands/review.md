@@ -25,6 +25,7 @@ git diff --name-only origin/main...HEAD
 |:---|:---|:---|
 | 后端接口 | `backend/docs/API.md` | 路由路径、响应格式 `{code,message,data}`、错误码是否在枚举范围内、SSE 事件结构 |
 | 数据库模型/schema | `backend/docs/DATABASE.md` | 表结构、索引定义、`ForeignKey` 声明、级联策略（§4）、`relationship` 双向关联 |
+| RAG 管线 | `backend/docs/RAG_PIPELINE.md` | 检索/融合/Prompt/Rewrite/意图/Evidence/Trace 各阶段设计是否被遵循 |
 | 前端页面/组件 | `frontend/docs/FRONTEND.md` | 交互流程是否匹配页面状态机、SSE 处理方式、表单反馈行为 |
 | 前端样式 | `frontend/docs/UIDESIGN.md` | 是否硬编码颜色/字号/间距（必须用 `--dm-*` Design Token） |
 | 架构/技术选型 | `docs/ARCHITECTURE.md` | 技术选型是否偏离、核心链路是否被破坏 |
@@ -32,12 +33,12 @@ git diff --name-only origin/main...HEAD
 
 **文档一致性专项检查（必须执行）：**
 
-- [ ] **文档元信息同步**：检查被修改文档的「文档版本」和「最后更新」日期是否与 CHANGE.md 中记录的修改时间一致；不一致视为 🟡 规范问题
+- [ ] **文档元信息同步**：检查被修改文档的「文档版本」和「最后更新」日期是否已更新；不一致视为 🟡 规范问题
 - [ ] **待办项时效性**：检查文档中的 `TODO` / `待办` / `待补充` 是否已在代码中实现但仍未移除；已过期待办视为 🟡 规范问题，误导性待办（如「当前仍残留」实际已移除）视为 🔴 严重问题
-- [ ] **测试跟踪一致性**：检查 `docs/TEST_CASES.md` 中标记为 ✅ 的用例，是否在测试代码中存在对应实现；不存在视为 🔴 严重问题。同时对照 CLAUDE.md 测试质量约束检查用例质量（详见第 4 步「测试规范检查项」）
+- [ ] **测试跟踪一致性**：检查 `docs/tests/TEST_CASES.md` 中标记为 ✅ 的用例，是否在测试代码中存在对应实现；不存在视为 🔴 严重问题。同时对照 CLAUDE.md 测试质量约束检查用例质量（详见第 4 步「测试规范检查项」）
 - [ ] **进度偏差**：检查 `docs/ROADMAP.md` 中标记为 ✅ 的任务是否真实完成；检查「本阶段不做/推迟」项是否有代码提前实现（过度设计）
 - [ ] **已实现功能提示待补充**：检查文档中是否仍有「待补充」「TODO」描述某功能，而该功能已在当前分支实现；视为 🟡 规范问题
-- [ ] **时区一致性**：DATABASE.md §0 / ARCHITECTURE.md §12 的时区约定是否与代码实现一致（`UTCDateTime` TypeDecorator / `mysql_url` 含 `time_zone` / `datetime.now(timezone.utc)` / Pydantic 原生 `datetime` 类型）？不一致视为 🟡 规范问题
+- [ ] **时区一致性**：DATABASE.md §0 / ARCHITECTURE.md §11 的时区约定是否与代码实现一致（`UTCDateTime` TypeDecorator / `mysql_url` 含 `time_zone` / `datetime.now(timezone.utc)` / Pydantic 原生 `datetime` 类型）？不一致视为 🟡 规范问题
 
 **若发现文档与代码冲突，标记为 🔴 严重问题，必须与开发人员确认。**
 
@@ -76,7 +77,7 @@ git diff --name-only origin/main...HEAD
 
 - [ ] 注释、变量名、提交信息是否使用中文
 - [ ] 是否过度设计（超出当前 Phase 范围）
-- [ ] 是否在 `docs/CHANGE.md` 中记录了本次变更
+- [ ] 是否在 `docs/CHANGELOG.md` 中记录了本次变更
 
 #### 测试规范检查项（对照 CLAUDE.md 测试质量约束）
 
@@ -138,7 +139,7 @@ git diff --name-only origin/main...HEAD
 - [ ] ROADMAP.md 中标记 ✅ 的任务是否真实完成
 - [ ] 已移除依赖/已废弃方案在文档中是否仍被描述为「当前使用」「仍残留」
 
-### 📝 CHANGE.md 检查
+### 📝 CHANGELOG.md 检查
 > 是否记录了变更，记录是否完整
 ```
 

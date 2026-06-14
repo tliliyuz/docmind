@@ -2,10 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
-| 最后更新 | 2026-06-13 |
-| 作者 | yuz |
-| 状态 | 草稿（Phase 5 Admin 查询优化备注已补充 + Trace 表已实现 + last_message_at 排序字段新增） |
+| 文档版本 | v1.0 |
+| 最后更新 | 2026-06-14 |
 
 ---
 
@@ -173,27 +171,7 @@ uploaded → parsing → chunking → embedding → vector_storing → completed
 
 **新增索引**：`idx_kb_filename (kb_id, filename)` 用于文档唯一性检查（同名文档快速查找）。
 
-**状态枚举定义**（详见 API.md §4.0）：
-```python
-class DocumentStatus(str, Enum):
-    UPLOADED = "uploaded"
-    PARSING = "parsing"
-    CHUNKING = "chunking"
-    EMBEDDING = "embedding"
-    VECTOR_STORING = "vector_storing"
-    COMPLETED = "completed"
-    SUCCESS_WITH_WARNINGS = "success_with_warnings"
-    PARTIAL_FAILED = "partial_failed"
-    FAILED = "failed"
-    DELETING = "deleting"
-
-TERMINAL_STATUSES = {
-    "completed",
-    "success_with_warnings",
-    "partial_failed",
-    "failed"
-}
-```
+**状态枚举定义**：详见 [API.md §4.0](./API.md#40-文档状态枚举)。
 
 ### 2.4 分块表 `chunks`
 

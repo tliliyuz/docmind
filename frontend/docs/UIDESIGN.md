@@ -3,10 +3,12 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.12
-> 日期: 2026-06-14
-> 用途: 面向 Agent 的 CSS 变量与组件样式参考
-> 说明: 所有样式基于 Vue 3 + Element Plus 项目
+| 属性 | 值 |
+|:---|:---|
+| 文档版本 | v1.0 |
+| 最后更新 | 2026-06-14 |
+
+> 用途: 面向 Agent 的 CSS 变量与组件样式参考。所有样式基于 Vue 3 + Element Plus 项目。
 
 ---
 
@@ -1627,7 +1629,8 @@ export default {
 - [架构设计文档](../docs/ARCHITECTURE.md)
 - [数据库设计文档](../backend/docs/DATABASE.md)
 - [接口文档](../backend/docs/API.md)
+- [RAG 管线详细设计](../backend/docs/RAG_PIPELINE.md)
 - [开发指南](../docs/DEVELOPMENT.md)
 - [开发排期](../docs/ROADMAP.md)
-- [测试策略](../docs/TESTING.md)
+- [测试策略](../docs/tests/TESTING.md)
 - [前端交互文档](FRONTEND.md)

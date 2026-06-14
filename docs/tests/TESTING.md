@@ -2,16 +2,14 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
+| 文档版本 | v1.0 |
 | 最后更新 | 2026-06-14 |
-| 作者 | yuz |
-| 状态 | 进行中（STRESS_TEST_PLAN.md 已合入 §8，示例代码精简，Phase 5 压测待执行） |
 
 ---
 
 ## 1. 测试策略概述
 
-RAG 系统的质量无法仅靠单元测试和接口测试衡量。核心挑战在于：**检索是否召回了正确的文档？生成的答案是否准确且相关？**
+RAG 系统的质量无法仅靠单元测试和接口测试衡量。核心挑战在于：**检索是否召回了正确的文档？生成的答案是否准确且相关？** 被测试的 RAG 管线各阶段详细设计见 [RAG_PIPELINE.md](../backend/docs/RAG_PIPELINE.md)。
 
 本项目的测试分为 7 个层次：
 
@@ -147,7 +145,7 @@ describe('LoginPage', () => {
 
 ### 5.2 评估流程
 
-> 实现脚本：`backend/tests/eval_retrieval.py`。流程：遍历测试集 → 调用检索器（向量/BM25/RRF）→ 计算 Recall@5/MRR/Precision@5 → 输出对比报告。Phase 3 检索管线完成后执行。
+> 实现脚本：`backend/tests/eval/eval_retrieval.py`。流程：遍历测试集 → 调用检索器（向量/BM25/RRF）→ 计算 Recall@5/MRR/Precision@5 → 输出对比报告。Phase 3 检索管线完成后执行。
 
 ---
 
@@ -185,7 +183,7 @@ describe('LoginPage', () => {
 3. 人工对照源文档逐维度打分
 4. 记录评分表，每次 Phase 结束时执行一次
 
-> 人工评分记录模板：`backend/tests/human_eval_template.md`——10 题 × 4 维度评分表，含评分标准、逐题记录区、汇总表、问题记录区。
+> 人工评分记录模板：`backend/tests/eval/human_eval_template.md`——10 题 × 4 维度评分表，含评分标准、逐题记录区、汇总表、问题记录区。
 
 ### 6.4 多轮对话评分补充（Phase 4 第 2 轮人工评分）
 
@@ -224,7 +222,7 @@ Session 综合分 = (Σ 各轮轮次分 / 轮数) × 0.45
 - **增量评估**：第 2 轮独有的 Session 综合分衡量多轮对话整体体验
 - **目标**：轮次均分 ≥ 4.0（不建议低于第 1 轮），Session 综合分平均 ≥ 4.0
 
-> 完整评分表模板见 `backend/tests/human_eval_template.md`「第 2 轮：多轮对话人工评分」章节。
+> 完整评分表模板见 `backend/tests/eval/human_eval_template.md`「第 2 轮：多轮对话人工评分」章节。
 >
 > **评估结果（2026-06-09）**：
 > - Session 综合分平均：**4.76/5.0** ✅ 远超 ≥ 4.0 目标
@@ -297,7 +295,7 @@ Session 综合分 = (Σ 各轮轮次分 / 轮数) × 0.45
 | SSE 格式正确 | 脚本校验 | 所有问题均收到 `meta` → `message` → `sources` → `finish` 事件序列 |
 | 错误率 | 脚本统计 | 无 E9xxx / E4xxx 系统级错误 |
 
-> Phase 3 实现：回归测试脚本 `backend/tests/regression_test.py`，遍历测试集、调用 `/api/chat`、自动检查上述项并输出报告。Phase 3 问答 API 完成后执行。
+> Phase 3 实现：回归测试脚本 `backend/tests/regression/regression_test.py`，遍历测试集、调用 `/api/chat`、自动检查上述项并输出报告。Phase 3 问答 API 完成后执行。
 
 ### 7.4 多轮 RAG 回归测试（Phase 4 新增）
 
@@ -341,7 +339,7 @@ Session 综合分 = (Σ 各轮轮次分 / 轮数) × 0.45
 ]
 ```
 
-> 完整测试集 5 Session × 23 轮，见 `backend/tests/eval_multi_turn_test_set.py`。
+> 完整测试集 5 Session × 23 轮，见 `backend/tests/eval/eval_multi_turn_test_set.py`。
 
 #### 回归检查项（多轮）
 
@@ -360,13 +358,13 @@ Session 综合分 = (Σ 各轮轮次分 / 轮数) × 0.45
 
 | 文件 | 用途 |
 |:---|:---|
-| `backend/tests/eval_multi_turn_test_set.py` | 多轮测试集：5 个 Session（报销三连问 / 主题切换 / 跨文档追问 / 指代消解 / 长对话保活），共 23 轮 |
-| `backend/tests/regression_multi_turn_test.py` | 多轮回归脚本：复用 `conversation_id` 实现真正的多轮对话，含 RAG 退化检测 + 上下文断裂检测 + Session×Turn 结果矩阵 |
+| `backend/tests/eval/eval_multi_turn_test_set.py` | 多轮测试集：5 个 Session（报销三连问 / 主题切换 / 跨文档追问 / 指代消解 / 长对话保活），共 23 轮 |
+| `backend/tests/regression/regression_multi_turn_test.py` | 多轮回归脚本：复用 `conversation_id` 实现真正的多轮对话，含 RAG 退化检测 + 上下文断裂检测 + Session×Turn 结果矩阵 |
 
 ```bash
 # 运行多轮回归测试
-python tests/regression_multi_turn_test.py --kb-id 1 --token "xxx"
-python tests/regression_multi_turn_test.py --kb-id 1 --base-url http://localhost:8000 --token "xxx"
+python tests/regression/regression_multi_turn_test.py --kb-id 1 --token "xxx"
+python tests/regression/regression_multi_turn_test.py --kb-id 1 --base-url http://localhost:8000 --token "xxx"
 ```
 
 ---
@@ -380,41 +378,9 @@ python tests/regression_multi_turn_test.py --kb-id 1 --base-url http://localhost
 
 > 压测应在 Docker Compose 生产级环境执行（Nginx SSE buffering 影响 TTFT 测量、Celery prefork vs solo 行为不同），**不 Mock LLM**（真实调用 DeepSeek API）。
 
-### 8.2 环境准备
+> **环境准备、测试场景、Locust 命令、执行流程**：详见 [backend/tests/performance/README.md](../../backend/tests/performance/README.md)（操作手册）。
 
-| 步骤 | 说明 |
-|:---|:---|
-| 数据准备 | 知识库中 ≥ 20 份文档，每份 ≥ 10 chunks（回归测试集对应知识库即可） |
-| 压测账号 | 创建专用账号，避免干扰正常数据 |
-| 关闭限流 | `RATE_LIMIT_ENABLED=false`，防止限流成为瓶颈 |
-| API 配额 | 确认 DeepSeek API Key 有效且配额充足 |
-| 基线采集 | 正式压测前先跑 1 用户串行，记录无竞争基线延迟 |
-
-### 8.3 测试场景
-
-按顺序执行，场景之间间隔 3-5 分钟让系统恢复稳态：
-
-| 场景 | 并发 | 爬升 | 持续时间 | 目的 |
-|:---|:---|:---|:---|:---|
-| 基准 | 1 | 1/s | 2 min | 无竞争基线（P50/P99/TTFT） |
-| 日常负载 | 5 | 1/s | 5 min | 模拟小团队日常使用 |
-| 峰值负载 | 10 | 2/s | 5 min | 模拟周一早晨集中使用 |
-| 极限 | 20 | 5/s | 2 min | 找到系统吞吐上限 |
-
-```bash
-# 一键执行（按顺序跑 4 个场景）
-locust -f tests/locustfile.py --host http://localhost \
-  --users 1 --spawn-rate 1 --run-time 2m --csv results/baseline --headless
-# ...间隔 3-5min...
-locust -f tests/locustfile.py --host http://localhost \
-  --users 5 --spawn-rate 1 --run-time 5m --csv results/daily --headless
-locust -f tests/locustfile.py --host http://localhost \
-  --users 10 --spawn-rate 2 --run-time 5m --csv results/peak --headless
-locust -f tests/locustfile.py --host http://localhost \
-  --users 20 --spawn-rate 5 --run-time 2m --csv results/stress --headless
-```
-
-### 8.4 测量指标与通过标准
+### 8.2 测量指标与通过标准
 
 | 指标 | 目标值 | 测量方式 |
 |:---|:---|:---|
@@ -425,32 +391,9 @@ locust -f tests/locustfile.py --host http://localhost \
 | 吞吐量 | ≥ 2 req/s | Locust RPS（10 并发下） |
 | Token 消耗 | ≤ 4000 tokens/请求 | Trace 系统聚合 `input_tokens + output_tokens` |
 
-### 8.5 压测脚本
+> **脚本设计要点、执行流程**：详见 [backend/tests/performance/README.md](../../backend/tests/performance/README.md)（操作手册）。
 
-脚本路径：`backend/tests/locustfile.py`
-
-**设计要点**：
-- 使用独立 `httpx.Client` 处理 SSE 流（Locust 默认 client 不支持 `stream=True`），通过 `events.request.fire()` 手动报告到 Locust 统计
-- 任务权重 8:1:1（KNOWLEDGE : META : CASUAL），模拟真实流量分布
-- `wait_time = between(3, 8)` 模拟用户阅读+思考间隔
-- 每用户独立 `conversation_id`，模拟多轮对话
-- 深度思考开关概率 10%
-- `TTFT` 自定义指标：从请求发出到首个 `message` 事件的毫秒延迟
-- SSE 完整性校验：必须收到 `meta` → `message` → `finish` 事件序列
-
-### 8.6 执行流程
-
-```
-环境准备 → 基线(2min) → 冷却3min → 日常(5min) → 冷却5min → 峰值(5min) → 冷却5min → 极限(2min)
-```
-
-执行前检查：
-1. `docker compose ps` 确认 5 个服务 running
-2. `curl` 确认 `/api/health` 可达
-3. 确认 `RATE_LIMIT_ENABLED=false`
-4. 确认 DeepSeek API 配额充足
-
-### 8.7 结果分析与限流阈值
+### 8.3 结果分析与限流阈值
 
 压测完成后，汇总四场景指标：
 
@@ -470,7 +413,7 @@ locust -f tests/locustfile.py --host http://localhost \
 
 > 推算完成后更新 `config.py` 中的限流占位值（chat / upload / default），并开启限流验证。
 
-### 8.8 风险与预案
+### 8.4 风险与预案
 
 | 风险 | 预案 |
 |:---|:---|
@@ -527,9 +470,9 @@ locust -f tests/locustfile.py --host http://localhost \
 ## 10. 相关文档
 
 - [测试用例跟踪](TEST_CASES.md) — 各 Phase 测试用例清单与执行状态
-- [产品需求文档](PRD.md) — 验收标准章节
-- [架构设计文档](ARCHITECTURE.md) — 检索/问答流程细节
-- [接口文档](../backend/docs/API.md) — `/api/chat` SSE 事件格式
-- [开发指南](DEVELOPMENT.md)
-- [开发排期](ROADMAP.md)
+- [产品需求文档](../PRD.md) — 验收标准章节
+- [架构设计文档](../ARCHITECTURE.md) — 检索/问答流程细节
+- [接口文档](../../backend/docs/API.md) — `/api/chat` SSE 事件格式
+- [开发指南](../DEVELOPMENT.md)
+- [开发排期](../ROADMAP.md)
 - [UI 设计规范](../frontend/docs/UIDESIGN.md)

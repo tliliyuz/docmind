@@ -2,10 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v0.17 |
-| 最后更新 | 2026-06-12 |
-| 作者 | yuz |
-| 状态 | 草稿（Phase 5 Docker 部署命令已补充） |
+| 文档版本 | v1.0 |
+| 最后更新 | 2026-06-14 |
 
 ---
 
@@ -45,9 +43,11 @@ docmind/
 │   ├── ARCHITECTURE.md                # 架构设计文档
 │   ├── ROADMAP.md                     # 开发排期
 │   ├── DEVELOPMENT.md                 # 开发指南（本文件）
-│   ├── TESTING.md                     # 测试策略
-│   ├── TEST_CASES.md                  # 测试用例跟踪
-│   └── CHANGE.md                      # 变更日志
+│   ├── tests/                         # 测试文档
+│   │   ├── TESTING.md                 # 测试策略
+│   │   └── TEST_CASES.md              # 测试用例跟踪
+│   ├── CHANGELOG.md                   # 变更日志
+│   └── decisions/                     # 架构决策记录（ADR）
 │
 ├── backend/
 │   ├── .env                           # 环境变量（在 backend/ 下，不在根目录！）
@@ -60,7 +60,8 @@ docmind/
 │   │
 │   ├── docs/                          # 后端设计文档
 │   │   ├── API.md                     # 接口文档
-│   │   └── DATABASE.md                # 数据库设计文档
+│   │   ├── DATABASE.md                # 数据库设计文档
+│   │   └── RAG_PIPELINE.md            # RAG 管线详细设计
 │   │
 │   ├── app/
 │   │   ├── __init__.py
@@ -135,20 +136,41 @@ docmind/
 │   │
 │   ├── tests/                         # 后端测试（pytest + httpx）
 │   │   ├── __init__.py
-│   │   ├── conftest.py                # pytest fixtures（async client, mock DB, auth headers）
-│   │   ├── test_security.py           # JWT & 密码哈希单元测试
-│   │   ├── test_storage.py            # 文件存储服务单元测试（37 用例）
-│   │   ├── test_auth_service.py       # 认证业务逻辑单元测试
-│   │   ├── test_auth_api.py           # 认证接口集成测试
-│   │   ├── test_schemas.py            # Pydantic Schema 校验测试
-│   │   ├── test_models.py             # ORM 模型测试（约束/默认值/关联）
-│   │   ├── test_kb_api.py             # 知识库 CRUD 接口测试
-│   │   ├── test_document_api.py       # 文档上传/删除接口测试
-│   │   ├── test_idempotent_lock.py    # Celery 幂等锁单元测试
-│   │   ├── test_tasks.py              # Celery 入库流水线测试（断点恢复/checkpoint/阶段检测，11 用例）
-│   │   ├── test_parser.py             # 文档解析器单元测试
-│   │   ├── test_chunker.py            # 文本分块策略单元测试（35 用例）
-│   │   └── test_embedder.py           # Embedding 向量化单元测试（API 调用/重试/响应解析）
+│   │   ├── conftest.py                # 顶层共享 fixtures（mock DB, auth headers, async client）
+│   │   ├── helpers.py                 # 共享测试工厂函数
+│   │   │
+│   │   ├── unit/                      # 单元测试（快速、模拟，自动标记 @unit）
+│   │   │   ├── __init__.py
+│   │   │   ├── conftest.py            # 自动添加 pytest.mark.unit
+│   │   │   ├── api/                   # API 层测试（10 文件）
+│   │   │   ├── core/                  # 核心模块测试（9 文件）
+│   │   │   ├── ingest/                # 入库流水线测试（2 文件）
+│   │   │   ├── rag/                   # RAG 管线测试（15 文件）
+│   │   │   ├── schemas/               # Pydantic Schema 测试（3 文件）
+│   │   │   └── services/             # Service 层测试（9 文件）
+│   │   │
+│   │   ├── integration/               # 集成测试（自动标记 @integration）
+│   │   │   ├── __init__.py
+│   │   │   ├── conftest.py            # 自动添加 pytest.mark.integration
+│   │   │   └── test_chat_trace_integration.py
+│   │   │
+│   │   ├── eval/                      # 评估脚本
+│   │   │   ├── __init__.py
+│   │   │   ├── eval_retrieval.py      # 离线检索评估
+│   │   │   ├── eval_test_set.py       # 30 题固定测试集
+│   │   │   ├── eval_multi_turn_test_set.py  # 多轮对话测试集
+│   │   │   └── human_eval_template.md       # 人工评分记录模板
+│   │   │
+│   │   ├── regression/                # 回归测试（端到端）
+│   │   │   ├── __init__.py
+│   │   │   ├── regression_test.py
+│   │   │   └── regression_multi_turn_test.py
+│   │   │
+│   │   └── performance/               # 性能/压力测试
+│   │       ├── __init__.py
+│   │       ├── locustfile.py
+│   │       ├── run_stress_test.bat
+│   │       └── run_stress_test.sh
 │   │
 │   ├── chroma_data/                   # ChromaDB 持久化目录
 │   └── uploads/                       # 上传文件存储目录
@@ -395,7 +417,7 @@ httpx==0.28.*
 
 ## 7. MySQL 时区配置
 
-> **所有 DATETIME 列均存储 UTC 时间**，对齐 [ARCHITECTURE.md §12](ARCHITECTURE.md#12-时区策略-implemented)。
+> **所有 DATETIME 列均存储 UTC 时间**，对齐 [ARCHITECTURE.md §11](ARCHITECTURE.md#11-时区策略)。
 
 ### 7.1 连接级强制（已内置）
 
@@ -448,7 +470,12 @@ celery -A app.ingest.celery_app worker --loglevel=info
 # 测试
 pytest tests/ -v                              # 运行全部测试
 pytest tests/ -v --cov=app --cov-report=html  # 含覆盖率报告
-pytest tests/test_auth_api.py -v              # 运行单个测试文件
+pytest tests/unit/ -v                          # 仅单元测试（快速）
+pytest tests/unit/api/ -v                      # 仅 API 层单元测试
+pytest tests/unit/rag/ -v                      # 仅 RAG 管线单元测试
+pytest tests/integration/ -v                   # 仅集成测试
+pytest tests/regression/ -v                    # 仅回归测试
+pytest tests/unit/api/test_auth_api.py -v      # 运行单个测试文件
 
 # === 前端 ===
 cd frontend
@@ -553,6 +580,8 @@ docker stats
 - `docker-compose.yml` 中 Celery command 不加 `--pool=solo`，使用默认 prefork pool
 - 持久化数据使用 Docker 命名卷（`mysql_data` / `redis_data` / `chroma_data` / `upload_data`），由 Docker 引擎管理生命周期，`docker-compose down -v` 会删除所有卷数据
 
+> 部署架构图、服务清单、Nginx 配置、部署约束见 [ARCHITECTURE.md §12.1](ARCHITECTURE.md#121-部署架构)。
+
 ---
 
 ## 10. 编码约定
@@ -572,5 +601,5 @@ docker stats
 - [数据库设计文档](../backend/docs/DATABASE.md)
 - [接口文档](../backend/docs/API.md)
 - [开发排期](ROADMAP.md)
-- [测试策略](TESTING.md)
+- [测试策略](tests/TESTING.md)
 - [UI 设计规范](../frontend/docs/UIDESIGN.md)

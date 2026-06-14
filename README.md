@@ -218,7 +218,7 @@ docmind/
 | 回归测试通过率 | 100% | **100%**（后端 649 + 前端 220） |
 | 多轮 RAG 保活性 | 无退化 | **5.0/5.0** 满分（23 轮均有 sources） |
 
-测试覆盖 6 个层次：单元测试、接口测试、前端组件测试、离线检索评估、人工答案评分、回归测试。完整的测试策略和评分标准见 [测试策略文档](docs/TESTING.md)。
+测试覆盖 6 个层次：单元测试、接口测试、前端组件测试、离线检索评估、人工答案评分、回归测试。完整的测试策略和评分标准见 [测试策略文档](docs/tests/TESTING.md)。
 
 ---
 
@@ -232,12 +232,13 @@ docmind/
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计文档 — 技术选型、系统架构、入库/问答流程、关键设计决策 |
 | [DATABASE.md](backend/docs/DATABASE.md) | 数据库设计文档 — ER 关系、6 张表 DDL、索引策略 |
 | [API.md](backend/docs/API.md) | 接口文档 — REST 接口定义、SSE 事件格式、错误码、权限矩阵 |
+| [RAG_PIPELINE.md](backend/docs/RAG_PIPELINE.md) | RAG 管线详细设计 — 多路检索、Prompt 组装、问题重写、意图识别、Evidence Highlight、Trace 链路追踪 |
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发指南 — 环境配置、依赖清单、本地启动、Docker 部署 |
 | [ROADMAP.md](docs/ROADMAP.md) | 开发排期 — Phase 1-6 任务分解、时间线、依赖关系 |
-| [TESTING.md](docs/TESTING.md) | 测试策略 — 检索评估指标、人工评分标准、压测指标 |
+| [TESTING.md](docs/tests/TESTING.md) | 测试策略 — 检索评估指标、人工评分标准、压测指标 |
 | [UIDESIGN.md](frontend/docs/UIDESIGN.md) | UI 设计规范 — Design Token（CSS 变量）、组件样式规范 |
 | [FRONTEND.md](frontend/docs/FRONTEND.md) | 前端交互文档 — 页面布局、交互流程、组件行为规范 |
-| [CHANGE.md](docs/CHANGE.md) | 变更日志 — 每次代码变更的详细记录 |
+| [CHANGELOG.md](docs/CHANGELOG.md) | 变更日志 — 遵循 Keep a Changelog 格式 |
 
 ---
 
