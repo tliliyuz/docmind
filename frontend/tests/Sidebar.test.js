@@ -55,7 +55,7 @@ vi.mock('element-plus', async () => {
 // ===== Mock Auth Store =====
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    user: { uuid: 1, username: 'testuser', role: 'user' },
+    user: { uuid: 'u1111111-1111-1111-1111-111111111111', username: 'testuser', role: 'user' },
     isLoggedIn: true,
     isAdmin: false,
     logout: mockLogout,
@@ -137,7 +137,7 @@ describe('Sidebar 会话列表', () => {
   })
 
   it('有会话时不显示空态', () => {
-    const conv = { uuid: 1, title: '测试会话', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c1111111-1111-1111-1111-111111111111', title: '测试会话', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -147,7 +147,7 @@ describe('Sidebar 会话列表', () => {
   // ==================== 会话列表展示 ====================
 
   it('显示今天分组的会话标题', () => {
-    const conv = { uuid: 1, title: '关于报销流程', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c1111111-1111-1111-1111-111111111111', title: '关于报销流程', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -157,7 +157,7 @@ describe('Sidebar 会话列表', () => {
 
   it('显示昨天分组', () => {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const conv = { uuid: 2, title: '入职须知', updated_at: yesterday.toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c2222222-2222-2222-2222-222222222222', title: '入职须知', updated_at: yesterday.toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.yesterday = [conv]
     const wrapper = mountSidebar()
@@ -166,7 +166,7 @@ describe('Sidebar 会话列表', () => {
   })
 
   it('显示近 7 天分组', () => {
-    const conv = { uuid: 3, title: '休假政策', updated_at: '2026-06-04T10:00:00', kb_uuid: 1 }
+    const conv = { uuid: 'c3333333-3333-3333-3333-333333333333', title: '休假政策', updated_at: '2026-06-04T10:00:00', kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.recent = [conv]
     const wrapper = mountSidebar()
@@ -175,7 +175,7 @@ describe('Sidebar 会话列表', () => {
   })
 
   it('显示更早分组', () => {
-    const conv = { uuid: 4, title: '旧会话', updated_at: '2026-05-01T10:00:00', kb_uuid: 1 }
+    const conv = { uuid: 'c4444444-4444-4444-4444-444444444444', title: '旧会话', updated_at: '2026-05-01T10:00:00', kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.older = [conv]
     const wrapper = mountSidebar()
@@ -184,7 +184,7 @@ describe('Sidebar 会话列表', () => {
   })
 
   it('空标题的会话显示「新对话」', () => {
-    const conv = { uuid: 5, title: '', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c5555555-5555-5555-5555-555555555555', title: '', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -194,17 +194,17 @@ describe('Sidebar 会话列表', () => {
   // ==================== 会话切换 ====================
 
   it('点击会话跳转到对应路由', async () => {
-    const conv = { uuid: 42, title: '测试会话', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c4242424-4242-4242-4242-424242424242', title: '测试会话', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
     const convItem = wrapper.find('.conv-item')
     await convItem.trigger('click')
-    expect(mockPush).toHaveBeenCalledWith('/chat?conversation_id=42')
+    expect(mockPush).toHaveBeenCalledWith('/chat?conversation_id=c4242424-4242-4242-4242-424242424242')
   })
 
   it('当前活跃会话有 active 样式类', () => {
-    const conv = { uuid: 42, title: '活跃会话', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c4242424-4242-4242-4242-424242424242', title: '活跃会话', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     // chatStore.conversationId 为 null，所以不会高亮
@@ -217,7 +217,7 @@ describe('Sidebar 会话列表', () => {
 
   it('重命名成功后更新标题', async () => {
     mockRenameConversation.mockResolvedValue(undefined)
-    const conv = { uuid: 1, title: '原标题', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c1111111-1111-1111-1111-111111111111', title: '原标题', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -234,12 +234,12 @@ describe('Sidebar 会话列表', () => {
     await input.setValue('新标题')
     await input.trigger('keydown.enter')
 
-    expect(mockRenameConversation).toHaveBeenCalledWith(1, '新标题')
+    expect(mockRenameConversation).toHaveBeenCalledWith('c1111111-1111-1111-1111-111111111111', '新标题')
     expect(mockMsgSuccess).toHaveBeenCalledWith('重命名成功')
   })
 
   it('重命名空标题时不调用 API', async () => {
-    const conv = { uuid: 1, title: '原标题', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c1111111-1111-1111-1111-111111111111', title: '原标题', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -257,7 +257,7 @@ describe('Sidebar 会话列表', () => {
   })
 
   it('重命名时按 Esc 取消编辑', async () => {
-    const conv = { uuid: 1, title: '原标题', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c1111111-1111-1111-1111-111111111111', title: '原标题', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -281,7 +281,7 @@ describe('Sidebar 会话列表', () => {
   it('确认删除后调用 deleteConversation', async () => {
     mockConfirm.mockResolvedValue('confirm')
     mockDeleteConversation.mockResolvedValue(undefined)
-    const conv = { uuid: 7, title: '待删除', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c7777777-7777-7777-7777-777777777777', title: '待删除', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -293,13 +293,13 @@ describe('Sidebar 会话列表', () => {
     await flushPromises()
 
     expect(mockConfirm).toHaveBeenCalled()
-    expect(mockDeleteConversation).toHaveBeenCalledWith(7)
+    expect(mockDeleteConversation).toHaveBeenCalledWith('c7777777-7777-7777-7777-777777777777')
     expect(mockMsgSuccess).toHaveBeenCalledWith('会话已删除')
   })
 
   it('取消删除时不调用 API', async () => {
     mockConfirm.mockRejectedValue('cancel')
-    const conv = { uuid: 7, title: '不删除', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c7777777-7777-7777-7777-777777777777', title: '不删除', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -316,7 +316,7 @@ describe('Sidebar 会话列表', () => {
   it('删除当前活跃会话后清空并跳转 /chat', async () => {
     mockConfirm.mockResolvedValue('confirm')
     mockDeleteConversation.mockResolvedValue(undefined)
-    const conv = { uuid: 7, title: '当前会话', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c7777777-7777-7777-7777-777777777777', title: '当前会话', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()
@@ -328,7 +328,7 @@ describe('Sidebar 会话列表', () => {
     await flushPromises()
 
     // deleteConversation 应该被调用
-    expect(mockDeleteConversation).toHaveBeenCalledWith(7)
+    expect(mockDeleteConversation).toHaveBeenCalledWith('c7777777-7777-7777-7777-777777777777')
   })
 
   // ==================== 新建对话 ====================
@@ -389,7 +389,7 @@ describe('Sidebar 会话列表', () => {
   })
 
   it('折叠态隐藏会话标题', async () => {
-    const conv = { uuid: 1, title: '测试标题', updated_at: new Date().toISOString(), kb_uuid: 1 }
+    const conv = { uuid: 'c1111111-1111-1111-1111-111111111111', title: '测试标题', updated_at: new Date().toISOString(), kb_uuid: 'kb111111-1111-1111-1111-111111111111' }
     mockConvState.conversations.push(conv)
     mockConvState.groupedConversations.today = [conv]
     const wrapper = mountSidebar()

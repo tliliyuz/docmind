@@ -22,7 +22,7 @@ const { mockPush, mockFetchKbDetail, mockFetchDocList, mockUploadDoc, mockRemove
 }))
 
 // Mock 路由
-const mockRoute = { params: { id: '1' }, query: {} }
+const mockRoute = { params: { uuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' }, query: {} }
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush }),
   useRoute: () => mockRoute,
@@ -104,7 +104,7 @@ const elStubs = {
 }
 
 const mockKb = {
-  id: 1,
+  uuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
   user_id: 1,
   name: 'HR制度库',
   description: '人事相关文档',
@@ -177,8 +177,8 @@ describe('KnowledgeDetail', () => {
 
   it('有文档时渲染表格并隐藏空状态', () => {
     mockDocList.push(
-      { id: 1, filename: '入职指南.pdf', file_type: 'pdf', file_size: 204800, status: 'completed', chunk_count: 24, created_at: '2026-05-11T10:35:00' },
-      { id: 2, filename: '报销制度.md', file_type: 'md', file_size: 51200, status: 'parsing', chunk_count: 0, created_at: '2026-05-11T11:00:00' },
+      { uuid: 'd1111111-1111-1111-1111-111111111111', filename: '入职指南.pdf', file_type: 'pdf', file_size: 204800, status: 'completed', chunk_count: 24, created_at: '2026-05-11T10:35:00' },
+      { uuid: 'd2222222-2222-2222-2222-222222222222', filename: '报销制度.md', file_type: 'md', file_size: 51200, status: 'parsing', chunk_count: 0, created_at: '2026-05-11T11:00:00' },
     )
     const wrapper = getComponent()
     expect(wrapper.findComponent({ name: 'el-table' }).exists()).toBe(true)

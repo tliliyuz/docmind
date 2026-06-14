@@ -517,11 +517,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Pinia Store 适配 | id 相关字段改为 uuid |
 | ✅ | 前端组件适配 | KnowledgeDetail / ChatPage / Sidebar 等 id 引用改为 uuid |
 | ✅ | Admin 页面适配 | Trace 列表/详情移除自增 id 展示 |
-| ⬜ | UUID↔ID 转换测试（单元测试） | 正常 + 不存在 + 无效格式 |
-| ⬜ | API 接口回归（接口测试） | 正常流程 + 无效 UUID 404 + 权限校验不变 |
-| ⬜ | SSE 事件回归（接口测试） | SSE meta conversation_id 为 UUID 格式 |
 | ✅ | 前端组件回归（组件测试） | 路由跳转 + API 调用 + 页面渲染 |
-| ⬜ | 全量回归测试 | `regression_test.py` + `regression_multi_turn_test.py` |
 
 ### 7.8 [测试] Phase 5 测试
 

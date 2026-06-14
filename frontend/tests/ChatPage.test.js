@@ -134,8 +134,8 @@ describe('ChatPage', () => {
 
   it('有可选 KB 时渲染 el-select 下拉框', async () => {
     mockState.selectableKBs = {
-      mine: [{ id: 1, name: '我的KB' }],
-      public: [{ id: 2, name: '公共KB', username: 'admin' }],
+      mine: [{ uuid: 'kb111111-1111-1111-1111-111111111111', name: '我的KB' }],
+      public: [{ uuid: 'kb222222-2222-2222-2222-222222222222', name: '公共KB', username: 'admin' }],
     }
     const wrapper = getComponent()
     await flushPromises()
@@ -153,7 +153,7 @@ describe('ChatPage', () => {
 
   it('选择 KB 后调用 setSelectedKB + 非空时清空消息', async () => {
     mockState.selectableKBs = {
-      mine: [{ id: 1, name: '我的KB' }],
+      mine: [{ uuid: 'kb111111-1111-1111-1111-111111111111', name: '我的KB' }],
       public: [],
     }
     mockState.isEmpty = false
@@ -163,9 +163,9 @@ describe('ChatPage', () => {
     // 模拟 el-select change 事件
     const select = wrapper.find('.mock-el-select')
     // el-select stub 不触发原生 change，直接调用 handleKBChange via vm
-    wrapper.vm.handleKBChange(1)
+    wrapper.vm.handleKBChange('kb111111-1111-1111-1111-111111111111')
 
-    expect(mockSetSelectedKB).toHaveBeenCalledWith(1)
+    expect(mockSetSelectedKB).toHaveBeenCalledWith('kb111111-1111-1111-1111-111111111111')
     expect(mockClearMessages).toHaveBeenCalled()
   })
 
@@ -181,7 +181,7 @@ describe('ChatPage', () => {
   })
 
   it('已选 KB 时发送消息调用 sendUserMessage', async () => {
-    mockState.selectedKBId = 1
+    mockState.selectedKBId = 'kb111111-1111-1111-1111-111111111111'
     const wrapper = getComponent()
 
     await wrapper.find('.mock-send-btn').trigger('click')
@@ -189,7 +189,7 @@ describe('ChatPage', () => {
   })
 
   it('sendUserMessage 异常时显示错误提示', async () => {
-    mockState.selectedKBId = 1
+    mockState.selectedKBId = 'kb111111-1111-1111-1111-111111111111'
     mockSendUserMessage.mockImplementation(() => {
       throw new Error('发送失败')
     })
@@ -238,7 +238,7 @@ describe('ChatPage', () => {
   })
 
   it('快捷问题已选 KB 时直接发送（deepThinking=false）', async () => {
-    mockState.selectedKBId = 1
+    mockState.selectedKBId = 'kb111111-1111-1111-1111-111111111111'
     // 重置 mockImplementation 为无操作（之前的测试可能已设置抛出异常）
     mockSendUserMessage.mockImplementation(() => {})
     const wrapper = getComponent()

@@ -1110,14 +1110,14 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P5-C10.1 | KB 详情路由 — uuid 参数 | `KnowledgeDetail.vue` | 访问 `/knowledge-bases/:uuid` | 组件正常渲染，API 调用使用 uuid 参数 | ⬜ | — | — |
-| P5-C10.2 | Chat 路由 — conversation_id UUID | `ChatPage.vue` | URL `?conversation_id=<uuid>` | 加载会话历史消息 | ⬜ | — | — |
-| P5-C10.3 | Sidebar 会话切换 — uuid | `Sidebar.vue` | 点击会话项 | URL 更新为 `?conversation_id=<uuid>`，消息加载正常 | ⬜ | — | — |
-| P5-C10.4 | KB 创建后跳转 — uuid | `KnowledgeList.vue` | 创建 KB 成功 | 跳转 `/knowledge-bases/<uuid>`（非 `<id>`） | ⬜ | — | — |
-| P5-C10.5 | ChatStore sendMessage — kb_uuid | `chat.js` | 发送消息 | API 请求参数为 `kb_uuid`（非 `kb_id`） | ⬜ | — | — |
-| P5-C10.6 | ConversationStore — uuid 字段 | `conversation.js` | 加载会话列表 | 列表项使用 `uuid` 字段标识会话 | ⬜ | — | — |
-| P5-C10.7 | Admin Trace 列表 — 无自增 id | `TraceList.vue` | 渲染 Trace 列表 | 表格不展示自增 `id` 列 | ⬜ | — | — |
-| P5-C10.8 | Admin Trace 详情 — 无自增 id | `TraceDetail.vue` | 渲染 Trace 详情 | 详情不展示自增 `id` 字段 | ⬜ | — | — |
+| P5-C10.1 | KB 详情路由 — uuid 参数 | `KnowledgeDetail.vue` | 访问 `/knowledge-bases/:uuid` | 组件正常渲染，API 调用使用 uuid 参数 | ✅ | 2026-06-15 | — |
+| P5-C10.2 | Chat 路由 — conversation_id UUID | `ChatPage.vue` | URL `?conversation_id=<uuid>` | 加载会话历史消息 | ✅ | 2026-06-15 | — |
+| P5-C10.3 | Sidebar 会话切换 — uuid | `Sidebar.vue` | 点击会话项 | URL 更新为 `?conversation_id=<uuid>`，消息加载正常 | ✅ | 2026-06-15 | — |
+| P5-C10.4 | KB 创建后跳转 — uuid | `KnowledgeList.vue` | 创建 KB 成功 | 跳转 `/knowledge-bases/<uuid>`（非 `<id>`） | ✅ | 2026-06-15 | — |
+| P5-C10.5 | ChatStore sendMessage — kb_uuid | `chat.js` | 发送消息 | API 请求参数为 `kb_uuid`（非 `kb_id`） | ✅ | 2026-06-15 | — |
+| P5-C10.6 | ConversationStore — uuid 字段 | `conversation.js` | 加载会话列表 | 列表项使用 `uuid` 字段标识会话 | ✅ | 2026-06-15 | — |
+| P5-C10.7 | Admin Trace 列表 — 无自增 id | `TraceList.vue` | 渲染 Trace 列表 | 表格不展示自增 `id` 列 | ✅ | 2026-06-15 | — |
+| P5-C10.8 | Admin Trace 详情 — 无自增 id | `TraceDetail.vue` | 渲染 Trace 详情 | 详情不展示自增 `id` 字段 | ✅ | 2026-06-15 | — |
 
 ---
 
@@ -1243,7 +1243,7 @@
 | `core/uuid_helpers.py`（UUID↔ID 转换） | ≥ 80% | ✅ 30 用例 | Phase 5：UUID 外部 ID（test_uuid_helpers.py：validate 11 + resolve 8 + get_by 5 + model 6；§7.10.1） |
 | Pydantic Schema UUID | ≥ 85% | ✅ 21 用例 | Phase 5：Schema 校验（test_uuid_schemas.py：KB 3 + Doc 5 + Conv 6 + Chat 5 + Trace 3；§7.10.3） |
 | API 层 UUID 路径参数 | ≥ 90% | ✅ 22 用例 | Phase 5：接口回归（test_uuid_api.py：KB 7 + Doc 4 + Conv 4 + Chat 4 + Selectable 1 + Trace 2；§7.10.4） |
-| 前端 UUID 适配 | ≥ 60% | ⬜ | Phase 5：组件/路由/Store 适配（P5-C10.1-P5-C10.8，8 用例，§7.10.5，待前端适配后补充） |
+| 前端 UUID 适配 | ≥ 60% | ✅ 23 用例 | Phase 5：组件/路由/Store 适配（P5-C10.1-P5-C10.8，8 用例 23 断言，§7.10.5，UuidAdaptation.test.js） |
 
 ---
 

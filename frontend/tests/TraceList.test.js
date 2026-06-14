@@ -29,25 +29,25 @@ import TraceList from '@/views/admin/TraceList.vue'
 
 const MOCK_TRACES = [
   {
-    id: 1, trace_id: 'abc12345-6789-abcd-ef01-234567890abc',
+    trace_id: 'abc12345-6789-abcd-ef01-234567890abc',
     user_id: 10, username: 'alice',
-    kb_id: 1, kb_name: 'HR知识库',
+    kb_id: 'kb111111-1111-1111-1111-111111111111', kb_name: 'HR知识库',
     question: '报销流程是什么样的？需要提交哪些材料？',
     status: 'success', intent_type: 'KNOWLEDGE', response_mode: 'RAG',
     total_duration_ms: 3200, created_at: '2026-06-12T10:30:00+00:00',
   },
   {
-    id: 2, trace_id: 'def98765-4321-fedc-ba09-876543210fed',
+    trace_id: 'def98765-4321-fedc-ba09-876543210fed',
     user_id: 20, username: 'bob',
-    kb_id: 2, kb_name: 'IT知识库',
+    kb_id: 'kb222222-2222-2222-2222-222222222222', kb_name: 'IT知识库',
     question: '你好',
     status: 'success', intent_type: 'CASUAL', response_mode: 'CASUAL',
     total_duration_ms: 150, created_at: '2026-06-12T11:00:00+00:00',
   },
   {
-    id: 3, trace_id: 'ghi55555-1111-2222-3333-444444444444',
+    trace_id: 'ghi55555-1111-2222-3333-444444444444',
     user_id: 10, username: 'alice',
-    kb_id: 1, kb_name: 'HR知识库',
+    kb_id: 'kb111111-1111-1111-1111-111111111111', kb_name: 'HR知识库',
     question: 'VPN配置方法',
     status: 'error', intent_type: 'KNOWLEDGE', response_mode: 'RAG',
     total_duration_ms: 8500, created_at: '2026-06-12T09:15:00+00:00',

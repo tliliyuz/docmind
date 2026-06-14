@@ -96,7 +96,7 @@ describe('KnowledgeList', () => {
   })
 
   it('渲染新建卡片（虚线样式）', () => {
-    mockKbList.push({ uuid: 1, name: '测试库', description: '', doc_count: 0, chunk_count: 0 })
+    mockKbList.push({ uuid: 'kb111111-1111-1111-1111-111111111111', name: '测试库', description: '', doc_count: 0, chunk_count: 0 })
     const wrapper = getComponent()
     expect(wrapper.find('.new-card').exists()).toBe(true)
     expect(wrapper.find('.new-card-text').text()).toBe('新建知识库')
@@ -112,8 +112,8 @@ describe('KnowledgeList', () => {
 
   it('有知识库时渲染卡片格子并隐藏空状态', () => {
     mockKbList.push(
-      { uuid: 1, name: 'HR制度库', description: '人事相关文档', doc_count: 3, chunk_count: 50 },
-      { uuid: 2, name: 'IT文档', description: '技术文档', doc_count: 1, chunk_count: 20 },
+      { uuid: 'kb111111-1111-1111-1111-111111111111', name: 'HR制度库', description: '人事相关文档', doc_count: 3, chunk_count: 50 },
+      { uuid: 'kb222222-2222-2222-2222-222222222222', name: 'IT文档', description: '技术文档', doc_count: 1, chunk_count: 20 },
     )
     const wrapper = getComponent()
     expect(wrapper.find('.empty-state').exists()).toBe(false)
@@ -122,21 +122,21 @@ describe('KnowledgeList', () => {
   })
 
   it('卡片显示知识库名称和描述', () => {
-    mockKbList.push({ uuid: 1, name: 'HR制度库', description: '人事相关文档', doc_count: 3, chunk_count: 50 })
+    mockKbList.push({ uuid: 'kb111111-1111-1111-1111-111111111111', name: 'HR制度库', description: '人事相关文档', doc_count: 3, chunk_count: 50 })
     const wrapper = getComponent()
     expect(wrapper.find('.kb-card-name').text()).toBe('HR制度库')
     expect(wrapper.find('.kb-card-desc').text()).toBe('人事相关文档')
   })
 
   it('卡片显示文档数和分块数', () => {
-    mockKbList.push({ uuid: 1, name: 'HR制度库', description: '', doc_count: 3, chunk_count: 50 })
+    mockKbList.push({ uuid: 'kb111111-1111-1111-1111-111111111111', name: 'HR制度库', description: '', doc_count: 3, chunk_count: 50 })
     const wrapper = getComponent()
     const metaItems = wrapper.findAll('.card-meta-item')
     expect(metaItems.length).toBeGreaterThanOrEqual(2)
   })
 
   it('无描述时显示占位文字', () => {
-    mockKbList.push({ uuid: 1, name: '测试库', description: '', doc_count: 0, chunk_count: 0 })
+    mockKbList.push({ uuid: 'kb111111-1111-1111-1111-111111111111', name: '测试库', description: '', doc_count: 0, chunk_count: 0 })
     const wrapper = getComponent()
     expect(wrapper.find('.kb-card-desc').text()).toBe('暂无描述')
   })
@@ -151,7 +151,7 @@ describe('KnowledgeList', () => {
   })
 
   it('点击新建卡片也打开弹窗', async () => {
-    mockKbList.push({ uuid: 1, name: '测试库', description: '', doc_count: 0, chunk_count: 0 })
+    mockKbList.push({ uuid: 'kb111111-1111-1111-1111-111111111111', name: '测试库', description: '', doc_count: 0, chunk_count: 0 })
     const wrapper = getComponent()
     await wrapper.find('.new-card').trigger('click')
     await nextTick()
@@ -159,10 +159,10 @@ describe('KnowledgeList', () => {
   })
 
   it('点击卡片跳转到详情页', async () => {
-    mockKbList.push({ uuid: 5, name: 'HR制度库', description: '', doc_count: 0, chunk_count: 0 })
+    mockKbList.push({ uuid: 'kb555555-5555-5555-5555-555555555555', name: 'HR制度库', description: '', doc_count: 0, chunk_count: 0 })
     const wrapper = getComponent()
     await wrapper.find('.kb-card').trigger('click')
-    expect(mockPush).toHaveBeenCalledWith('/knowledge-bases/5')
+    expect(mockPush).toHaveBeenCalledWith('/knowledge-bases/kb555555-5555-5555-5555-555555555555')
   })
 
   // ==================== 生命周期 ====================
