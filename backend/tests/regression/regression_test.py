@@ -8,8 +8,8 @@
 用法:
   cd backend
   # 需要先启动服务: uvicorn app.main:app --port 8000
-  python tests/regression_test.py --kb-uuid 550e8400-e29b-41d4-a716-446655440000 --base-url http://localhost:8000 --token "xxx"
-  python tests/regression_test.py --kb-uuid 550e8400-e29b-41d4-a716-446655440000 --token "xxx"   # 默认 localhost:8000
+  python tests/regression/regression_test.py --kb-uuid 550e8400-e29b-41d4-a716-446655440000 --base-url http://localhost:8000 --token "xxx"
+  python tests/regression/regression_test.py --kb-uuid 550e8400-e29b-41d4-a716-446655440000 --token "xxx"   # 默认 localhost:8000
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ from typing import Any
 import httpx
 
 # 确保 backend 目录在 sys.path 中
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from tests.eval_test_set import EVAL_TEST_SET
+from tests.eval.eval_test_set import EVAL_TEST_SET
 
 logger = logging.getLogger(__name__)
 

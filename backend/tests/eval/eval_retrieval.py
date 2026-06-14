@@ -7,9 +7,9 @@
 
 用法:
   cd backend
-  python tests/eval_retrieval.py --kb-id 1                # 指定知识库 ID
-  python tests/eval_retrieval.py --kb-id 1 --top-k 10     # 自定义 top_k
-  python tests/eval_retrieval.py --kb-id 1 --output md    # 输出 Markdown 报告
+  python tests/eval/eval_retrieval.py --kb-id 1                # 指定知识库 ID
+  python tests/eval/eval_retrieval.py --kb-id 1 --top-k 10     # 自定义 top_k
+  python tests/eval/eval_retrieval.py --kb-id 1 --output md    # 输出 Markdown 报告
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 from statistics import mean
 
 # 确保 backend 目录在 sys.path 中（支持从项目根目录或 tests/ 目录运行）
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -36,7 +36,7 @@ from app.models.document import Document
 from app.rag.bm25 import BM25Retriever
 from app.rag.fusion import rrf_fusion
 from app.rag.retriever import RetrievalOutput, RetrievalResult, VectorRetriever
-from tests.eval_test_set import EVAL_TEST_SET
+from tests.eval.eval_test_set import EVAL_TEST_SET
 
 logger = logging.getLogger(__name__)
 

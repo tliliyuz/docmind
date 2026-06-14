@@ -9,7 +9,7 @@
 #
 # 用法:
 #   export STRESS_AUTH_TOKEN="your_jwt_token"
-#   bash tests/run_stress_test.sh
+#   bash tests/performance/run_stress_test.sh
 #
 # 可选环境变量:
 #   STRESS_HOST          后端地址（默认 http://localhost:8000）
@@ -20,7 +20,7 @@ set -e
 
 # ---- 配置 ----
 HOST="${STRESS_HOST:-http://localhost:8000}"
-LOCUSTFILE="tests/locustfile.py"
+LOCUSTFILE="tests/performance/locustfile.py"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_DIR="results/stress_test_${TIMESTAMP}"
 

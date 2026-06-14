@@ -43,7 +43,7 @@
 
 1. 启动服务：`cd backend && uvicorn app.main:app --port 8000`
 2. 获取 token（登录接口或浏览器 DevTools）
-3. 运行回归测试获取答案：`python tests/regression_test.py --kb-id 1 --token "xxx"`（答案会显示在输出中）
+3. 运行回归测试获取答案：`python tests/regression/regression_test.py --kb-id 1 --token "xxx"`（答案会显示在输出中）
 4. 也可单独跑一题：`curl -X POST http://localhost:8000/api/chat -H "Authorization: Bearer xxx" -H "Content-Type: application/json" -d '{"kb_id":1,"question":"...","deep_thinking":false}'`
 5. 对照源文档（在知识库中按 `expected_docs` 定位原始文档内容）逐维度打分
 
@@ -436,7 +436,7 @@ Session 综合分 = (Σ 各轮轮次分 / 轮数) × 0.45
 2. 获取 token（登录接口）
 3. 运行多轮回归脚本获取完整答案：
    ```bash
-   python tests/regression_multi_turn_test.py --kb-id <id> --token "xxx"
+   python tests/regression/regression_multi_turn_test.py --kb-id <id> --token "xxx"
    ```
    或逐 Session 手动测试（通过前端 ChatPage 选择 KB 后连续提问）
 4. 对每个 Session，逐轮阅读答案并对照源文档，先打轮次分，再通读全 Session 打跨轮分

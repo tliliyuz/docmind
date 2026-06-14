@@ -74,7 +74,7 @@ class TestLogin:
     @pytest.mark.asyncio
     async def test_login_success(self, mock_db):
         from app.core.security import hash_password
-        user = User(username="test", password_hash=hash_password("correct"))
+        user = User(id=1, username="test", password_hash=hash_password("correct"))
         mock_db.execute.return_value = _make_mock_result(user)
 
         result = await login(mock_db, "test", "correct")
@@ -110,7 +110,7 @@ class TestLogin:
     async def test_login_token_jwt_format(self, mock_db):
         """验证 access_token 和 refresh_token 为合法 JWT 格式"""
         from app.core.security import hash_password, decode_access_token
-        user = User(username="u", password_hash=hash_password("p"))
+        user = User(id=1, username="u", password_hash=hash_password("p"))
         mock_db.execute.return_value = _make_mock_result(user)
 
         result = await login(mock_db, "u", "p")

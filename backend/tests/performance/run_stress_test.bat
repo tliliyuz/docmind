@@ -3,7 +3,7 @@ REM DocMind RAG 系统压测 — Windows 版全流程执行脚本
 REM
 REM 用法:
 REM   set STRESS_AUTH_TOKEN=your_jwt_token
-REM   tests\run_stress_test.bat
+REM   tests\performance\run_stress_test.bat
 REM
 REM 可选环境变量:
 REM   STRESS_HOST          后端地址（默认 http://localhost:8000）
@@ -14,7 +14,7 @@ setlocal enabledelayedexpansion
 
 REM ---- 配置 ----
 if "%STRESS_HOST%"=="" set STRESS_HOST=http://localhost:8000
-set LOCUSTFILE=tests\locustfile.py
+set LOCUSTFILE=tests\performance\locustfile.py
 
 REM 生成时间戳
 for /f "tokens=1-6 delims=/-: " %%a in ('%SystemRoot%\System32\wbem\wmic.exe OS Get localdatetime ^| find "."') do (
