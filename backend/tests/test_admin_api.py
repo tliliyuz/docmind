@@ -53,7 +53,8 @@ def _make_kb_list(total=3, page=1, page_size=20, items=None) -> AdminKBListRespo
     if isinstance(items, int):
         items = [
             AdminKBItem(
-                id=i, name=f"KB_{i}", description=f"描述{i}",
+                uuid=f"kb-uuid-{i:04d}-0000-0000-000000000000",
+                name=f"KB_{i}", description=f"描述{i}",
                 visibility="private" if i % 2 == 0 else "public",
                 user_id=i * 10, username=f"user_{i}",
                 status="active", doc_count=5, chunk_count=100,
@@ -70,7 +71,9 @@ def _make_doc_list(total=2, page=1, page_size=20, items=None) -> AdminDocListRes
     if items is None:
         items = [
             AdminDocItem(
-                id=1, kb_id=1, kb_name="KB_1", kb_visibility="private",
+                uuid="doc-uuid-0001-0000-0000-000000000000",
+                kb_uuid="kb-uuid-0001-0000-0000-000000000000",
+                kb_name="KB_1", kb_visibility="private",
                 owner_id=10, owner_username="owner1",
                 filename="文档A.pdf", file_type="pdf", file_size=102400,
                 status="completed", current_stage=None, chunk_count=10,
@@ -79,7 +82,9 @@ def _make_doc_list(total=2, page=1, page_size=20, items=None) -> AdminDocListRes
                 updated_at=datetime(2026, 6, 10, tzinfo=timezone.utc),
             ),
             AdminDocItem(
-                id=2, kb_id=2, kb_name="KB_2", kb_visibility="public",
+                uuid="doc-uuid-0002-0000-0000-000000000000",
+                kb_uuid="kb-uuid-0002-0000-0000-000000000000",
+                kb_name="KB_2", kb_visibility="public",
                 owner_id=20, owner_username="owner2",
                 filename="文档B.md", file_type="md", file_size=51200,
                 status="uploaded", current_stage=None, chunk_count=0,
@@ -171,7 +176,7 @@ class TestAdminKBListAPI:
         assert len(data["items"]) == 3
         # 验证 item 含必要字段
         item = data["items"][0]
-        assert "id" in item
+        assert "uuid" in item
         assert "name" in item
         assert "username" in item
         assert "visibility" in item
@@ -205,7 +210,8 @@ class TestAdminKBListAPI:
         with patch("app.api.admin.list_all_kbs", new_callable=AsyncMock) as mock_svc:
             items = [
                 AdminKBItem(
-                    id=1, name="私有KB", visibility="private",
+                    uuid="kb-uuid-0001-0000-0000-000000000000",
+                    name="私有KB", visibility="private",
                     user_id=10, username="user1", status="active",
                     doc_count=0, chunk_count=0,
                     created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
@@ -318,8 +324,8 @@ class TestAdminDocListAPI:
         assert len(data["items"]) == 2
         # 验证 item 含跨 KB 视图字段
         item = data["items"][0]
-        assert item["id"] == 1
-        assert item["kb_id"] == 1
+        assert item["uuid"] == "doc-uuid-0001-0000-0000-000000000000"
+        assert item["kb_uuid"] == "kb-uuid-0001-0000-0000-000000000000"
         assert item["kb_name"] == "KB_1"
         assert item["kb_visibility"] == "private"
         assert item["owner_id"] == 10
@@ -335,7 +341,9 @@ class TestAdminDocListAPI:
         with patch("app.api.admin.list_all_documents", new_callable=AsyncMock) as mock_svc:
             items = [
                 AdminDocItem(
-                    id=3, kb_id=1, kb_name="KB_1", kb_visibility="private",
+                    uuid="doc-uuid-0003-0000-0000-000000000000",
+                    kb_uuid="kb-uuid-0001-0000-0000-000000000000",
+                    kb_name="KB_1", kb_visibility="private",
                     owner_id=10, owner_username="owner1",
                     filename="失败文档.pdf", file_type="pdf", file_size=100,
                     status="partial_failed", chunk_count=0,
@@ -395,13 +403,15 @@ class TestAdminDocListAPI:
     @pytest.mark.asyncio
     async def test_admin获取文档列表_组合筛选(self, async_client, admin_auth_headers):
         """按 kb_id + status + filename 组合筛选"""
-        with patch("app.api.admin.list_all_documents", new_callable=AsyncMock) as mock_svc:
+        with patch("app.api.admin.list_all_documents", new_callable=AsyncMock) as mock_svc, \
+             patch("app.core.uuid_helpers.resolve_uuid_to_id",
+                   new_callable=AsyncMock, return_value=1) as mock_resolve:
             mock_svc.return_value = AdminDocListResponse(
                 total=0, page=1, page_size=20, items=[]
             )
 
             response = await async_client.get(
-                "/api/admin/documents?kb_id=1&status=completed&filename=报销",
+                "/api/admin/documents?kb_id=aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa&status=completed&filename=报销",
                 headers=admin_auth_headers,
             )
 
@@ -488,14 +498,10 @@ class TestAdminPermissionMatrix:
 class TestAdminStatsChartsAPI:
     """GET /api/admin/stats — ECharts 图表数据
 
-    对齐 TEST_CASES.md §6.14.3：ECharts 统计接口测试（7 用例）
+    对齐 TEST_CASES.md §6.14.3：ECharts 统计接口测试（3 用例）
     - A7.7.1 stats 响应含 charts 字段
     - A7.7.2 charts.trend 为空时返回空数组
-    - A7.7.3 charts.latency P50 正确
-    - A7.7.4 charts.latency P95 正确
-    - A7.7.5 charts.latency P99 正确
-    - A7.7.6 charts.tokens input 正确
-    - A7.7.7 charts.tokens output 正确
+    - A7.7.3 charts 延迟百分位（P50/P95/P99）和 token 统计正确
     """
 
     @pytest.mark.asyncio
@@ -554,12 +560,12 @@ class TestAdminStatsChartsAPI:
         assert charts_data["tokens"] == []
 
     @pytest.mark.asyncio
-    async def test_charts_latency_p50正确(self, async_client, admin_auth_headers):
-        """A7.7.3：latency P50 分位数计算正确"""
+    async def test_charts_延迟和token数据正确(self, async_client, admin_auth_headers):
+        """验证图表接口返回完整的延迟百分位和 token 统计数据"""
         charts = StatsChartsData(
             trend=[],
             latency=[TraceLatencyItem(date="2026-06-12", p50=820, p95=2100, p99=3800)],
-            tokens=[],
+            tokens=[TraceTokenItem(date="2026-06-12", input=152000, output=45000)],
         )
         with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
             mock_svc.return_value = _make_stats(charts=charts)
@@ -570,89 +576,19 @@ class TestAdminStatsChartsAPI:
             )
 
         assert response.status_code == 200
-        latency = response.json()["data"]["charts"]["latency"]
+        body = response.json()["data"]["charts"]
+
+        # 验证延迟数据
+        latency = body["latency"]
         assert len(latency) == 1
         assert latency[0]["p50"] == 820
-
-    @pytest.mark.asyncio
-    async def test_charts_latency_p95正确(self, async_client, admin_auth_headers):
-        """A7.7.4：latency P95 分位数计算正确"""
-        charts = StatsChartsData(
-            trend=[],
-            latency=[TraceLatencyItem(date="2026-06-12", p50=820, p95=2100, p99=3800)],
-            tokens=[],
-        )
-        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = _make_stats(charts=charts)
-
-            response = await async_client.get(
-                "/api/admin/stats",
-                headers=admin_auth_headers,
-            )
-
-        assert response.status_code == 200
-        latency = response.json()["data"]["charts"]["latency"]
         assert latency[0]["p95"] == 2100
-
-    @pytest.mark.asyncio
-    async def test_charts_latency_p99正确(self, async_client, admin_auth_headers):
-        """A7.7.5：latency P99 分位数计算正确"""
-        charts = StatsChartsData(
-            trend=[],
-            latency=[TraceLatencyItem(date="2026-06-12", p50=820, p95=2100, p99=3800)],
-            tokens=[],
-        )
-        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = _make_stats(charts=charts)
-
-            response = await async_client.get(
-                "/api/admin/stats",
-                headers=admin_auth_headers,
-            )
-
-        assert response.status_code == 200
-        latency = response.json()["data"]["charts"]["latency"]
         assert latency[0]["p99"] == 3800
 
-    @pytest.mark.asyncio
-    async def test_charts_tokens_input正确(self, async_client, admin_auth_headers):
-        """A7.7.6：tokens input 统计正确"""
-        charts = StatsChartsData(
-            trend=[],
-            latency=[],
-            tokens=[TraceTokenItem(date="2026-06-12", input=152000, output=45000)],
-        )
-        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = _make_stats(charts=charts)
-
-            response = await async_client.get(
-                "/api/admin/stats",
-                headers=admin_auth_headers,
-            )
-
-        assert response.status_code == 200
-        tokens = response.json()["data"]["charts"]["tokens"]
+        # 验证 token 数据
+        tokens = body["tokens"]
         assert len(tokens) == 1
         assert tokens[0]["input"] == 152000
-
-    @pytest.mark.asyncio
-    async def test_charts_tokens_output正确(self, async_client, admin_auth_headers):
-        """A7.7.7：tokens output 统计正确"""
-        charts = StatsChartsData(
-            trend=[],
-            latency=[],
-            tokens=[TraceTokenItem(date="2026-06-12", input=152000, output=45000)],
-        )
-        with patch("app.api.admin.get_stats", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = _make_stats(charts=charts)
-
-            response = await async_client.get(
-                "/api/admin/stats",
-                headers=admin_auth_headers,
-            )
-
-        assert response.status_code == 200
-        tokens = response.json()["data"]["charts"]["tokens"]
         assert tokens[0]["output"] == 45000
 
 
@@ -729,7 +665,7 @@ class TestAdminUserListAPI:
         assert response.status_code == 200
         mock_svc.assert_called_once()
         call_kwargs = mock_svc.call_args
-        assert call_kwargs.kwargs.get("role") == "admin" or call_kwargs[1].get("role") == "admin"
+        assert call_kwargs.kwargs.get("role") == "admin"
 
     @pytest.mark.asyncio
     async def test_普通用户获取用户列表被拒绝(self, async_client, auth_headers):

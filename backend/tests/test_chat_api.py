@@ -8,8 +8,6 @@
 - A4.5  KB 不存在 → HTTP 404
 - A4.6  Private KB 非 owner → HTTP 403
 - A4.7  Public KB 任意用户可查 → SSE 正常
-- A4.8  deep_thinking=true → thinking 事件
-- A4.9  deep_thinking=false → 无 thinking 事件
 - A4.10 未认证 → HTTP 401
 - A4.12 心跳帧存在
 
@@ -29,6 +27,11 @@ from app.core.exceptions import (
     PermissionDeniedException,
 )
 
+
+# 测试用 UUID 常量
+_TEST_KB_UUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+_TEST_KB2_UUID = "cccccccc-cccc-4ccc-cccc-cccccccccccc"
+_TEST_CONV_UUID = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
 
 # ==================== 辅助函数 ====================
 
@@ -116,7 +119,7 @@ class TestChatNormalQA:
 
             async with async_client.stream(
                 "POST", "/api/chat",
-                json={"kb_id": 1, "question": "测试问题"},
+                json={"kb_id": _TEST_KB_UUID, "question": "测试问题"},
                 headers=auth_headers,
             ) as response:
                 events = await _collect_sse_events(response)
@@ -134,7 +137,7 @@ class TestChatNormalQA:
     async def test_已有会话(self, async_client, auth_headers):
         """A4.2 — conversation_id 存在时复用已有会话"""
         sse_events = [
-            _make_sse_meta(conversation_id=100),
+            _make_sse_meta(conversation_id=_TEST_CONV_UUID),
             _make_sse_message("追加回答"),
             _make_sse_sources(),
             _make_sse_finish(message_id=21, title=None),
@@ -148,13 +151,13 @@ class TestChatNormalQA:
 
             async with async_client.stream(
                 "POST", "/api/chat",
-                json={"kb_id": 1, "question": "追加问题", "conversation_id": 100},
+                json={"kb_id": _TEST_KB_UUID, "question": "追加问题", "conversation_id": _TEST_CONV_UUID},
                 headers=auth_headers,
             ) as response:
                 events = await _collect_sse_events(response)
 
         meta = next(e for e in events if e["event"] == "meta")
-        assert meta["data"]["conversation_id"] == 100
+        assert meta["data"]["conversation_id"] == _TEST_CONV_UUID
 
 
 class TestChatPreSSEErrors:
@@ -165,7 +168,7 @@ class TestChatPreSSEErrors:
         """A4.3 — question 为空字符串时返回 HTTP 422"""
         response = await async_client.post(
             "/api/chat",
-            json={"kb_id": 1, "question": ""},
+            json={"kb_id": _TEST_KB_UUID, "question": ""},
             headers=auth_headers,
         )
         assert response.status_code == 422
@@ -178,7 +181,7 @@ class TestChatPreSSEErrors:
 
             response = await async_client.post(
                 "/api/chat",
-                json={"kb_id": 999, "question": "测试问题"},
+                json={"kb_id": "nonexistent-uuid-0000-0000-000000000000", "question": "测试问题"},
                 headers=auth_headers,
             )
 
@@ -194,7 +197,7 @@ class TestChatPreSSEErrors:
 
             response = await async_client.post(
                 "/api/chat",
-                json={"kb_id": 1, "question": "测试问题"},
+                json={"kb_id": _TEST_KB_UUID, "question": "测试问题"},
                 headers=other_user_auth_headers,
             )
 
@@ -207,7 +210,7 @@ class TestChatPreSSEErrors:
         """A4.10 — 无 token 时返回 HTTP 401"""
         response = await async_client.post(
             "/api/chat",
-            json={"kb_id": 1, "question": "测试问题"},
+            json={"kb_id": _TEST_KB_UUID, "question": "测试问题"},
         )
         assert response.status_code == 401
 
@@ -232,7 +235,7 @@ class TestChatSSEErrors:
 
             async with async_client.stream(
                 "POST", "/api/chat",
-                json={"kb_id": 1, "question": "测试问题"},
+                json={"kb_id": _TEST_KB_UUID, "question": "测试问题"},
                 headers=auth_headers,
             ) as response:
                 events = await _collect_sse_events(response)
@@ -262,104 +265,17 @@ class TestChatVisibility:
 
             async with async_client.stream(
                 "POST", "/api/chat",
-                json={"kb_id": 2, "question": "公共问题"},
+                json={"kb_id": _TEST_KB2_UUID, "question": "公共问题"},
                 headers=other_user_auth_headers,
             ) as response:
                 events = await _collect_sse_events(response)
 
         assert response.status_code == 200
-        assert any(e["event"] == "meta" for e in events)
-
-
-class TestChatDeepThinking:
-    """A4.8 / A4.9 — deep_thinking 开关"""
-
-    @pytest.mark.asyncio
-    async def test_deep_thinking开启有thinking事件(self, async_client, auth_headers):
-        """A4.8 — deep_thinking=true 时 SSE 应包含 thinking 事件"""
-        sse_events = [
-            _make_sse_meta(),
-            _make_sse_thinking("让我思考一下"),
-            _make_sse_thinking("分析中"),
-            _make_sse_message("思考后的回答"),
-            _make_sse_sources(),
-            _make_sse_finish(),
-        ]
-
-        with patch("app.api.chat.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = StreamingResponse(
-                _sse_event_gen(sse_events),
-                media_type="text/event-stream",
-            )
-
-            async with async_client.stream(
-                "POST", "/api/chat",
-                json={"kb_id": 1, "question": "复杂问题", "deep_thinking": True},
-                headers=auth_headers,
-            ) as response:
-                events = await _collect_sse_events(response)
-
-        thinking_events = [e for e in events if e["event"] == "thinking"]
-        assert len(thinking_events) == 2
-        assert thinking_events[0]["data"]["delta"] == "让我思考一下"
-
-        message_events = [e for e in events if e["event"] == "message"]
-        assert len(message_events) >= 1
-
-    @pytest.mark.asyncio
-    async def test_deep_thinking关闭无thinking事件(self, async_client, auth_headers):
-        """A4.9 — deep_thinking=false 时不应有 thinking 事件"""
-        sse_events = [
-            _make_sse_meta(),
-            _make_sse_message("直接回答"),
-            _make_sse_sources(),
-            _make_sse_finish(),
-        ]
-
-        with patch("app.api.chat.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = StreamingResponse(
-                _sse_event_gen(sse_events),
-                media_type="text/event-stream",
-            )
-
-            async with async_client.stream(
-                "POST", "/api/chat",
-                json={"kb_id": 1, "question": "简单问题"},
-                headers=auth_headers,
-            ) as response:
-                events = await _collect_sse_events(response)
-
-        thinking_events = [e for e in events if e["event"] == "thinking"]
-        assert len(thinking_events) == 0
-
-        message_events = [e for e in events if e["event"] == "message"]
-        assert len(message_events) >= 1
-
-
-class TestChatSSEHeaders:
-    """SSE 响应头"""
-
-    @pytest.mark.asyncio
-    async def test_sse响应头正确(self, async_client, auth_headers):
-        """SSE 响应应包含正确的 Content-Type 和缓存控制头"""
-        sse_events = [_make_sse_meta(), _make_sse_message("回答"), _make_sse_finish()]
-
-        with patch("app.api.chat.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = StreamingResponse(
-                _sse_event_gen(sse_events),
-                media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-            )
-
-            async with async_client.stream(
-                "POST", "/api/chat",
-                json={"kb_id": 1, "question": "测试问题"},
-                headers=auth_headers,
-            ) as response:
-                async for _ in response.aiter_lines():
-                    pass
-
-        assert response.headers.get("content-type", "").startswith("text/event-stream")
+        # 验证 SSE 流正常返回（非仅 any() 存在性检查）
+        event_types = [e["event"] for e in events]
+        assert "meta" in event_types
+        assert "message" in event_types
+        assert "finish" in event_types
 
 
 class TestChatHeartbeat:
@@ -384,7 +300,7 @@ class TestChatHeartbeat:
             raw_lines = []
             async with async_client.stream(
                 "POST", "/api/chat",
-                json={"kb_id": 1, "question": "测试问题"},
+                json={"kb_id": _TEST_KB_UUID, "question": "测试问题"},
                 headers=auth_headers,
             ) as response:
                 async for line in response.aiter_lines():

@@ -57,7 +57,11 @@ class TestJWT:
         assert payload == {}
 
     def test_token_exp_uses_utc(self):
-        """验证 token 过期时间使用 UTC"""
+        """验证 token 过期时间在 now + TTL 附近（UTC）"""
+        import time
+        from app.config import settings
         token = create_access_token(1, "u", "user")
         payload = decode_access_token(token)
-        assert payload["exp"] > 0
+        expected_exp = int(time.time()) + settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        # 允许 5 秒误差（测试执行耗时）
+        assert abs(payload["exp"] - expected_exp) < 5

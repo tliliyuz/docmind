@@ -33,28 +33,12 @@ describe('AdminLayout', () => {
     vi.clearAllMocks()
   })
 
-  it('渲染 Admin 布局容器', () => {
+  it('渲染完整 Admin 布局结构', () => {
     const wrapper = getComponent()
     expect(wrapper.find('.admin-layout').exists()).toBe(true)
-  })
-
-  it('包含 Admin 侧边栏', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.admin-sidebar').exists()).toBe(true)
-  })
-
-  it('包含主内容区域', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.admin-main').exists()).toBe(true)
-  })
-
-  it('包含顶部标题栏', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.admin-header').exists()).toBe(true)
-  })
-
-  it('包含内容区', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.admin-content').exists()).toBe(true)
   })
 

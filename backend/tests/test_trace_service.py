@@ -103,11 +103,11 @@ def _make_trace_record(
     return trace
 
 
-def _make_list_row(trace=None, username="testuser", kb_name="测试KB"):
-    """构造 list_traces 查询结果行"""
+def _make_list_row(trace=None, username="testuser", kb_name="测试KB", kb_uuid="kb-uuid-10", conversation_uuid="conv-uuid-100"):
+    """构造 list_traces 查询结果行（5-tuple: trace, username, kb_name, kb_uuid, conversation_uuid）"""
     if trace is None:
         trace = _make_trace_record()
-    return (trace, username, kb_name)
+    return (trace, username, kb_name, kb_uuid, conversation_uuid)
 
 
 # ==================== record_trace 测试 ====================
@@ -575,7 +575,7 @@ class TestGetTraceDetail:
         )
 
         result_mock = MagicMock()
-        result_mock.first.return_value = (trace, "testuser", "测试KB", "报销流程咨询")
+        result_mock.first.return_value = (trace, "testuser", "测试KB", "kb-uuid-10", "报销流程咨询", "conv-uuid-100")
         db.execute = AsyncMock(return_value=result_mock)
 
         result = await get_trace_detail(db, trace_id="trace-detail-001")

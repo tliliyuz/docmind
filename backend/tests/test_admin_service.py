@@ -25,6 +25,7 @@ def _make_kb_row(kb_id=1, name="测试KB", description="描述", visibility="pri
     """构造 KB + username JOIN 查询结果行"""
     kb = MagicMock()
     kb.id = kb_id
+    kb.uuid = f"kb-uuid-{kb_id:04d}-0000-0000-000000000000"
     kb.name = name
     kb.description = description
     kb.visibility = visibility
@@ -41,9 +42,10 @@ def _make_kb_row(kb_id=1, name="测试KB", description="描述", visibility="pri
 def _make_doc_row(doc_id=1, kb_id=1, filename="测试文档.pdf", file_type="pdf",
                   file_size=1024, status="completed", current_stage=None,
                   chunk_count=5, error_msg=None):
-    """构造 Document + KB + User JOIN 查询结果行"""
+    """构造 Document + KB + User JOIN 查询结果行（6 值：doc, kb_name, kb_uuid, kb_visibility, owner_id, owner_username）"""
     doc = MagicMock()
     doc.id = doc_id
+    doc.uuid = f"doc-uuid-{doc_id:04d}-0000-0000-000000000000"
     doc.kb_id = kb_id
     doc.filename = filename
     doc.file_type = file_type
@@ -55,10 +57,11 @@ def _make_doc_row(doc_id=1, kb_id=1, filename="测试文档.pdf", file_type="pdf
     doc.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
     doc.updated_at = datetime(2026, 6, 10, tzinfo=timezone.utc)
     kb_name = f"KB_{kb_id}"
+    kb_uuid = f"kb-uuid-{kb_id:04d}-0000-0000-000000000000"
     kb_visibility = "private" if kb_id % 2 == 0 else "public"
     owner_id = kb_id * 10
     owner_username = f"owner_{kb_id}"
-    return (doc, kb_name, kb_visibility, owner_id, owner_username)
+    return (doc, kb_name, kb_uuid, kb_visibility, owner_id, owner_username)
 
 
 # ==================== get_stats 测试 ====================
@@ -177,7 +180,7 @@ class TestListAllKBs:
         assert result.page_size == 20
         assert len(result.items) == 3
         # 验证第一条数据结构
-        assert result.items[0].id == 1
+        assert result.items[0].uuid == "kb-uuid-0001-0000-0000-000000000000"
         assert result.items[0].name == "KB_1"
         assert result.items[0].username == "user_1"
         assert result.items[0].visibility == "private"
@@ -358,8 +361,8 @@ class TestListAllDocuments:
         assert len(result.items) == 2
 
         # 第一条：completed 文档
-        assert result.items[0].id == 1
-        assert result.items[0].kb_id == 1
+        assert result.items[0].uuid == "doc-uuid-0001-0000-0000-000000000000"
+        assert result.items[0].kb_uuid == "kb-uuid-0001-0000-0000-000000000000"
         assert result.items[0].kb_name == "KB_1"
         assert result.items[0].owner_username == "owner_1"
         assert result.items[0].filename == "文档A.pdf"
@@ -369,7 +372,7 @@ class TestListAllDocuments:
         assert result.items[0].chunk_count == 5
 
         # 第二条：uploaded 文档
-        assert result.items[1].id == 2
+        assert result.items[1].uuid == "doc-uuid-0002-0000-0000-000000000000"
         assert result.items[1].status == "uploaded"
         assert result.items[1].chunk_count == 0
 
@@ -433,7 +436,7 @@ class TestListAllDocuments:
         result = await list_all_documents(db, kb_id=3)
 
         assert result.total == 2
-        assert all(item.kb_id == 3 for item in result.items)
+        assert all(item.kb_uuid == "kb-uuid-0003-0000-0000-000000000000" for item in result.items)
 
     @pytest.mark.asyncio
     async def test_按文件名模糊搜索(self):

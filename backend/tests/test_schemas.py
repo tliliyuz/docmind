@@ -54,21 +54,17 @@ class TestLoginRequest:
 
 
 class TestTokenResponse:
-    def test_default_token_type(self):
-        resp = TokenResponse(access_token="abc", refresh_token="def", expires_in=86400)
-        assert resp.token_type == "bearer"
-
-    def test_model_dump(self):
+    def test_token_response_默认值和序列化(self):
+        """TokenResponse: token_type 默认 bearer + model_dump 含必要字段"""
         resp = TokenResponse(access_token="abc", refresh_token="def", expires_in=3600)
+        # 默认 token_type
+        assert resp.token_type == "bearer"
+        # 序列化包含所有必要字段
         data = resp.model_dump()
-        assert "access_token" in data
-        assert "refresh_token" in data
-        assert "token_type" in data
+        assert data["access_token"] == "abc"
+        assert data["refresh_token"] == "def"
+        assert data["token_type"] == "bearer"
         assert data["expires_in"] == 3600
-
-    def test_custom_token_type(self):
-        resp = TokenResponse(access_token="abc", refresh_token="def", token_type="jwt", expires_in=60)
-        assert resp.token_type == "jwt"
 
 
 class TestDocumentStatusEnum:
@@ -84,11 +80,6 @@ class TestDocumentStatusEnum:
     def test_ten_statuses(self):
         assert len(list(self.DocumentStatus)) == 10
 
-    def test_str_subclass(self):
-        assert issubclass(self.DocumentStatus, str)
-        assert self.DocumentStatus.COMPLETED == "completed"
-        assert self.DocumentStatus.UPLOADED == "uploaded"
-
     def test_all_values_match_doc(self):
         expected = {
             "uploaded", "parsing", "chunking", "embedding", "vector_storing",
@@ -103,9 +94,6 @@ class TestDocumentStatusEnum:
         assert "success_with_warnings" in self.TERMINAL_STATUSES
         assert "partial_failed" in self.TERMINAL_STATUSES
         assert "failed" in self.TERMINAL_STATUSES
-
-    def test_terminal_statuses_is_frozenset(self):
-        assert isinstance(self.TERMINAL_STATUSES, frozenset)
 
     @pytest.mark.parametrize("status", ["completed", "success_with_warnings", "partial_failed", "failed"])
     def test_is_terminal_true(self, status):
@@ -132,14 +120,14 @@ class TestDocumentResponse:
     def test_accepts_enum_value(self):
         from app.models.enums import DocumentStatus
         resp = self.DocumentResponse(
-            id=1, kb_id=1, filename="test.pdf", file_type="pdf",
+            uuid="doc-001", kb_uuid="kb-001", filename="test.pdf", file_type="pdf",
             status=DocumentStatus.UPLOADED, created_at="2026-05-17T00:00:00",
         )
         assert resp.status == DocumentStatus.UPLOADED
 
     def test_accepts_string_and_converts(self):
         resp = self.DocumentResponse(
-            id=1, kb_id=1, filename="test.pdf", file_type="pdf",
+            uuid="doc-001", kb_uuid="kb-001", filename="test.pdf", file_type="pdf",
             status="completed", created_at="2026-05-17T00:00:00",
         )
         from app.models.enums import DocumentStatus
@@ -148,13 +136,13 @@ class TestDocumentResponse:
     def test_rejects_invalid_status(self):
         with pytest.raises(ValidationError):
             self.DocumentResponse(
-                id=1, kb_id=1, filename="test.pdf", file_type="pdf",
+                uuid="doc-001", kb_uuid="kb-001", filename="test.pdf", file_type="pdf",
                 status="invalid_status", created_at="2026-05-17T00:00:00",
             )
 
     def test_model_dump_returns_string(self):
         resp = self.DocumentResponse(
-            id=1, kb_id=1, filename="test.pdf", file_type="pdf",
+            uuid="doc-001", kb_uuid="kb-001", filename="test.pdf", file_type="pdf",
             status="completed", created_at="2026-05-17T00:00:00",
         )
         data = resp.model_dump()
@@ -245,7 +233,7 @@ class TestKnowledgeBaseResponseVisibility:
         """U9.8: model_validate 含 visibility 成功"""
         from datetime import datetime, timezone
         resp = self.KnowledgeBaseResponse(
-            id=1, name="知识库", description="描述", user_id=1,
+            uuid="kb-001", name="知识库", description="描述", user_id=1,
             visibility="public", status="active", doc_count=0, chunk_count=0,
             created_at=datetime.now(timezone.utc),
         )

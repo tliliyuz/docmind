@@ -27,6 +27,10 @@ from app.core.exceptions import MetaQuestionException
 from app.rag.intent import Intent, IntentResult
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
+# 测试用 UUID 常量（chat_service.chat() 要求 UUID 字符串）
+_TEST_KB_UUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+_TEST_CONV_UUID = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+
 
 # ==================== 辅助函数 ====================
 
@@ -144,6 +148,7 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
 
     mock_conv = MagicMock()
     mock_conv.id = conv.id
+    mock_conv.uuid = _TEST_CONV_UUID
     mock_conv.user_id = conv.user_id
     mock_conv.message_count = getattr(conv, 'message_count', 0)
     mock_conv.title = getattr(conv, 'title', '新对话')
@@ -178,6 +183,18 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
         mocks['intent'] = stack.enter_context(
             patch("app.services.chat_service.classify_intent", new_callable=AsyncMock))
         mocks['intent'].return_value = intent_result
+
+        # Mock resolve_uuid_to_id：将 UUID 字符串转回整数 ID
+        _conv_id = conv.id
+        async def _mock_resolve(db, model, uuid_str):
+            if uuid_str == _TEST_KB_UUID:
+                return 1
+            if uuid_str == _TEST_CONV_UUID:
+                return _conv_id
+            return None
+        mocks['resolve_uuid'] = stack.enter_context(
+            patch("app.core.uuid_helpers.resolve_uuid_to_id",
+                  new_callable=AsyncMock, side_effect=_mock_resolve))
 
         # Mock record_trace 阻止真实 DB 写入，但记录调用参数
         record_trace_mock = AsyncMock()
@@ -288,7 +305,7 @@ class TestTraceKnowledgeRAGFlow:
         ) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -383,7 +400,7 @@ class TestTraceCasualFlow:
         ) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="你好", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -468,6 +485,7 @@ class TestTraceMetaFlow:
         # conv 对象在 Exception 中携带
         mock_conv_for_meta = MagicMock()
         mock_conv_for_meta.id = 50
+        mock_conv_for_meta.uuid = _TEST_CONV_UUID
         mock_conv_for_meta.user_id = 1
         mock_conv_for_meta.message_count = 0
         mock_conv_for_meta.title = "新对话"
@@ -495,10 +513,13 @@ class TestTraceMetaFlow:
             stack.enter_context(
                 patch("app.services.chat_service.stream_with_heartbeat",
                       side_effect=lambda g, **kw: g))
+            stack.enter_context(
+                patch("app.core.uuid_helpers.resolve_uuid_to_id",
+                      new_callable=AsyncMock, return_value=1))
 
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="你能做什么？", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -568,7 +589,7 @@ class TestTraceErrorFlow:
 
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -655,7 +676,7 @@ class TestTraceRetrieveGranularity:
 
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)

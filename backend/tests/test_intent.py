@@ -15,6 +15,10 @@ import pytest
 from app.core.llm import LLMResult
 from app.rag.intent import Intent, IntentResult, classify_intent
 
+# 测试用 UUID 常量（chat_service.chat() 要求 UUID 字符串）
+_TEST_KB_UUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+_TEST_CONV_UUID = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+
 
 # ==================== 辅助函数 ====================
 
@@ -146,6 +150,7 @@ async def test_meta_routing_returns_fixed_response():
 
     mock_conv = MagicMock()
     mock_conv.id = 1
+    mock_conv.uuid = _TEST_CONV_UUID
     mock_conv.message_count = 0
     mock_conv.user_id = 1
 
@@ -160,9 +165,17 @@ async def test_meta_routing_returns_fixed_response():
 
     mock_user_msg = MagicMock(id=10, role="user", content="你能做什么？")
 
+    async def _mock_resolve_uuid(db, model, uuid_str):
+        """模拟 UUID→ID 转换"""
+        if uuid_str == _TEST_KB_UUID:
+            return 1
+        return None
+
     with patch("app.services.chat_service.classify_intent", new_callable=AsyncMock) as mock_classify, \
          patch("app.services.chat_service.Conversation", return_value=mock_conv), \
-         patch("app.services.chat_service.Message", return_value=mock_user_msg):
+         patch("app.services.chat_service.Message", return_value=mock_user_msg), \
+         patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+               side_effect=_mock_resolve_uuid):
         mock_classify.return_value = IntentResult(
             intent=Intent.META, method="regex",
             metadata={"model": None, "confidence": None},
@@ -173,7 +186,7 @@ async def test_meta_routing_returns_fixed_response():
             from app.services.chat_service import _validate_and_prepare
             await _validate_and_prepare(
                 db=mock_db, user_id=1, role="user",
-                conversation_id=None, kb_id=1, question="你能做什么？",
+                conversation_id=None, kb_id=_TEST_KB_UUID, question="你能做什么？",
             )
 
         # 验证异常携带 conv 信息
@@ -191,6 +204,7 @@ async def test_casual_routing_skips_retrieval():
 
     mock_conv = MagicMock()
     mock_conv.id = 1
+    mock_conv.uuid = _TEST_CONV_UUID
     mock_conv.user_id = 1
     mock_conv.message_count = 0
     mock_conv.title = "新对话"
@@ -221,11 +235,19 @@ async def test_casual_routing_skips_retrieval():
 
     mock_db.execute = AsyncMock(side_effect=[history_result, doc_name_result])
 
+    async def _mock_resolve_uuid(db, model, uuid_str):
+        """模拟 UUID→ID 转换"""
+        if uuid_str == _TEST_KB_UUID:
+            return 1
+        return None
+
     with patch("app.services.chat_service.classify_intent", new_callable=AsyncMock) as mock_classify, \
          patch("app.services.chat_service.Conversation", return_value=mock_conv), \
          patch("app.services.chat_service.Message") as MockMessage, \
          patch("app.services.chat_service._vector_retriever") as mock_vec, \
-         patch("app.services.chat_service._bm25_retriever") as mock_bm25:
+         patch("app.services.chat_service._bm25_retriever") as mock_bm25, \
+         patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+               side_effect=_mock_resolve_uuid):
 
         mock_classify.return_value = IntentResult(
             intent=Intent.CASUAL, method="regex",
@@ -235,7 +257,7 @@ async def test_casual_routing_skips_retrieval():
 
         conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
             db=mock_db, user_id=1, role="user",
-            conversation_id=None, kb_id=1, question="你好",
+            conversation_id=None, kb_id=_TEST_KB_UUID, question="你好",
         )
 
         # CASUAL 路径：prompt 使用 CASUAL_SYSTEM_PROMPT

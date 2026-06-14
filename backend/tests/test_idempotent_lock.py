@@ -20,11 +20,6 @@ class TestBuildLockKey:
         key = _build_lock_key(123, "ingest")
         assert key == "doc_lock:123"
 
-    def test_key_不同_doc_id_生成不同_key(self):
-        key1 = _build_lock_key(1, "ingest")
-        key2 = _build_lock_key(2, "ingest")
-        assert key1 != key2
-
     def test_key_ingest和delete_共享同一锁(self):
         """同一 doc_id 的 ingest/delete 使用相同锁键，确保互斥"""
         key1 = _build_lock_key(1, "ingest")
@@ -99,21 +94,30 @@ class TestReleaseIdempotencyLock:
         mock_redis.delete.assert_called_once_with("doc_lock:1")
 
     def test_释放_不存在的_key_幂等无异常(self):
-        """DELETE 对不存在的 key 不会抛异常"""
+        """DELETE 对不存在的 key 不会抛异常，且仍调用正确的 key"""
         mock_redis = MagicMock()
         mock_redis.delete.return_value = 0  # Redis DEL 不存在 key 返回 0
 
         with patch("app.ingest.lock.get_redis", return_value=mock_redis):
             release_idempotency_lock(999, "ingest")
 
-    def test_释放后_再次获取应成功(self):
-        """模拟释放锁后，SET NX 应能再次成功"""
+        mock_redis.delete.assert_called_once_with("doc_lock:999")
+
+    def test_释放后_再次获取_验证_release_then_acquire_序列(self):
+        """模拟：先释放锁 → 再获取锁，验证 release 和 acquire 按序调用正确参数"""
         mock_redis = MagicMock()
-        # 第一次 SET 返回 True（获取成功）
         mock_redis.set.return_value = True
 
         with patch("app.ingest.lock.get_redis", return_value=mock_redis):
+            # 先释放
+            release_idempotency_lock(1, "ingest")
+            mock_redis.delete.assert_called_once_with("doc_lock:1")
+
+            # 再获取
             assert acquire_idempotency_lock(1, "ingest") is True
+            mock_redis.set.assert_called_once_with(
+                "doc_lock:1", "locked", ex=600, nx=True
+            )
 
 
 class TestCheckIdempotencyLock:

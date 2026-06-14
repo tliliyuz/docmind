@@ -70,6 +70,7 @@ def _make_all_result(rows):
 
 def _make_kb(
     kb_id=1,
+    uuid=None,
     name="测试知识库",
     description="描述",
     user_id=1,
@@ -79,8 +80,11 @@ def _make_kb(
     doc_count=3,
 ):
     """构造 KnowledgeBase ORM 实例（非 mock，用于 .scalar_one_or_none() 返回）"""
+    if uuid is None:
+        uuid = f"kb-uuid-{kb_id}"
     kb = KnowledgeBase(
         id=kb_id,
+        uuid=uuid,
         name=name,
         description=description,
         user_id=user_id,
@@ -112,6 +116,8 @@ def mock_db():
     async def _refresh(instance):
         if instance.id is None:
             instance.id = 1
+        if not getattr(instance, "uuid", None):
+            instance.uuid = f"kb-uuid-{instance.id}"
         if instance.status is None:
             instance.status = "active"
         if instance.doc_count is None:
@@ -206,7 +212,7 @@ class TestCreateKB:
         assert result.description == "描述"
         assert result.visibility == "private"
         assert result.user_id == 1
-        assert result.id == 1  # db.refresh mock 回填
+        assert result.uuid == "kb-uuid-1"  # db.refresh mock 回填
         mock_db.add.assert_called_once()
         mock_db.flush.assert_called_once()
         mock_db.refresh.assert_called_once()
@@ -260,7 +266,7 @@ class TestGetKB:
 
         result = await get_kb(mock_db, kb_id=1, user_id=1)
 
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
         assert result.chunk_count == 99  # 覆写为实时值，非 DB 缓存的 0
         assert mock_db.execute.call_count == 2
 
@@ -272,7 +278,7 @@ class TestGetKB:
 
         result = await get_kb(mock_db, kb_id=1, fill_chunk_count=False)
 
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
         mock_db.execute.assert_called_once()  # 仅查了 KB
 
     @pytest.mark.asyncio
@@ -282,7 +288,7 @@ class TestGetKB:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_result(kb))
 
         result = await get_kb(mock_db, kb_id=1, user_id=1)
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
 
     @pytest.mark.asyncio
     async def test_私有KB非所有者被拒绝(self, mock_db):
@@ -300,7 +306,7 @@ class TestGetKB:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_result(kb))
 
         result = await get_kb(mock_db, kb_id=1, user_id=2, role="admin")
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
 
     @pytest.mark.asyncio
     async def test_公开KB所有用户可访问(self, mock_db):
@@ -309,7 +315,7 @@ class TestGetKB:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_result(kb))
 
         result = await get_kb(mock_db, kb_id=1, user_id=2)
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
 
     @pytest.mark.asyncio
     async def test_知识库不存在(self, mock_db):
@@ -328,7 +334,7 @@ class TestGetKB:
 
         # 不传 user_id，即使 private KB 也直接返回
         result = await get_kb(mock_db, kb_id=1, fill_chunk_count=False)
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
 
 
 # ============================================================
@@ -416,7 +422,7 @@ class TestListPublicKBs:
         assert result.total == 1
         assert len(result.items) == 1
         item = result.items[0]
-        assert item.id == 2
+        assert item.uuid == "kb-uuid-2"
         assert item.username == "zhangsan"
         assert item.chunk_count == 25  # 实时值
 
@@ -651,7 +657,7 @@ class TestDeleteKB:
         with patch("app.services.knowledge_base_service.delete_kb_task") as mock_task:
             result = await delete_kb(mock_db, kb_id=1, user_id=1, role="user")
 
-        assert result.kb_id == 1
+        assert result.kb_uuid == "kb-uuid-1"
         assert result.status == "deleting"
         assert kb.status == "deleting"
         mock_db.commit.assert_called_once()
@@ -693,7 +699,7 @@ class TestCheckKBActive:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_result(kb))
 
         result = await check_kb_active(mock_db, kb_id=1)
-        assert result.id == 1
+        assert result.uuid == "kb-uuid-1"
 
     @pytest.mark.asyncio
     async def test_deleting状态抛异常(self, mock_db):

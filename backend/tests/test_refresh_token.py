@@ -65,8 +65,11 @@ class TestRefreshTokenSecurity:
 
     def test_create_refresh_token_jwt格式(self):
         token = create_refresh_token(1)
-        assert isinstance(token, str)
-        assert "." in token  # JWT 格式
+        assert "." in token  # JWT 三段式格式
+        # 验证可解码且 sub 正确
+        payload = decode_refresh_token(token)
+        assert payload["sub"] == "1"
+        assert payload["type"] == "refresh"
 
     def test_decode_refresh_token成功(self):
         token = create_refresh_token(42)
@@ -120,8 +123,9 @@ class TestLoginRefreshToken:
         result = await login(mock_db, "testuser", "correct")
 
         assert isinstance(result, TokenResponse)
-        assert result.refresh_token
-        assert result.access_token
+        # 验证 token 为可解码 JWT（非仅 truthy 断言）
+        access_payload = decode_refresh_token(result.refresh_token)
+        assert access_payload["sub"] == "1"
         assert result.expires_in == 15 * 60
 
     @pytest.mark.asyncio

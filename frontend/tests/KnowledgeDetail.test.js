@@ -129,14 +129,20 @@ describe('KnowledgeDetail', () => {
 
   // ==================== 渲染测试 ====================
 
-  it('渲染 KB 名称和描述', () => {
+  it('渲染页面完整结构元素', () => {
     const wrapper = getComponent()
     expect(wrapper.find('.detail-title').exists()).toBe(true)
+    expect(wrapper.find('.back-btn').exists()).toBe(true)
+    expect(wrapper.find('.upload-desc').exists()).toBe(true)
+    expect(wrapper.find('.doc-table-filters').exists()).toBe(true)
+    expect(wrapper.find('.doc-table-section').exists()).toBe(true)
+    expect(wrapper.find('.detail-header-actions').exists()).toBe(true)
   })
 
-  it('渲染返回按钮', () => {
+  it('渲染统计卡片（文档数、分块数、创建时间）', () => {
     const wrapper = getComponent()
-    expect(wrapper.find('.back-btn').exists()).toBe(true)
+    const statCards = wrapper.findAll('.stat-card')
+    expect(statCards.length).toBe(3)
   })
 
   it('从公共知识库进入时返回按钮跳转公共知识库列表', async () => {
@@ -154,22 +160,10 @@ describe('KnowledgeDetail', () => {
     expect(mockPush).toHaveBeenCalledWith('/knowledge-bases')
   })
 
-  it('渲染统计卡片（文档数、分块数、创建时间）', () => {
-    const wrapper = getComponent()
-    const statCards = wrapper.findAll('.stat-card')
-    expect(statCards.length).toBe(3)
-  })
-
   it('渲染文档上传区域', () => {
     const wrapper = getComponent()
     expect(wrapper.find('.upload-area').exists()).toBe(true)
     expect(wrapper.find('.upload-title').text()).toContain('拖拽文件')
-  })
-
-  it('上传区域提示支持的文件格式', () => {
-    const wrapper = getComponent()
-    const desc = wrapper.find('.upload-desc')
-    expect(desc.exists()).toBe(true)
   })
 
   // ==================== 文档表格测试 ====================
@@ -189,26 +183,6 @@ describe('KnowledgeDetail', () => {
     const wrapper = getComponent()
     expect(wrapper.findComponent({ name: 'el-table' }).exists()).toBe(true)
     expect(wrapper.find('.empty-state').exists()).toBe(false)
-  })
-
-  // ==================== 文档筛选测试 ====================
-
-  it('渲染文档筛选和排序区域', () => {
-    const wrapper = getComponent()
-    expect(wrapper.find('.doc-table-filters').exists()).toBe(true)
-  })
-
-  it('渲染文档表格工具栏含标题', () => {
-    const wrapper = getComponent()
-    expect(wrapper.find('.doc-table-section').exists()).toBe(true)
-  })
-
-  // ==================== 编辑/删除按钮测试 ====================
-
-  it('渲染编辑和删除知识库按钮', () => {
-    const wrapper = getComponent()
-    const actions = wrapper.find('.detail-header-actions')
-    expect(actions.exists()).toBe(true)
   })
 
   // ==================== 生命周期测试 ====================

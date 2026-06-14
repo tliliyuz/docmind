@@ -3,8 +3,8 @@
 
 # DocMind UI 样式规范
 
-> 版本: v0.11
-> 日期: 2026-06-07
+> 版本: v0.12
+> 日期: 2026-06-14
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考
 > 说明: 所有样式基于 Vue 3 + Element Plus 项目
 
@@ -27,12 +27,14 @@
     --dm-warning: #F59E0B;
     --dm-danger: #EF4444;
     --dm-info: #3B82F6;
+    --dm-purple: #8b5cf6;
 
     /* ===== 语义色浅色背景 ===== */
     --dm-success-light: #ECFDF5;
     --dm-warning-light: #FFFBEB;
     --dm-danger-light: #FEF2F2;
     --dm-info-light: #EFF6FF;
+    --dm-purple-light: #F5F3FF;
 
     /* ===== 部门图标色 ===== */
     --dm-hr-color: #DC2626;
@@ -52,6 +54,7 @@
     --dm-bg-card: #FFFFFF;
     --dm-bg-chat: #FFFFFF;
     --dm-bg-input: #F5F5F5;
+    --dm-bg-elevated: #EBEBEB;
     --dm-text-primary: #1A1A1A;
     --dm-text-secondary: #737373;
     --dm-text-tertiary: #A3A3A3;
@@ -122,6 +125,7 @@
     --dm-header-height: 56px;
     --dm-chat-max-width: 768px;
     --dm-content-max-width: 1200px;
+    --dm-input-height: 40px;
 
     /* ===== 过渡 ===== */
     --dm-transition-fast: 0.15s ease;
@@ -245,7 +249,7 @@ body {
 /* 顶部栏 */
 .top-header,
 .page-header {
-    height: var(--dm-header-height);              /* 64px */
+    height: var(--dm-header-height);              /* 56px */
     background: var(--dm-bg-card);
     border-bottom: 1px solid var(--dm-border);
     display: flex;
@@ -1411,62 +1415,154 @@ body {
 
 ## 5. 动画与过渡
 
-### 5.1 过渡时长
+### 5.1 过渡时长（Design Token）
 
-| 场景 | 时长 | 缓动函数 |
-|:---|:---|:---|
-| 颜色/背景变化 | 0.15s | ease |
-| 边框/阴影变化 | 0.2s | ease |
-| 位移/缩放 | 0.2s | ease |
-| 页面进入 | 0.3s | ease |
-| 消息出现 | 0.3s | ease（fadeIn + translateY） |
+| Token | 值 | 适用场景 | 使用频次 |
+|:---|:---|:---|:---|
+| `--dm-transition-fast` | 0.15s ease | 颜色/背景变化、按钮悬停、卡片悬停 | 约 40 处（最常用） |
+| `--dm-transition-normal` | 0.2s ease | 边框/阴影变化、输入框聚焦、Sidebar 宽度 | 约 15 处 |
+| `--dm-transition-slow` | 0.3s ease | 页面进入、大面积位移 | 少量 |
+
+**使用规则**：所有 `transition` 属性必须引用 Token 变量，禁止硬编码时长值。
 
 ### 5.2 关键帧动画
 
+项目定义了 3 个 `@keyframes` 动画：
+
+| 动画名 | 时长 | 组件 | 用途 |
+|:---|:---|:---|:---|
+| `menuSlideUp` | `var(--dm-transition-normal)` ease | Sidebar 用户菜单 | 菜单从下方滑入（opacity + translateY 6px） |
+| `shake` | 0.5s ease | ChatInput | 空输入抖动反馈（translateX ±4px） |
+| `typing` | 1.4s infinite ease | MessageItem | AI 正在输入的三点弹跳（translateY -6px，交错 delay） |
+
 ```css
-/* 消息进入 */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+@keyframes menuSlideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* 加载动画 */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 50%, 90% { transform: translateX(-4px); }
+  30%, 70% { transform: translateX(4px); }
+}
+
 @keyframes typing {
-    0%, 60%, 100% { transform: translateY(0); }
-    30% { transform: translateY(-6px); }
+  0%, 60%, 100% { transform: translateY(0); }
+  30%           { transform: translateY(-6px); }
 }
 ```
+
+### 5.3 Vue Transition 类名
+
+项目极少使用 Vue `<Transition>` 组件，仅 `MessageList.vue` 中的"回到底部"浮动按钮使用 `fade` 过渡：
+
+```css
+.fade-enter-active,
+.fade-leave-active { transition: opacity var(--dm-transition-fast); }
+.fade-enter-from,
+.fade-leave-to { opacity: 0; }
+```
+
+**约定**：新增淡入淡出场景统一使用 `fade` 命名，其他动画通过纯 CSS transition/animation 实现。
 
 ---
 
 ## 6. 图标规范
 
-使用 Font Awesome 6 Free，图标尺寸：
+### 6.1 图标方案
 
-| 场景 | 尺寸 |
+使用 **Font Awesome 6 Free**（Solid 风格，`fas` 前缀）。图标尺寸完全由 CSS 上下文控制，不使用 FA 尺寸修饰类（`fa-sm`、`fa-lg` 等）。唯一的 FA 辅助类是 `fa-spin`（loading 旋转）。
+
+### 6.2 尺寸基准
+
+| 场景 | 尺寸 | 实现方式 |
+|:---|:---|:---|
+| 普通内联图标 | 继承父元素 `font-size` | 通常 14px（`--dm-text-body`）或 13px（`--dm-text-xs`） |
+| 导航菜单图标 | 15px | 父容器设定 |
+| 按钮内图标 | 12-14px | 父容器设定 |
+| 卡片头部图标 | 20px（`--dm-text-lg`） | 父容器设定 |
+| 大功能图标 | 28-32px | 父容器设定 |
+| 品牌 Logo | 16px（侧边栏）/ 56px（欢迎页） | Design Token `--dm-sidebar-logo-size` / `--dm-welcome-logo-size` |
+| 空状态图标 | 24-48px | 页面级 `.empty-icon` 类 |
+
+### 6.3 图标功能域分类
+
+| 功能域 | 包含图标 |
 |:---|:---|
-| 导航菜单图标 | 15px |
-| 按钮内图标 | 12-14px |
-| 卡片头部图标 | 20px |
-| 大功能图标 | 28-32px |
-| 品牌 Logo 图标 | 16px（侧边栏）/ 36px（欢迎页） |
+| 导航/操作 | `fa-bars` `fa-arrow-left` `fa-plus` `fa-pen` `fa-trash` `fa-search` `fa-redo` |
+| 状态指示 | `fa-spinner fa-spin` `fa-check` `fa-check-circle` `fa-times-circle` `fa-exclamation-circle` `fa-exclamation-triangle` |
+| 内容类型 | `fa-file-alt` `fa-database` `fa-comments` `fa-folder-open` `fa-folder` |
+| 用户/权限 | `fa-user` `fa-users` `fa-lock` `fa-key` `fa-ban` `fa-shield-alt` |
+| 聊天/AI | `fa-brain` `fa-robot` `fa-paper-plane` `fa-stop` `fa-lightbulb` |
+| 数据/统计 | `fa-chart-line` `fa-chart-bar` `fa-coins` `fa-clock` `fa-hdd` |
+| UI 控制 | `fa-chevron-up` `fa-chevron-down` `fa-ellipsis-v` `fa-ellipsis-h` `fa-copy` |
+
+### 6.4 图标对齐规范
+
+- 内联图标与文字垂直对齐：使用 `display: inline-flex; align-items: center; gap: var(--dm-space-2)` 的父容器
+- 按钮内图标：`display: inline-flex; align-items: center; gap: var(--dm-space-2)`
+- 侧边栏导航图标：固定宽度容器居中对齐
 
 ---
 
 ## 7. Markdown 渲染样式
 
-聊天消息气泡内的 Markdown 内容样式：
+### 7.1 渲染引擎配置
 
-| 元素 | 样式 |
-|:---|:---|
-| h1/h2/h3 | 继承气泡文字色，margin: 12px 0 8px |
-| p | margin: 8px 0，行高 1.7 |
-| strong | font-weight: 600 |
-| code（行内） | 背景 rgba(0,0,0,0.06)，padding: 2px 6px，圆角 4px，等宽字体 |
-| pre > code | 背景 #1A1A1A，文字 #E5E5E5，padding: 16px，圆角 6px |
-| blockquote | 左边框 3px solid var(--dm-primary)，背景 var(--dm-primary-light) |
-| li | 列表项，配合 br 换行 |
-| 链接 | var(--dm-primary)，hover 下划线 |
+使用 `markdown-it` + `highlight.js`（`github-dark` 主题）。关键配置：
+
+| 配置项 | 值 | 说明 |
+|:---|:---|:---|
+| `html` | `false` | 禁用 raw HTML，防止 XSS |
+| `linkify` | `true` | 自动识别链接 |
+| `breaks` | `true` | 换行符转 `<br>`（适合聊天场景） |
+| `highlight` | highlight.js | 全量导入，代码块语法高亮 |
+
+### 7.2 元素样式表
+
+聊天消息气泡内（`.markdown-body`）的 Markdown 元素样式，所有值使用 Design Token：
+
+| 元素 | 样式 | Token 引用 |
+|:---|:---|:---|
+| h1 | `font-size: 20px` | `--dm-text-lg` |
+| h2 | `font-size: 16px` | `--dm-text-base` |
+| h3 | `font-size: 14px` | `--dm-text-body` |
+| h1/h2/h3 | `margin: 12px 0 8px; font-weight: 700` | `--dm-weight-bold` |
+| p | `margin: 8px 0; line-height: 1.7` | `--dm-leading-chat` |
+| strong | `font-weight: 600` | `--dm-weight-semibold` |
+| code（行内） | `background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 4px` | `--dm-code-inline-bg`, `--dm-radius-xs` |
+| code（行内）字体 | 等宽字体，0.9em | `--dm-font-mono`, `--dm-code-inline-font-size` |
+| pre > code | `background: #1A1A1A; color: #E5E5E5; padding: 16px; border-radius: 8px` | `--dm-bg-code`, `--dm-text-code`, `--dm-radius-sm` |
+| pre > code 字体 | 13px, line-height 1.6 | `--dm-text-xs` |
+| blockquote | `border-left: 3px solid; padding: 8px 16px` | `--dm-primary`, `--dm-primary-light` |
+| ul/ol | `margin: 8px 0; padding-left: 24px` | — |
+| li | `margin: 4px 0; line-height: 1.7` | `--dm-leading-chat` |
+| a | `color: var(--dm-primary); text-decoration: none` | — |
+| a:hover | `text-decoration: underline` | — |
+
+### 7.3 代码块复制按钮
+
+每个 `<pre><code>` 块被包装为 `.code-block-wrapper`，内含复制按钮：
+
+```css
+/* 默认隐藏，hover 代码块时显示 */
+.code-copy-btn {
+  position: absolute; top: 8px; right: 8px;
+  width: 32px; height: 32px;
+  background: var(--dm-code-copy-btn-bg);     /* rgba(255,255,255,0.1) */
+  border: none; border-radius: var(--dm-radius-xs);
+  color: var(--dm-text-tertiary); cursor: pointer;
+  opacity: 0;
+  transition: all var(--dm-transition-fast);
+}
+.code-block-wrapper:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn:hover { background: var(--dm-code-copy-btn-hover-bg); color: white; }
+
+/* 复制成功状态：fa-copy 隐藏，fa-check 显示绿色 */
+.code-copy-btn.copied .fa-copy  { display: none; }
+.code-copy-btn.copied .fa-check { display: inline; color: var(--dm-success); }
+```
 
 ---
 
@@ -1534,3 +1630,4 @@ export default {
 - [开发指南](../docs/DEVELOPMENT.md)
 - [开发排期](../docs/ROADMAP.md)
 - [测试策略](../docs/TESTING.md)
+- [前端交互文档](FRONTEND.md)

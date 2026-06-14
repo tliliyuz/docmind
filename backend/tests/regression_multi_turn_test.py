@@ -11,8 +11,8 @@
 用法:
   cd backend
   # 需要先启动服务: uvicorn app.main:app --port 8000
-  python tests/regression_multi_turn_test.py --kb-id 1 --base-url http://localhost:8000 --token "xxx"
-  python tests/regression_multi_turn_test.py --kb-id 1 --token "xxx"   # 默认 localhost:8000
+  python tests/regression_multi_turn_test.py --kb-uuid 550e8400-e29b-41d4-a716-446655440000 --base-url http://localhost:8000 --token "xxx"
+  python tests/regression_multi_turn_test.py --kb-uuid 550e8400-e29b-41d4-a716-446655440000 --token "xxx"   # 默认 localhost:8000
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class TurnResult:
     source_doc_ids: list[int] = field(default_factory=list)
     source_doc_names: list[str] = field(default_factory=list)
     # 元信息
-    conversation_id: int | None = None
+    conversation_id: str | None = None
     title: str | None = None
     # 综合
     passed: bool = False
@@ -197,8 +197,8 @@ class MultiTurnRegressionRunner:
     对每个多轮 session，逐 turn 发送请求，复用 conversation_id。
     """
 
-    def __init__(self, kb_id: int, base_url: str, token: str, timeout: int = 60):
-        self.kb_id = kb_id
+    def __init__(self, kb_uuid: str, base_url: str, token: str, timeout: int = 60):
+        self.kb_uuid = kb_uuid
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -210,7 +210,7 @@ class MultiTurnRegressionRunner:
     async def _send_turn(
         self,
         question: str,
-        conversation_id: int | None,
+        conversation_id: str | None,
         deep_thinking: bool = False,
     ) -> tuple[list[SSEEvent], str | None]:
         """发送单轮问题，返回 SSE 事件列表。
@@ -224,7 +224,7 @@ class MultiTurnRegressionRunner:
             (events, error_string): 成功时 error_string 为 None
         """
         payload: dict[str, Any] = {
-            "kb_id": self.kb_id,
+            "kb_id": self.kb_uuid,
             "question": question,
             "deep_thinking": deep_thinking,
         }
@@ -407,7 +407,7 @@ class MultiTurnRegressionRunner:
         )
 
         truncation_zone_start = session.get("truncation_zone_start")
-        conversation_id: int | None = None
+        conversation_id: str | None = None
 
         for i, turn_spec in enumerate(turns_spec):
             turn_num = turn_spec["turn"]
@@ -493,7 +493,7 @@ class MultiTurnRegressionRunner:
         total_turns = sum(len(s["turns"]) for s in MULTI_TURN_TEST_SET)
 
         print(f"\n{'='*70}")
-        print(f"  多轮 RAG 回归测试 — kb_id={self.kb_id}")
+        print(f"  多轮 RAG 回归测试 — kb_uuid={self.kb_uuid}")
         print(f"  服务地址: {self.base_url}")
         print(f"  测试集: {len(MULTI_TURN_TEST_SET)} 个 Session，共 {total_turns} 轮")
         print(f"{'='*70}\n")
@@ -674,10 +674,10 @@ def print_multi_turn_report(summary: MultiTurnSummary) -> None:
 # ============================================================================
 
 
-async def main_async(kb_id: int, base_url: str, token: str, timeout: int) -> None:
+async def main_async(kb_uuid: str, base_url: str, token: str, timeout: int) -> None:
     """异步主流程"""
     runner = MultiTurnRegressionRunner(
-        kb_id=kb_id,
+        kb_uuid=kb_uuid,
         base_url=base_url,
         token=token,
         timeout=timeout,
@@ -691,8 +691,8 @@ def main() -> None:
         description="DocMind 多轮 RAG 回归测试 — 端到端多轮问答质量验证",
     )
     parser.add_argument(
-        "--kb-id", type=int, required=True,
-        help="目标知识库 ID",
+        "--kb-uuid", type=str, required=True,
+        help="目标知识库 UUID",
     )
     parser.add_argument(
         "--base-url", type=str, default="http://localhost:8000",
@@ -714,7 +714,7 @@ def main() -> None:
     )
 
     asyncio.run(main_async(
-        kb_id=args.kb_id,
+        kb_uuid=args.kb_uuid,
         base_url=args.base_url,
         token=args.token,
         timeout=args.timeout,

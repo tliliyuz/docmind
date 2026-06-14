@@ -247,17 +247,5 @@ describe('ChatPage', () => {
     expect(mockSendUserMessage).toHaveBeenCalledWith('报销流程是怎样的？', false)
   })
 
-  // ==================== regenerate ====================
 
-  it('MessageList 的 regenerate 事件触发 chatStore.regenerate', async () => {
-    mockState.isEmpty = false
-    mockState.messages = [{ id: '1', role: 'user', content: 'hi', status: 'complete' }]
-    const wrapper = getComponent()
-
-    // 找到 MessageList stub 并 emit regenerate
-    const msgList = wrapper.find('.mock-message-list')
-    // stub 不支持 emit，直接调用 wrapper.vm 暴露的方法
-    // ChatPage 没有 expose regenerate 方法，通过 store 直接验证
-    expect(wrapper.find('.mock-message-list').exists()).toBe(true)
-  })
 })

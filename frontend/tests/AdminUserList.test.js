@@ -273,18 +273,7 @@ describe('AdminUserList', () => {
     })
   })
 
-  // ==================== C8.8 行点击测试 ====================
-  describe('行点击', () => {
-    it('点击表格行触发 row-click 事件', async () => {
-      mockSuccessResponse()
-      const wrapper = getComponent()
-      await flushPromises()
 
-      const table = wrapper.find('.el-table-stub')
-      expect(table.exists()).toBe(true)
-      // 表格存在即表明数据已加载，行点击由 el-table 原生处理
-    })
-  })
 
   // ==================== C8.6 操作菜单测试 ====================
   describe('操作菜单', () => {

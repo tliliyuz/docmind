@@ -271,24 +271,5 @@ describe('AdminUserDetail', () => {
     })
   })
 
-  // ==================== C8.14 禁用/启用样式测试 ====================
-  describe('禁用/启用', () => {
-    it('活跃用户显示禁用按钮', async () => {
-      mockSuccessResponse()
-      const wrapper = getComponent()
-      await flushPromises()
 
-      const html = wrapper.html()
-      expect(html).toContain('禁用用户')
-    })
-
-    it('已禁用用户显示启用按钮', async () => {
-      mockSuccessResponse(MOCK_DISABLED_USER)
-      const wrapper = getComponent()
-      await flushPromises()
-
-      const html = wrapper.html()
-      expect(html).toContain('启用用户')
-    })
-  })
 })

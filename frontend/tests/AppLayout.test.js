@@ -29,28 +29,12 @@ describe('AppLayout', () => {
     vi.clearAllMocks()
   })
 
-  it('渲染布局容器', () => {
+  it('渲染完整布局结构', () => {
     const wrapper = getComponent()
     expect(wrapper.find('.app-layout').exists()).toBe(true)
-  })
-
-  it('包含 Sidebar 区域', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.sidebar-stub').exists()).toBe(true)
-  })
-
-  it('包含主内容区域', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.main-area').exists()).toBe(true)
-  })
-
-  it('包含顶部标题栏', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.top-header').exists()).toBe(true)
-  })
-
-  it('包含内容滚动区', () => {
-    const wrapper = getComponent()
     expect(wrapper.find('.content-scroll').exists()).toBe(true)
   })
 

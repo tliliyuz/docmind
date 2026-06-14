@@ -31,6 +31,10 @@ from app.core.exceptions import (
 from app.rag.intent import Intent, IntentResult
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
+# 测试用 UUID 常量（chat_service.chat() 要求 UUID 字符串）
+_TEST_KB_UUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+_TEST_CONV_UUID = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+
 
 # ==================== 辅助函数 ====================
 
@@ -148,6 +152,7 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
 
     mock_conv = MagicMock()
     mock_conv.id = conv.id
+    mock_conv.uuid = _TEST_CONV_UUID
     mock_conv.user_id = conv.user_id
     mock_conv.message_count = getattr(conv, 'message_count', 0)
     mock_conv.title = getattr(conv, 'title', '新对话')
@@ -184,6 +189,18 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
                   side_effect=lambda g, **kw: g))
         mocks['intent'] = stack.enter_context(
             patch("app.services.chat_service.classify_intent", new_callable=AsyncMock))
+
+        # Mock resolve_uuid_to_id：将 UUID 字符串转回整数 ID
+        _conv_id = conv.id
+        async def _mock_resolve(db, model, uuid_str):
+            if uuid_str == _TEST_KB_UUID:
+                return 1
+            if uuid_str == _TEST_CONV_UUID:
+                return _conv_id
+            return None
+        mocks['resolve_uuid'] = stack.enter_context(
+            patch("app.core.uuid_helpers.resolve_uuid_to_id",
+                  new_callable=AsyncMock, side_effect=_mock_resolve))
         mocks['intent'].return_value = IntentResult(
             intent=Intent.KNOWLEDGE, method="llm_flash",
             metadata={"model": "deepseek-v4-flash", "confidence": None},
@@ -300,7 +317,7 @@ class TestChatNormalFlow:
                                   llm_chunks=llm_chunks) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -313,7 +330,7 @@ class TestChatNormalFlow:
 
         # 验证 meta 事件
         meta = next(e for e in events if e["event"] == "meta")
-        assert meta["data"]["conversation_id"] == 50
+        assert meta["data"]["conversation_id"] == _TEST_CONV_UUID
 
         # 验证 message 事件内容
         msg_content = "".join(
@@ -342,6 +359,7 @@ class TestChatAppendConversation:
         db = AsyncMock()
         conv = MagicMock()
         conv.id = 100
+        conv.uuid = _TEST_CONV_UUID
         conv.user_id = 1
         conv.message_count = 4
         conv.title = "已有标题"
@@ -354,13 +372,13 @@ class TestChatAppendConversation:
                                   with_conversation=False, with_messages=False):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=100, kb_id=1,
+                conversation_id=_TEST_CONV_UUID, kb_id=_TEST_KB_UUID,
                 question="追加问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
 
         meta = next(e for e in events if e["event"] == "meta")
-        assert meta["data"]["conversation_id"] == 100
+        assert meta["data"]["conversation_id"] == _TEST_CONV_UUID
 
         finish = next(e for e in events if e["event"] == "finish")
         assert finish["data"]["title"] is None  # 非首轮无标题
@@ -388,7 +406,7 @@ class TestChatRetrievalFailure:
             with pytest.raises(RetrievalServiceException) as exc_info:
                 await chat(
                     db=db, user_id=1, role="user",
-                    conversation_id=None, kb_id=1,
+                    conversation_id=None, kb_id=_TEST_KB_UUID,
                     question="测试问题", deep_thinking=False,
                 )
             assert exc_info.value.error_code == "E4003"
@@ -416,7 +434,7 @@ class TestChatLLMFailure:
 
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -455,11 +473,13 @@ class TestChatKBEmpty:
                        metadata={"model": "deepseek-v4-flash", "confidence": None},
                    )), \
              patch("app.services.chat_service.Conversation", return_value=conv), \
-             patch("app.services.chat_service.Message", return_value=MagicMock(id=10, role="user", content="测试问题")):
+             patch("app.services.chat_service.Message", return_value=MagicMock(id=10, role="user", content="测试问题")), \
+             patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+                   return_value=1):
             with pytest.raises(KnowledgeBaseEmptyException):
                 await chat(
                     db=db, user_id=1, role="user",
-                    conversation_id=None, kb_id=1,
+                    conversation_id=None, kb_id=_TEST_KB_UUID,
                     question="测试问题", deep_thinking=False,
                 )
 
@@ -485,7 +505,7 @@ class TestChatMessageSaved:
                                   llm_chunks=_make_llm_chunks(["回答"])) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             await _consume_sse(response)
@@ -516,6 +536,7 @@ class TestChatMessageCount:
         db = AsyncMock()
         conv = MagicMock()
         conv.id = 50
+        conv.uuid = _TEST_CONV_UUID
         conv.user_id = 1
         conv.message_count = 10
         conv.title = "已有标题"
@@ -528,7 +549,7 @@ class TestChatMessageCount:
                                   with_conversation=False, with_messages=False):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=50, kb_id=1,
+                conversation_id=_TEST_CONV_UUID, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             await _consume_sse(response)
@@ -561,7 +582,7 @@ class TestChatTitleGeneration:
                        new_callable=AsyncMock, return_value="测试问题标题生成") as mock_title_llm:
                 response = await chat(
                     db=db, user_id=1, role="user",
-                    conversation_id=None, kb_id=1,
+                    conversation_id=None, kb_id=_TEST_KB_UUID,
                     question="这是一个测试问题内容很长", deep_thinking=False,
                 )
                 events = await _consume_sse(response)
@@ -580,6 +601,7 @@ class TestChatTitleGeneration:
         db = AsyncMock()
         conv = MagicMock()
         conv.id = 100
+        conv.uuid = _TEST_CONV_UUID
         conv.user_id = 1
         conv.message_count = 10
         conv.title = "旧标题"
@@ -592,7 +614,7 @@ class TestChatTitleGeneration:
                                   with_conversation=False, with_messages=False):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=100, kb_id=1,
+                conversation_id=_TEST_CONV_UUID, kb_id=_TEST_KB_UUID,
                 question="追加问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -623,7 +645,7 @@ class TestChatTokenUsage:
                                   llm_chunks=_make_llm_chunks(["回答内容"])):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -647,12 +669,14 @@ class TestChatKBNotFound:
         db = AsyncMock()
         db.get = AsyncMock(return_value=None)  # KB 不存在
 
-        with pytest.raises(KnowledgeBaseNotFoundException):
-            await chat(
-                db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=999,
-                question="测试问题", deep_thinking=False,
-            )
+        with patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+                    return_value=999):
+            with pytest.raises(KnowledgeBaseNotFoundException):
+                await chat(
+                    db=db, user_id=1, role="user",
+                    conversation_id=None, kb_id="ffffffff-ffff-4fff-ffff-ffffffffffff",
+                    question="测试问题", deep_thinking=False,
+                )
 
     @pytest.mark.asyncio
     async def test_非owner访问private_KB被拒(self):
@@ -668,12 +692,14 @@ class TestChatKBNotFound:
 
         db.get = AsyncMock(return_value=kb)
 
-        with pytest.raises(PermissionDeniedException):
-            await chat(
-                db=db, user_id=3, role="user",  # user 3 非 owner
-                conversation_id=None, kb_id=1,
-                question="测试问题", deep_thinking=False,
-            )
+        with patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+                    return_value=1):
+            with pytest.raises(PermissionDeniedException):
+                await chat(
+                    db=db, user_id=3, role="user",  # user 3 非 owner
+                    conversation_id=None, kb_id=_TEST_KB_UUID,
+                    question="测试问题", deep_thinking=False,
+                )
 
     @pytest.mark.asyncio
     async def test_admin可访问private_KB(self):
@@ -692,7 +718,7 @@ class TestChatKBNotFound:
             # admin（user_id=2）访问 user 1 的 private KB
             response = await chat(
                 db=db, user_id=2, role="admin",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -727,12 +753,19 @@ class TestChatConversationNotFound:
         count_result.scalar.return_value = 1
         db.execute = AsyncMock(return_value=count_result)
 
-        with pytest.raises(ConversationNotFoundException):
-            await chat(
-                db=db, user_id=1, role="user",
-                conversation_id=999, kb_id=1,
-                question="测试问题", deep_thinking=False,
-            )
+        async def _mock_resolve(db, model, uuid_str):
+            if uuid_str == _TEST_KB_UUID:
+                return 1
+            return 999  # conversation UUID → 999，db.get 返回 None
+
+        with patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+                    side_effect=_mock_resolve):
+            with pytest.raises(ConversationNotFoundException):
+                await chat(
+                    db=db, user_id=1, role="user",
+                    conversation_id="cccccccc-cccc-4ccc-cccc-cccccccccccc", kb_id=_TEST_KB_UUID,
+                    question="测试问题", deep_thinking=False,
+                )
 
     @pytest.mark.asyncio
     async def test_非owner访问他人会话(self):
@@ -762,13 +795,22 @@ class TestChatConversationNotFound:
         count_result.scalar.return_value = 1
         db.execute = AsyncMock(return_value=count_result)
 
-        with pytest.raises(ConversationAccessDeniedException) as exc_info:
-            await chat(
-                db=db, user_id=3, role="user",  # user 3 非 owner
-                conversation_id=100, kb_id=1,
-                question="测试问题", deep_thinking=False,
-            )
-        assert exc_info.value.error_code == "E3002"
+        async def _mock_resolve(db, model, uuid_str):
+            if uuid_str == _TEST_KB_UUID:
+                return 1
+            if uuid_str == _TEST_CONV_UUID:
+                return 100
+            return None
+
+        with patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
+                    side_effect=_mock_resolve):
+            with pytest.raises(ConversationAccessDeniedException) as exc_info:
+                await chat(
+                    db=db, user_id=3, role="user",  # user 3 非 owner
+                    conversation_id=_TEST_CONV_UUID, kb_id=_TEST_KB_UUID,
+                    question="测试问题", deep_thinking=False,
+                )
+            assert exc_info.value.error_code == "E3002"
 
 
 class TestChatSourcesSuppression:
@@ -796,7 +838,7 @@ class TestChatSourcesSuppression:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="广告投放主要在哪个平台", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -833,7 +875,7 @@ class TestChatSourcesSuppression:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="员工请病假需要提前几天申请", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -868,7 +910,7 @@ class TestChatSourcesSuppression:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="Wi-Fi密码是多少", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -900,7 +942,7 @@ class TestChatSourcesSuppression:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="广告投放主要在哪个平台", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -942,7 +984,7 @@ class TestChatSourcesSuppression:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="VPN忘记密码怎么办", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -1036,7 +1078,7 @@ class TestChatCitationFiltering:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="入职第一天需要完成哪些手续", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -1083,7 +1125,7 @@ class TestChatCitationFiltering:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="入职第一天做什么", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -1127,7 +1169,7 @@ class TestChatCitationFiltering:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="入职第一天需要完成哪些手续", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -1176,7 +1218,7 @@ class TestChatCitationFiltering:
                                   llm_chunks=llm_chunks):
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="病假需要提供医院证明吗？", deep_thinking=False,
             )
             events = await _consume_sse(response)
@@ -1217,7 +1259,7 @@ class TestChatCitationFiltering:
             mocks['llm'].return_value = _async_gen_error("LLM API 500 错误")
             response = await chat(
                 db=db, user_id=1, role="user",
-                conversation_id=None, kb_id=1,
+                conversation_id=None, kb_id=_TEST_KB_UUID,
                 question="测试问题", deep_thinking=False,
             )
             events = await _consume_sse(response)

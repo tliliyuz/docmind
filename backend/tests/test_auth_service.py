@@ -80,8 +80,11 @@ class TestLogin:
         result = await login(mock_db, "test", "correct")
 
         assert isinstance(result, TokenResponse)
-        assert result.access_token
-        assert result.refresh_token
+        # 验证 token 可解码且 claims 正确（非仅 truthy 断言）
+        from app.core.security import decode_access_token
+        access_payload = decode_access_token(result.access_token)
+        assert access_payload["sub"] is not None
+        assert "exp" in access_payload
         assert result.token_type == "bearer"
         assert result.expires_in == 15 * 60  # 15 分钟
 
@@ -104,16 +107,23 @@ class TestLogin:
         assert exc.value.error_code == "E5002"
 
     @pytest.mark.asyncio
-    async def test_login_token_not_empty(self, mock_db):
-        from app.core.security import hash_password
+    async def test_login_token_jwt_format(self, mock_db):
+        """验证 access_token 和 refresh_token 为合法 JWT 格式"""
+        from app.core.security import hash_password, decode_access_token
         user = User(username="u", password_hash=hash_password("p"))
         mock_db.execute.return_value = _make_mock_result(user)
 
         result = await login(mock_db, "u", "p")
 
-        assert result.access_token
+        # access_token JWT 格式 + 可解码
+        assert "." in result.access_token
         assert len(result.access_token) > 20
-        assert "." in result.access_token  # JWT 格式
-        assert result.refresh_token
+        access_payload = decode_access_token(result.access_token)
+        assert "sub" in access_payload
+        assert "exp" in access_payload
+
+        # refresh_token JWT 格式 + 可解码
+        assert "." in result.refresh_token
         assert len(result.refresh_token) > 20
-        assert "." in result.refresh_token  # JWT 格式
+        refresh_payload = decode_access_token(result.refresh_token)
+        assert "sub" in refresh_payload

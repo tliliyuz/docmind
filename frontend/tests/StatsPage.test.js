@@ -94,53 +94,17 @@ describe('StatsPage', () => {
       expect(cards).toHaveLength(7)
     })
 
-    it('显示用户总数（千分位格式化）', async () => {
+    it('显示所有统计卡片数值（千分位与存储格式化）', async () => {
       const wrapper = getComponent()
       await flushPromises()
       const values = wrapper.findAll('.stat-value')
-      expect(values[0].text()).toBe('1,234')
-    })
-
-    it('显示知识库数', async () => {
-      const wrapper = getComponent()
-      await flushPromises()
-      const values = wrapper.findAll('.stat-value')
-      expect(values[1].text()).toBe('56')
-    })
-
-    it('显示文档总数', async () => {
-      const wrapper = getComponent()
-      await flushPromises()
-      const values = wrapper.findAll('.stat-value')
-      expect(values[2].text()).toBe('890')
-    })
-
-    it('显示总会话数', async () => {
-      const wrapper = getComponent()
-      await flushPromises()
-      const values = wrapper.findAll('.stat-value')
-      expect(values[3].text()).toBe('234')
-    })
-
-    it('二级卡片：显示分块总数', async () => {
-      const wrapper = getComponent()
-      await flushPromises()
-      const values = wrapper.findAll('.stat-value')
-      expect(values[4].text()).toBe('12,345')
-    })
-
-    it('二级卡片：显示消息总数', async () => {
-      const wrapper = getComponent()
-      await flushPromises()
-      const values = wrapper.findAll('.stat-value')
-      expect(values[5].text()).toBe('5,678')
-    })
-
-    it('二级卡片：formatStorage 转换 1 GB', async () => {
-      const wrapper = getComponent()
-      await flushPromises()
-      const values = wrapper.findAll('.stat-value')
-      expect(values[6].text()).toBe('1.0 GB')
+      expect(values[0].text()).toBe('1,234')     // 用户总数
+      expect(values[1].text()).toBe('56')         // 知识库数
+      expect(values[2].text()).toBe('890')        // 文档总数
+      expect(values[3].text()).toBe('234')        // 总会话数
+      expect(values[4].text()).toBe('12,345')     // 分块总数
+      expect(values[5].text()).toBe('5,678')      // 消息总数
+      expect(values[6].text()).toBe('1.0 GB')     // formatStorage 转换
     })
 
   })

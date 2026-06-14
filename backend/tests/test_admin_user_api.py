@@ -96,7 +96,7 @@ class TestAdminUserListAPI:
         assert response.status_code == 200
         mock_svc.assert_called_once()
         call_kwargs = mock_svc.call_args
-        assert call_kwargs.kwargs.get("role") == "admin" or call_kwargs[1].get("role") == "admin"
+        assert call_kwargs.kwargs.get("role") == "admin"
 
     @pytest.mark.asyncio
     async def test_普通用户获取用户列表被拒绝(self, async_client, auth_headers):

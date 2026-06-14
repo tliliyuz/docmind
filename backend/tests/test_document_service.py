@@ -65,24 +65,35 @@ def _make_scalars_all_result(rows):
     return result
 
 
-def _make_kb(kb_id=1, user_id=1, status="active"):
-    return KnowledgeBase(
+def _make_kb(kb_id=1, user_id=1, status="active",
+             kb_uuid="kb-uuid-0001"):
+    kb = KnowledgeBase(
         id=kb_id, name="测试KB", user_id=user_id, status=status,
         visibility="private", chunk_count=0, doc_count=0,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
+    # 手动设置 uuid（ORM 实例构造时不会自动生成 server_default）
+    kb.uuid = kb_uuid
+    return kb
 
 
 def _make_doc(doc_id=1, kb_id=1, filename="test.pdf", status="completed",
-              file_type="pdf", chunk_count=10, file_size=1000):
-    return Document(
+              file_type="pdf", chunk_count=10, file_size=1000,
+              doc_uuid="doc-uuid-0001", kb_uuid="kb-uuid-0001"):
+    doc = Document(
         id=doc_id, kb_id=kb_id, filename=filename, file_type=file_type,
         status=status, chunk_count=chunk_count, file_size=file_size,
         file_path=f"uploads/{kb_id}/{doc_id}/test.pdf",
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
+    # 手动设置 uuid（ORM 实例构造时不会自动生成 server_default）
+    doc.uuid = doc_uuid
+    # 关联 KB 对象以支持 doc.kb_uuid property
+    kb = _make_kb(kb_id=kb_id, kb_uuid=kb_uuid)
+    doc.knowledge_base = kb
+    return doc
 
 
 def _make_upload_file(filename="test.pdf", size=1000):
@@ -151,7 +162,7 @@ class TestBuildDocumentResponse:
     def test_正常转换(self):
         doc = _make_doc(doc_id=5, filename="入职指南.pdf")
         resp = _build_document_response(doc)
-        assert resp.id == 5
+        assert resp.uuid == "doc-uuid-0001"
         assert resp.filename == "入职指南.pdf"
         assert resp.file_type == "pdf"
         assert resp.status == "completed"
@@ -302,7 +313,7 @@ class TestGetDocument:
         ]
 
         result = await get_document(mock_db, doc_id=5, kb_id=1, user_id=1, role="user")
-        assert result.id == 5
+        assert result.uuid == "doc-uuid-0001"
         assert result.filename == "test.pdf"
 
     @pytest.mark.asyncio
@@ -387,7 +398,7 @@ class TestDeleteDocument:
             with patch("app.services.document_service.invalidate_bm25_cache_async", new_callable=AsyncMock):
                 result = await delete_document(mock_db, doc_id=5, kb_id=1, user_id=1, role="user")
 
-        assert result.doc_id == 5
+        assert result.doc_uuid == "doc-uuid-0001"
         assert doc.status == DocumentStatus.DELETING
         mock_db.commit.assert_called_once()
         mock_task.delay.assert_called_once_with(5)
@@ -446,7 +457,7 @@ class TestReprocessDocument:
             with patch("app.services.document_service.invalidate_bm25_cache_async", new_callable=AsyncMock):
                 result = await reprocess_document(mock_db, doc_id=5, kb_id=1, user_id=1, role="user")
 
-        assert result.doc_id == 5
+        assert result.doc_uuid == "doc-uuid-0001"
         assert result.status == "uploaded"
         mock_task.delay.assert_called_once()
 

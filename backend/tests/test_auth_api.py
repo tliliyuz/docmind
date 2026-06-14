@@ -168,7 +168,7 @@ class TestAuthMiddleware:
 
     @pytest.mark.asyncio
     async def test_options_preflight_skipped(self, async_client):
-        """OPTIONS 预检请求被中间件直接放行"""
+        """OPTIONS 预检请求被中间件直接放行，FastAPI 无 OPTIONS 路由返回 405"""
         response = await async_client.options("/api/knowledge-bases")
-        # OPTIONS 放行后进入路由系统，该路由可能返回 405（未注册 OPTIONS）或 404
-        assert response.status_code in (200, 404, 405)
+        # 中间件放行 OPTIONS → 路由系统无 OPTIONS handler → 405 Method Not Allowed
+        assert response.status_code == 405

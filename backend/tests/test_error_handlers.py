@@ -59,24 +59,30 @@ class TestExceptionToStatusCode:
 
     @pytest.mark.asyncio
     async def test_404知识库不存在(self, async_client, auth_headers):
-        with patch("app.api.knowledge_base.get_kb", new_callable=AsyncMock) as mock:
-            mock.side_effect = KnowledgeBaseNotFoundException(999)
-            resp = await async_client.get(
-                "/api/knowledge-bases/999",
-                headers=auth_headers,
-            )
+        _kb_uuid = "11111111-1111-4111-8111-111111111111"
+        with patch("app.api.knowledge_base.resolve_uuid_to_id", new_callable=AsyncMock) as mock_uuid:
+            mock_uuid.return_value = 999
+            with patch("app.api.knowledge_base.get_kb", new_callable=AsyncMock) as mock:
+                mock.side_effect = KnowledgeBaseNotFoundException(999)
+                resp = await async_client.get(
+                    f"/api/knowledge-bases/{_kb_uuid}",
+                    headers=auth_headers,
+                )
         assert resp.status_code == 404
         body = resp.json()
         assert body["code"] == "E1001"
 
     @pytest.mark.asyncio
     async def test_403权限不足(self, async_client, auth_headers):
-        with patch("app.api.knowledge_base.get_kb", new_callable=AsyncMock) as mock:
-            mock.side_effect = PermissionDeniedException()
-            resp = await async_client.get(
-                "/api/knowledge-bases/1",
-                headers=auth_headers,
-            )
+        _kb_uuid = "11111111-1111-4111-8111-111111111111"
+        with patch("app.api.knowledge_base.resolve_uuid_to_id", new_callable=AsyncMock) as mock_uuid:
+            mock_uuid.return_value = 1
+            with patch("app.api.knowledge_base.get_kb", new_callable=AsyncMock) as mock:
+                mock.side_effect = PermissionDeniedException()
+                resp = await async_client.get(
+                    f"/api/knowledge-bases/{_kb_uuid}",
+                    headers=auth_headers,
+                )
         assert resp.status_code == 403
         body = resp.json()
         assert body["code"] == "E5005"

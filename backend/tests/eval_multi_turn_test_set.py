@@ -24,7 +24,7 @@ MULTI_TURN_TEST_SET: list[dict[str, Any]] = [
         "session_id": "multi-001",
         "name": "报销制度三连问",
         "description": "同一文档连续追问，验证上下文依赖递增 + RAG 不退化",
-        "kb_id": 1,
+        "kb_uuid": None,
         "turns": [
             {
                 "turn": 1,
@@ -69,7 +69,7 @@ MULTI_TURN_TEST_SET: list[dict[str, Any]] = [
         "session_id": "multi-002",
         "name": "多主题切换",
         "description": "连续切换不同主题，验证每轮检索独立、历史不干扰",
-        "kb_id": 1,
+        "kb_uuid": None,
         "turns": [
             {
                 "turn": 1,
@@ -125,7 +125,7 @@ MULTI_TURN_TEST_SET: list[dict[str, Any]] = [
         "session_id": "multi-003",
         "name": "离职场景跨文档追问",
         "description": "从离职流程出发，追问固定资产和报销，验证跨文档检索",
-        "kb_id": 1,
+        "kb_uuid": None,
         "turns": [
             {
                 "turn": 1,
@@ -170,7 +170,7 @@ MULTI_TURN_TEST_SET: list[dict[str, Any]] = [
         "session_id": "multi-004",
         "name": "指代消解",
         "description": "后轮使用代词或省略主语，验证系统能正确补全上下文",
-        "kb_id": 1,
+        "kb_uuid": None,
         "turns": [
             {
                 "turn": 1,
@@ -215,7 +215,7 @@ MULTI_TURN_TEST_SET: list[dict[str, Any]] = [
         "session_id": "multi-005",
         "name": "长对话 RAG 保活",
         "description": "连续 10 轮不同主题问答，验证历史截断后最后几轮仍正常检索",
-        "kb_id": 1,
+        "kb_uuid": None,
         # 截断假设：系统默认 max_messages=20 条（10 轮 user+assistant），
         # 但 History Token 预算 6000 + 每轮约 500-800 tokens（question+answer+sources）→
         # 约在 Turn 7-8 之间 token 预算开始截断早期轮次。

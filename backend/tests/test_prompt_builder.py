@@ -220,3 +220,42 @@ class TestBuildPrompt:
         """返回类型应为 PromptBuildResult"""
         result = build_prompt("测试问题", retrieval_output)
         assert isinstance(result, PromptBuildResult)
+
+
+class TestHistoryMessages:
+    """U7.54 — Prompt 组装 history_messages 参数透传"""
+
+    def test_history_messages透传(self, retrieval_output):
+        """传入 history_messages 应正确透传到结果中"""
+        history = [
+            {"role": "user", "content": "上一轮问题"},
+            {"role": "assistant", "content": "上一轮回答"},
+        ]
+        result = build_prompt("当前问题", retrieval_output, history_messages=history)
+
+        assert result.history_messages == history
+        assert len(result.history_messages) == 2
+        assert result.history_messages[0]["role"] == "user"
+
+    def test_history_messages默认空列表(self, retrieval_output):
+        """不传 history_messages 时结果中应为空列表"""
+        result = build_prompt("测试问题", retrieval_output)
+
+        assert result.history_messages == []
+        assert isinstance(result.history_messages, list)
+
+    def test_history_messages传入None(self, retrieval_output):
+        """传入 None 时结果中应为空列表"""
+        result = build_prompt("测试问题", retrieval_output, history_messages=None)
+
+        assert result.history_messages == []
+
+    def test_history_messages为空不影响chunk组装(self, retrieval_output):
+        """空历史不影响 chunk 组装的正常逻辑"""
+        result_without = build_prompt("测试问题", retrieval_output)
+        result_with = build_prompt("测试问题", retrieval_output, history_messages=[])
+
+        # chunk 数量和内容应一致
+        assert result_without.chunks_count == result_with.chunks_count
+        assert result_without.used_chunks == result_with.used_chunks
+        assert result_without.system_prompt == result_with.system_prompt
