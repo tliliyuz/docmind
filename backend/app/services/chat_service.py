@@ -650,6 +650,10 @@ async def _validate_and_prepare(
     conv.updated_at = _now
     conv.last_message_at = _now
     await db.commit()
+    # commit 后 expire_on_commit 使 ORM 属性过期，SSE 流式生成器中访问会触发
+    # MissingGreenlet（已脱离原始 greenlet 上下文）。提前 refresh 确保属性在当前
+    # async 上下文中完成加载。
+    await db.refresh(conv)
     t_db_done = time.perf_counter()
 
     # 意图识别（Phase 5，对齐 ARCHITECTURE.md §5.1.6）

@@ -6,6 +6,28 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [0.48] - 2026-06-15
+
+### Fixed
+- **UUID 校验正则仅支持 v4 导致所有 API 返回 404**（`backend/app/core/uuid_helpers.py`）：MySQL `UUID()` 生成 UUID v1（第三段版本号 `1`），旧正则 `4[0-9a-f]{3}` 仅接受 v4（版本号 `4`），导致 `validate_uuid_format()` 对数据库实际存储的 UUID 一律返回 `False`，`resolve_uuid_to_id()` 直接抛 NotFoundException 而不查数据库。修复：正则改为 `[0-9a-f]{4}` + `uuid.UUID()` 构造函数双重校验，支持 RFC 4122 全版本（v1/v3/v4/v5）
+- **KnowledgeDetail 文档表格 `row-key` 遗漏**（`frontend/src/views/KnowledgeDetail.vue`）：UUID 重构时 `row-key="id"` 未改为 `row-key="uuid"`，导致 el-table 行 key 解析为 `undefined`
+- **侧边栏点击会话后页面卡死在 Chat 原始页**（`frontend/src/views/ChatPage.vue`）：`watch(conversation_id)` 缺少 try-catch 错误处理，当 `loadConversation()` API 调用失败时异常静默吞掉，页面停留在 WelcomeScreen 无任何提示。补齐错误处理：失败时弹提示 + 清除无效 URL 参数 + 降级为新对话
+
+## [0.47] - 2026-06-15
+
+### Added
+- **前端 UUID 适配测试**（TEST_CASES §7.10.5，P5-C10.1-P5-C10.8）：
+  - 新增 `frontend/tests/UuidAdaptation.test.js`：8 个 describe 块、23 个测试用例，覆盖 KB 详情路由、Chat 路由、Sidebar 会话切换、KB 列表导航、ChatStore sendMessage、ConversationStore、Admin TraceList/TraceDetail 的 UUID 适配验证
+
+### Changed
+- **前端组件测试 mock 数据 UUID 化**（消除测试数据与生产环境形态不一致的隐患）：
+  - `KnowledgeDetail.test.js`：路由参数 `params: { id: '1' }` → `{ uuid: '...' }`，`mockKb.id` → `mockKb.uuid`，文档列表 `id` → `uuid`
+  - `Sidebar.test.js`：所有会话 `uuid` 字段从数字（1/2/3/4/5/7/42）替换为 UUID 字符串，`kb_uuid` 同步更新，断言值（`mockPush`/`mockRenameConversation`/`mockDeleteConversation` 参数）同步修正
+  - `TraceList.test.js`：移除 mock 数据中的自增 `id` 字段，`kb_id` 从数字改为 UUID 字符串
+  - `ChatPage.test.js`：KB 列表项 `{ id: 1 }` → `{ uuid: '...' }`，`selectedKBId` 从数字改为 UUID，`handleKBChange`/`mockSetSelectedKB` 断言同步更新
+  - `KnowledgeList.test.js`：KB 列表 `uuid` 从数字改为 UUID 字符串，导航断言 `/knowledge-bases/5` → `/knowledge-bases/<uuid>`
+- **TEST_CASES.md**：P5-C10.1-P5-C10.8 状态 ⬜ → ✅，覆盖率行标记为 ✅ 23 用例
+
 ## [0.46] - 2026-06-14
 
 ### Changed
