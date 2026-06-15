@@ -48,6 +48,17 @@
         </div>
       </div>
 
+      <!-- 置信度警告（证据审计发现问题时展示，§4.2.5） -->
+      <div v-if="msg.role === 'assistant' && showConfidenceWarning" class="confidence-warning">
+        <div class="confidence-warning-header">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span>{{ confidenceWarningText }}</span>
+        </div>
+        <div v-if="msg.confidenceNote" class="confidence-warning-detail">
+          {{ msg.confidenceNote }}
+        </div>
+      </div>
+
       <!-- 引用来源（仅 assistant + 有 sources + LLM 未声明"未找到"时） -->
       <div v-if="msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && !isAnswerNotFound" class="sources-box">
         <div class="sources-title" @click="sourcesExpanded = !sourcesExpanded">
@@ -157,6 +168,20 @@ const isAnswerNotFound = computed(() => {
   if (!props.msg.content) return false
   return props.msg.content.includes('未找到相关信息') ||
     props.msg.content.includes('知识库中未找到')
+})
+
+/** 是否展示置信度警告（证据审计发现问题时，§4.2.5） */
+const showConfidenceWarning = computed(() => {
+  if (!props.msg.confidence) return false
+  return props.msg.confidence === 'low' || props.msg.confidence === 'medium'
+})
+
+/** 置信度警告文案 */
+const confidenceWarningText = computed(() => {
+  if (props.msg.confidence === 'low') {
+    return '以下答案可能存在偏差，建议核实原始文档。'
+  }
+  return '以下答案部分内容可能不准确，请注意核实。'
 })
 
 // ==================== Sources 智能预览 ====================
@@ -475,6 +500,36 @@ function getSourcePreviewHtml(src) {
   color: var(--dm-text-secondary);
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+/* 置信度警告（证据审计发现，§4.2.5） */
+.confidence-warning {
+  margin-top: var(--dm-space-3);
+  padding: 12px 16px;
+  background: var(--dm-warning-light);
+  border-radius: var(--dm-radius-sm);
+  border-left: 3px solid var(--dm-warning);
+}
+
+.confidence-warning-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--dm-text-xs);
+  font-weight: var(--dm-weight-semibold);
+  color: var(--dm-warning-dark, #856404);
+}
+
+.confidence-warning-header i {
+  font-size: var(--dm-text-body);
+  flex-shrink: 0;
+}
+
+.confidence-warning-detail {
+  margin-top: 6px;
+  font-size: var(--dm-text-2xs);
+  color: var(--dm-text-secondary);
+  line-height: var(--dm-leading-body);
 }
 
 /* 引用来源 */

@@ -214,8 +214,10 @@ export const useChatStore = defineStore('chat', () => {
         break
 
       case 'sources':
-        // 引用来源
+        // 引用来源（含证据审计置信度标注）
         msg.sources = data.chunks || []
+        msg.confidence = data.confidence || 'high'
+        msg.confidenceNote = data.confidence_note || ''
         break
 
       case 'finish':
