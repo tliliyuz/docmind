@@ -27,7 +27,7 @@ Phase 1          Phase 2          Phase 3          Phase 4              Phase 5 
                   ▲                ▲               4-5天
   ├────────────────┼────────────────┼────────────────┼──────────────────┼──────────────┤
 Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6       Week 6+
-[✅]              [✅]             [✅]             [✅]                [⏳]           [—]
+[✅]              [✅]             [✅]             [✅]                [⏳ 90%]       [—]
 ```
 
 ---
@@ -194,7 +194,6 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | shared（指定用户共享） | Phase 5+ | 需要 ACL 表 + 邀请机制，复杂度爆炸 |
 | 部门管理员 / 角色扩展 | Phase 5+ | 当前无真实需求 |
 | 协作编辑、版本控制 | 不做 | 那是 Notion，不是知识库问答平台 |
-| Admin 在 KB 详情页的管理权限（查看文档列表/编辑/删除） | Phase 5 | 延后到 Phase 5，随 Admin 后端接口一并实现。当前 `KnowledgeDetail.vue` 仅按 `user_id` 判断 owner，admin 访问他人 KB 时暂为只读 |
 
 ---
 

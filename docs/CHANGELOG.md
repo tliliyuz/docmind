@@ -8,6 +8,9 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ## [Unreleased] - 2026-06-15
 
+### Changed
+- **文档一致性修复**（D2-D9）：① API.md §3 移除 `selectable` 接口过时的「实现：Phase 3」标注；② API.md 文档列表/详情/分块接口权限描述更新，反映 v0.50 `allow_public_read` 变更（public KB 允许所有登录用户只读访问）；③ DATABASE.md + ORM 模型 `uuid` 列 COMMENT 从「UUID v4」修正为「UUID」（MySQL `UUID()` 生成 v1，应用层用 `uuid4()` 显式生成 v4）；④ ROADMAP.md §4.5 移除已实现的推迟项「Admin 在 KB 详情页的管理权限」；⑤ ROADMAP.md Phase 5 状态 `[⏳]` → `[⏳ 90%]`；⑥ DEVELOPMENT.md 移除已废弃的 `sse-starlette` 依赖、标注 `unstructured` 为死依赖；⑦ PRD.md §6 验收标准 MRR/Precision@5 标注「压测待补充」
+
 ### Added
 - **BaseVectorStore 抽象基类 + ChromaVectorStore 实现**（A1+A3）：定义 `search`/`add`/`delete` 三个核心异步接口。新增 `get_vector_store()` 工厂函数。详见 [ADR-018](docs/decisions/ADR-018-向量存储抽象层.md)
 - **KnowledgePipeline 知识管线**（A2）：从 `chat_service.py` 解耦提取检索+上下文构建管线（查询重写→双路检索→RRF融合→Rerank→句子匹配→Prompt构建）
@@ -29,6 +32,7 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ### Fixed
 - **KnowledgeDetail.vue 多文件上传未调用批量接口**（`frontend/src/views/KnowledgeDetail.vue:454-510`）：`uploadFiles()` 用 `for...of` 逐文件调用 `store.uploadDoc()` 单文件上传，未使用已定义的 `store.batchUploadDocs()`。修复：校验阶段将文件分为无冲突组（`validFiles`）和需覆盖组（`forceUploadFiles`）；无冲突文件收集到单个 `FormData`（字段名 `files`）一次调用批量接口；有同名冲突且用户确认覆盖的文件因批量接口不支持 `force` 参数仍走单文件覆盖；上传完成后统一刷新列表并启动轮询。根据批量返回的 `success`/`failed` 数组分别展示提示
+- **TraceList.vue 概览卡片统计仅基于当前页数据**（`frontend/src/views/admin/TraceList.vue:254-269`）：`summary` computed 属性基于 `list.value`（当前页最多 20 条）计算成功/失败/运行中数量及平均耗时、P95 耗时，导致首页全 success 时始终显示 `20 / 0 / 0`，耗时也只反映当前页。修复：后端 `TraceListResponse` 新增 `TraceListSummary` 模型（`backend/app/schemas/trace.py`），`list_traces()` 新增基于全量筛选结果的 SQL 聚合查询（状态计数 + AVG + P95），前端 `summary` 从 `computed` 改为 `ref`，直接使用后端返回的 `data.summary`。翻页/筛选时统计值自动更新。测试文件同步更新（前端 mock 加入 summary、后端 fixture 加入 `TraceListSummary`，顺带修复 `conversation_id`/`kb_id` → `conversation_uuid`/`kb_uuid` 字段名过时问题）
 
 ---
 

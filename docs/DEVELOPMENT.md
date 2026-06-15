@@ -454,14 +454,12 @@ langchain-community==0.3.*
 langchain-openai==0.2.*
 jieba==0.42.*
 rank-bm25==0.2.*
-unstructured==0.16.*
 PyPDF2==3.0.*
 python-docx==1.1.*
 markdown-it-py==3.0.*
 redis==5.2.*
 celery==5.4.*
 httpx==0.28.*
-sse-starlette==2.1.*
 alembic==1.14.*
 
 # 测试

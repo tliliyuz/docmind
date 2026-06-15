@@ -432,7 +432,6 @@
 ### GET `/api/knowledge-bases/selectable`
 
 **权限**：user（需登录）
-**实现**：Phase 3
 
 获取当前用户可用于问答的知识库列表，按所有权分组。用于前端知识库选择器（`<el-select>` + `<el-option-group>`）。
 
@@ -741,7 +740,7 @@ def is_terminal(status: str) -> bool:
 
 ### GET `/api/knowledge-bases/{kb_uuid}/documents`
 
-**权限**：user（需登录，仅创建者或 admin）
+**权限**：user（需登录）；public 知识库允许所有登录用户只读访问；private 知识库仅 owner 或 admin
 
 获取知识库下的文档列表（支持筛选、排序和分页）。
 
@@ -793,7 +792,7 @@ def is_terminal(status: str) -> bool:
 | kb_uuid | string | 知识库 UUID |
 | doc_uuid | string | 文档 UUID |
 
-**权限**：user（需登录，仅创建者或 admin）
+**权限**：user（需登录）；public 知识库允许所有登录用户只读访问；private 知识库仅 owner 或 admin
 
 获取单个文档详情（含入库状态）。
 
@@ -829,7 +828,7 @@ def is_terminal(status: str) -> bool:
 | kb_uuid | string | 知识库 UUID |
 | doc_uuid | string | 文档 UUID |
 
-**权限**：仅知识库 owner / admin 可访问
+**权限**：user（需登录）；public 知识库允许所有登录用户只读访问；private 知识库仅 owner 或 admin
 
 查看文档的分块列表（支持分页）。
 
@@ -1971,16 +1970,16 @@ data: {"message_id": 13, "title": null, "token_usage": {"prompt": 80, "completio
 | POST | `/api/knowledge-bases` | user | 创建知识库（可指定 visibility） | Phase 2 ✅ |
 | GET | `/api/knowledge-bases` | user | 我的知识库列表（仅当前用户） | Phase 2 ✅ |
 | GET | `/api/knowledge-bases/public` | user | 公开知识库列表（跨用户，仅 public+active） | Phase 2.5 ✅ |
-| GET | `/api/knowledge-bases/selectable` | user | 可检索知识库分组列表（mine + public），供 KB 选择器使用 | Phase 3 |
+| GET | `/api/knowledge-bases/selectable` | user | 可检索知识库分组列表（mine + public），供 KB 选择器使用 | Phase 3 ✅ |
 | GET | `/api/knowledge-bases/{uuid}` | user（owner/admin/public KB 可读） | 知识库详情；admin 可查看含 private 的全部 KB | Phase 2 ✅ |
 | PUT | `/api/knowledge-bases/{uuid}` | owner + admin | 更新知识库元数据（name/desc/visibility）；admin 可修正不当内容 | Phase 2 ✅ |
 | DELETE | `/api/knowledge-bases/{uuid}` | owner + admin | 删除知识库（异步）；admin 可违规清理 | Phase 2 ✅ |
 | POST | `/api/knowledge-bases/{kb_uuid}/documents` | 仅 owner | 上传文档；admin 不越权写入 | Phase 2 ✅ |
 | POST | `/api/knowledge-bases/{kb_uuid}/documents/batch-upload` | 仅 owner | 批量上传文档；admin 不越权写入 | Phase 2 ✅ |
 | POST | `/api/knowledge-bases/{kb_uuid}/documents/{doc_uuid}/reprocess` | 仅 owner | 重新处理失败文档 | Phase 2 ✅ |
-| GET | `/api/knowledge-bases/{kb_uuid}/documents` | owner + admin | 文档列表；admin 可审计所有 KB 的文档 | Phase 2 ✅ |
-| GET | `/api/knowledge-bases/{kb_uuid}/documents/{doc_uuid}` | owner + admin | 文档详情；admin 可审计 private KB 文档内容 | Phase 2 ✅ |
-| GET | `/api/knowledge-bases/{kb_uuid}/documents/{doc_uuid}/chunks` | owner + admin | 查看分块；admin 可审计 private KB 分块内容 | Phase 2 ✅ |
+| GET | `/api/knowledge-bases/{kb_uuid}/documents` | owner + admin（private）；所有登录用户（public） | 文档列表；public KB 允许所有登录用户只读访问 | Phase 2 ✅ |
+| GET | `/api/knowledge-bases/{kb_uuid}/documents/{doc_uuid}` | owner + admin（private）；所有登录用户（public） | 文档详情；public KB 允许所有登录用户只读访问 | Phase 2 ✅ |
+| GET | `/api/knowledge-bases/{kb_uuid}/documents/{doc_uuid}/chunks` | owner + admin（private）；所有登录用户（public） | 查看分块；public KB 允许所有登录用户只读访问 | Phase 2 ✅ |
 | DELETE | `/api/knowledge-bases/{kb_uuid}/documents/{doc_uuid}` | owner + admin | 删除文档（异步）；admin 可逐文档违规清理 | Phase 2 ✅ |
 | POST | `/api/conversations` | user | 创建会话 | Phase 4 |
 | GET | `/api/conversations` | user | 会话列表 | Phase 4 |

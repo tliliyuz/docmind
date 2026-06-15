@@ -12,7 +12,7 @@ DocMind 是面向中型企业的知识库问答系统。员工用自然语言提
 
 **多路检索与融合**：向量语义检索（ChromaDB）与 BM25 关键词检索（rank-bm25 + jieba 中文分词）双路并行，通过 RRF（Reciprocal Rank Fusion）算法融合排序，兼顾语义理解和精确关键词匹配，离线评估 Recall@5 达到 1.000。
 
-**智能问答链路**：意图识别（知识查询 / 闲聊 / 元问题三分类）→ 问题重写（多轮上下文补全）→ 多路检索 → RRF 融合 → Evidence Highlight（句级 BM25 定位证据句）→ Prompt 组装 → DeepSeek LLM 流式生成，SSE 实时推送答案。
+**智能问答链路**：意图识别（知识查询 / 闲聊 / 元问题三分类，规则快速通道 + Flash 模型兜底）→ 问题重写（多轮上下文补全）→ 多路检索 → RRF 融合 → Evidence Highlight（句级 BM25 定位证据句）→ Prompt 组装 → DeepSeek LLM 流式生成，SSE 实时推送答案。检索与上下文构建由独立的 KnowledgePipeline 管线封装，与 ChatService 职责分离。
 
 **多轮对话与记忆**：支持完整的多轮对话上下文管理，Token 预算四池子分拆独立截断（History / Retrieval / System / User），滑动窗口保留最近对话，问题重写自动消解代词指代和省略主语。
 
@@ -40,8 +40,9 @@ DocMind 是面向中型企业的知识库问答系统。员工用自然语言提
 │  services/  services/ services/ services/ services/          │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │                RAG 核心（问答链路）                     │    │
+│  │        KnowledgePipeline（检索 + 上下文构建）          │    │
 │  │  Intent → Rewrite → Retriever → RRF → Rerank → LLM  │    │
+│  │          BaseVectorStore 抽象层 / 共享权限函数          │    │
 │  └────────────────────────┬─────────────────────────────┘    │
 │                           │                                   │
 │  ┌──────────┬─────────────┼──────────────┬────────────────┐  │
@@ -66,7 +67,7 @@ DocMind 是面向中型企业的知识库问答系统。员工用自然语言提
 | AI 编排 | LangChain | RAG 链路编排，不依赖高级封装 |
 | LLM | DeepSeek | OpenAI 兼容接口，支持深度思考模式（reasoning_content） |
 | Embedding | DashScope text-embedding-v3 | 1024 维向量，中文优化 |
-| 向量数据库 | ChromaDB | 嵌入式运行，零配置，单 collection + metadata 隔离 |
+| 向量数据库 | ChromaDB | 嵌入式运行，零配置，BaseVectorStore 抽象层支持替换 |
 | 关键词检索 | rank-bm25 + jieba | BM25Okapi + 中文分词，三级缓存（进程内 → Redis → 懒加载） |
 | 关系数据库 | MySQL 8.0 | SQLAlchemy 2.0 async ORM + Alembic 迁移 |
 | 缓存/队列 | Redis 7.0 + Celery | 异步任务队列 + 分布式锁 + BM25 索引缓存 |
@@ -158,30 +159,37 @@ npm run dev     # http://localhost:5173，/api 自动代理到后端 8000 端口
 
 ```
 docmind/
-├── docs/                        # 公用设计文档（PRD / 架构 / 排期 / 测试策略 / 变更日志）
+├── docs/                        # 公用设计文档（PRD / 架构 / 排期 / 变更日志）
+│   ├── tests/                   # 测试文档（测试策略 / 用例跟踪）
+│   └── decisions/               # 架构决策记录（ADR，18 篇）
 ├── backend/
 │   ├── alembic/                 # 数据库迁移脚本
-│   ├── docs/                    # 后端设计文档（API / 数据库）
+│   ├── docs/                    # 后端设计文档（API / 数据库 / RAG 管线）
 │   ├── app/
 │   │   ├── api/                 # 路由层（auth / kb / document / chat / conversation / admin）
-│   │   ├── models/              # SQLAlchemy ORM 模型（6 张业务表）
-│   │   ├── schemas/             # Pydantic 请求/响应模型
-│   │   ├── services/            # 业务逻辑层
-│   │   ├── rag/                 # RAG 核心（检索器 / 分块器 / Embedding / 意图识别 / 问题重写）
+│   │   ├── models/              # SQLAlchemy ORM 模型（用户 / KB / 文档 / 分块 / 会话 / 消息 / RefreshToken / Trace）
+│   │   ├── schemas/             # Pydantic 请求/响应模型（含 admin / trace Schema）
+│   │   ├── services/            # 业务逻辑层（chat 委托 KnowledgePipeline 检索+构建）
+│   │   ├── rag/                 # RAG 核心
+│   │   │   ├── knowledge_pipeline.py  # 知识管线：重写→检索→RRF→Rerank→句子匹配→Prompt
+│   │   │   ├── vector_store.py        # 向量存储抽象（BaseVectorStore ABC + ChromaVectorStore）
+│   │   │   ├── retriever.py / bm25.py / fusion.py / reranker.py  # 检索链路
+│   │   │   ├── intent.py / query_rewriter.py / sentence_matcher.py  # 意图/重写/证据定位
+│   │   │   └── trace_recorder.py / prompt_builder.py / chunker.py / embedder.py / parser.py
 │   │   ├── ingest/              # Celery 异步入库任务
-│   │   ├── core/                # 基础设施（DB / Redis / ChromaDB / JWT / 文件存储 / SSE）
-│   │   └── middleware/          # 中间件（JWT 认证 / 限流）
+│   │   ├── core/                # 基础设施（DB / Redis / ChromaDB / JWT / 存储 / SSE / LLM / 权限 / UUID / 日志）
+│   │   └── middleware/          # 中间件（JWT 认证 / 限流 / Request ID）
 │   └── tests/                   # 后端测试（pytest，649+ 用例）
 ├── frontend/
 │   ├── docs/                    # 前端设计文档（交互规范 / UI 设计规范）
 │   ├── src/
-│   │   ├── views/               # 页面（ChatPage / LoginPage / Admin 页面组）
-│   │   ├── components/          # 组件（chat / layout / admin）
+│   │   ├── views/               # 页面（ChatPage / LoginPage / KB 管理 / Admin 页面组）
+│   │   ├── components/          # 组件（chat / layout / admin / charts）
 │   │   ├── stores/              # Pinia 状态管理（auth / chat / knowledge / conversation）
-│   │   ├── api/                 # HTTP 请求封装（Axios + Token 自动刷新拦截器）
-│   │   ├── router/              # Vue Router + 路由守卫
+│   │   ├── api/                 # HTTP 请求封装（Axios + Token 自动刷新拦截器 + Trace API）
+│   │   ├── router/              # Vue Router + 路由守卫（含 Admin 子路由 meta 遍历）
 │   │   ├── styles/              # 全局样式（Design Token --dm-* 变量）
-│   │   └── utils/               # 工具函数（SSE 解析 / Markdown 渲染）
+│   │   └── utils/               # 工具函数（SSE 解析 / Markdown 渲染 / 格式化）
 │   └── tests/                   # 前端测试（vitest，220+ 用例）
 ├── docker-compose.yml           # 5 服务编排
 ├── Dockerfile.backend           # FastAPI + Celery Worker 镜像
@@ -193,8 +201,6 @@ docmind/
 
 ## 开发进度
 
-项目采用分阶段迭代开发，每个阶段完成后立即编写测试并全量回归，作为下一阶段的准入条件。
-
 | 阶段 | 内容 | 状态 |
 |:---|:---|:---|
 | Phase 1 | 骨架搭建：FastAPI + Vue 3 脚手架、MySQL 6 表、ChromaDB、JWT 认证、前端登录页与路由 | ✅ 已完成 |
@@ -202,7 +208,7 @@ docmind/
 | Phase 2.5 | 知识库可见性：public / private 分离、公共知识库浏览页 | ✅ 已完成 |
 | Phase 3 | 核心问答：多路检索、RRF 融合、SSE 流式输出、前端问答界面、引用来源展示 | ✅ 已完成 |
 | Phase 4 | 会话与记忆：多轮对话、会话 CRUD、问题重写、Refresh Token、结构化日志 | ✅ 已完成 |
-| Phase 5 | 打磨上线：意图识别、Evidence Highlight、管理后台、限流、Trace 链路追踪、Docker 部署 | ⏳ 进行中（外部资源 UUID 化待完成） |
+| Phase 5 | 打磨上线：意图识别、Evidence Highlight、管理后台、限流、Trace 链路追踪、Docker 部署、外部资源 UUID 化 | ⏳ 90%（仅余压测 + 最终人工评分） |
 | Phase 6 | 迭代优化：DashScope Rerank、结构感知分块、LLM 摘要压缩等高级功能 | 规划中 |
 
 详细的任务分解和依赖关系见 [开发排期](docs/ROADMAP.md)。
@@ -228,15 +234,17 @@ docmind/
 |:---|:---|
 | [PRD.md](docs/PRD.md) | 产品需求文档 — 业务场景、用户痛点、权限模型、验收标准 |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构设计文档 — 技术选型、系统架构、入库/问答流程、关键设计决策 |
-| [DATABASE.md](backend/docs/DATABASE.md) | 数据库设计文档 — ER 关系、6 张表 DDL、索引策略 |
+| [DATABASE.md](backend/docs/DATABASE.md) | 数据库设计文档 — ER 关系、表 DDL、索引策略 |
 | [API.md](backend/docs/API.md) | 接口文档 — REST 接口定义、SSE 事件格式、错误码、权限矩阵 |
 | [RAG_PIPELINE.md](backend/docs/RAG_PIPELINE.md) | RAG 管线详细设计 — 多路检索、Prompt 组装、问题重写、意图识别、Evidence Highlight、Trace 链路追踪 |
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发指南 — 环境配置、依赖清单、本地启动、Docker 部署 |
 | [ROADMAP.md](docs/ROADMAP.md) | 开发排期 — Phase 1-6 任务分解、时间线、依赖关系 |
 | [TESTING.md](docs/tests/TESTING.md) | 测试策略 — 检索评估指标、人工评分标准、压测指标 |
+| [TEST_CASES.md](docs/tests/TEST_CASES.md) | 测试用例跟踪 — 各 Phase 测试用例清单与执行状态 |
 | [UIDESIGN.md](frontend/docs/UIDESIGN.md) | UI 设计规范 — Design Token（CSS 变量）、组件样式规范 |
 | [FRONTEND.md](frontend/docs/FRONTEND.md) | 前端交互文档 — 页面布局、交互流程、组件行为规范 |
 | [CHANGELOG.md](docs/CHANGELOG.md) | 变更日志 — 遵循 Keep a Changelog 格式 |
+| [decisions/](docs/decisions/) | 架构决策记录（ADR）— 18 篇关键设计决策的详细记录与背景分析 |
 
 ---
 

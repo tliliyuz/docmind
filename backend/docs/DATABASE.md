@@ -83,7 +83,7 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE knowledge_bases (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    uuid CHAR(36) NOT NULL COMMENT '外部暴露的知识库标识符（UUID v4），API/URL 使用',
+    uuid CHAR(36) NOT NULL COMMENT '外部暴露的知识库标识符（UUID），API/URL 使用',
     name VARCHAR(128) NOT NULL,
     description TEXT,
     user_id BIGINT NOT NULL,
@@ -102,7 +102,7 @@ CREATE TABLE knowledge_bases (
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
 | id | BIGINT | 主键（内部使用，不暴露给 API） |
-| uuid | CHAR(36) | 外部暴露的知识库标识符（UUID v4），唯一索引，API/URL 使用 |
+| uuid | CHAR(36) | 外部暴露的知识库标识符（UUID），唯一索引，API/URL 使用 |
 | name | VARCHAR(128) | 知识库名称，与 user_id 联合唯一（同一用户下名称不重复） |
 | description | TEXT | 知识库描述 |
 | user_id | BIGINT | 创建者用户 ID |
@@ -118,7 +118,7 @@ CREATE TABLE knowledge_bases (
 ```sql
 CREATE TABLE documents (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    uuid CHAR(36) NOT NULL COMMENT '外部暴露的文档标识符（UUID v4），API/URL 使用',
+    uuid CHAR(36) NOT NULL COMMENT '外部暴露的文档标识符（UUID），API/URL 使用',
     kb_id BIGINT NOT NULL,
     filename VARCHAR(256) NOT NULL,
     file_type VARCHAR(32) NOT NULL COMMENT 'pdf/docx/md/txt',
@@ -141,7 +141,7 @@ CREATE TABLE documents (
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
 | id | BIGINT | 主键（内部使用，不暴露给 API） |
-| uuid | CHAR(36) | 外部暴露的文档标识符（UUID v4），唯一索引，API/URL 使用 |
+| uuid | CHAR(36) | 外部暴露的文档标识符（UUID），唯一索引，API/URL 使用 |
 | kb_id | BIGINT | 所属知识库 ID，有索引 |
 | filename | VARCHAR(256) | 原始文件名 |
 | file_type | VARCHAR(32) | 文件类型：pdf / docx / md / txt |
@@ -210,7 +210,7 @@ CREATE TABLE chunks (
 ```sql
 CREATE TABLE conversations (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    uuid CHAR(36) NOT NULL COMMENT '外部暴露的会话标识符（UUID v4），API/URL 使用',
+    uuid CHAR(36) NOT NULL COMMENT '外部暴露的会话标识符（UUID），API/URL 使用',
     user_id BIGINT NOT NULL,
     kb_id BIGINT COMMENT '关联的知识库',
     original_kb_id BIGINT NULL COMMENT 'KB 删除前的原始 kb_id，用于孤儿会话检测',
@@ -232,7 +232,7 @@ CREATE TABLE conversations (
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
 | id | BIGINT | 主键（内部使用，不暴露给 API） |
-| uuid | CHAR(36) | 外部暴露的会话标识符（UUID v4），唯一索引，API/URL 使用 |
+| uuid | CHAR(36) | 外部暴露的会话标识符（UUID），唯一索引，API/URL 使用 |
 | user_id | BIGINT | 所属用户 ID，有索引 |
 | kb_id | BIGINT | 关联的知识库 ID（可选，表示对话的知识域） |
 | original_kb_id | BIGINT | KB 删除前的原始 ID，用于孤儿会话检测。KB 物理删除前由 Celery 批量备份 |
@@ -272,7 +272,7 @@ CREATE TABLE conversations (
 
 > 外部暴露的资源（knowledge_bases、documents、conversations）采用双字段方案：
 > - `id BIGINT AUTO_INCREMENT`：内部主键，用于外键关联、JOIN 查询、内部逻辑
-> - `uuid CHAR(36) UNIQUE`：外部暴露标识符，用于 API 路由、响应、URL
+> - `uuid CHAR(36) UNIQUE`：外部暴露标识符，用于 API 路由、响应、URL。应用层使用 `uuid.uuid4()` 显式生成（v4，随机），`server_default=text("(UUID())")` 为安全网兜底（MySQL `UUID()` 生成 v1）
 >
 > **优势**：
 > - 零影响现有外键关系（`messages.conversation_id`、`traces.conversation_id` 等）——无需迁移子表
@@ -442,7 +442,7 @@ CREATE TABLE traces (
 
 > **注意**：MySQL 会自动为外键列创建索引（若该列尚未建立索引）。上表中 `chunks.doc_id`、`chunks.kb_id` 等因已有显式索引，不再重复；`conversations.kb_id` 无外键索引，如需频繁按知识库查询会话，可后续补充。
 
-> TODO: [待补充] 如后续文档量和用户量增大，考虑：
+> **Phase 6 优化项**：如后续文档量和用户量增大，考虑：
 > - `documents` 表增加 `(kb_id, status)` 复合索引用于状态过滤
 > - `messages` 表增加 `(conversation_id, created_at)` 复合索引用于按时间排序
 > - `refresh_tokens` 表定期清理过期 token 的定时任务

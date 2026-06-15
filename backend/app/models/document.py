@@ -19,7 +19,7 @@ class Document(Base):
     uuid: Mapped[str] = mapped_column(
         String(36), nullable=False, unique=True,
         server_default=text("(UUID())"),
-        comment="外部暴露标识符（UUID v4），API/URL 使用"
+        comment="外部暴露标识符（UUID），API/URL 使用"
     )
     kb_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
