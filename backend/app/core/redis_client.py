@@ -74,6 +74,13 @@ class ThreadedRedisClient:
         """异步 GET"""
         return await asyncio.to_thread(self._sync.get, key)
 
+    async def set(
+        self, key: str, value: str,
+        ex: int | None = None, nx: bool = False,
+    ) -> Any:
+        """异步 SET，支持 EX/NX 参数（用于幂等锁）"""
+        return await asyncio.to_thread(self._sync.set, key, value, ex=ex, nx=nx)
+
     async def setex(self, key: str, ttl: int, value: str) -> Any:
         """异步 SETEX"""
         return await asyncio.to_thread(self._sync.setex, key, ttl, value)

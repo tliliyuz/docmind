@@ -257,7 +257,6 @@ def _build_sources(
 
 
 async def _generate_sse_stream(
-    db: AsyncSession,
     conv: Conversation,
     task_id: str,
     question: str,
@@ -273,6 +272,9 @@ async def _generate_sse_stream(
     事件序列对齐 API.md §6.1：
     meta → thinking(可选) → message → sources → finish
     异常时：sources → error
+
+    DB 会话管理（ADR-017）：LLM 流式阶段不持有 DB 连接；
+    消息持久化阶段创建独立短生命周期 session，消息 + Trace 单事务提交。
     """
     assistant_content = ""
     token_usage: dict = {}
@@ -295,7 +297,7 @@ async def _generate_sse_stream(
             {"role": "user", "content": prompt_result.user_prompt},
         ]
 
-        # 流式调用 LLM
+        # 流式调用 LLM（此阶段不持有 DB 连接，对齐 ADR-017）
         async for chunk in stream_chat_completion(
             messages=messages,
             deep_thinking=deep_thinking,
@@ -316,7 +318,7 @@ async def _generate_sse_stream(
 
         t_stream_end = time.perf_counter()  # LLM 流结束
 
-        # Trace: 记录 LLM 生成阶段
+        # Trace: 记录 LLM 生成阶段（纯内存操作，不涉及 IO）
         if recorder:
             _ttft_val = (t_first_token - t0) * 1000 if t_first_token else 0
             _total_val = (t_stream_end - t0) * 1000
@@ -342,7 +344,7 @@ async def _generate_sse_stream(
             "total": prompt_tokens + completion_tokens,
         }
 
-        # Trace: 更新 token 估算值
+        # Trace: 更新 token 估算值（纯内存操作）
         if recorder and recorder._generate_data:
             recorder._generate_data["input_tokens"] = prompt_tokens
             recorder._generate_data["output_tokens"] = completion_tokens
@@ -369,10 +371,15 @@ async def _generate_sse_stream(
         if hasattr(e, "error_code"):
             error_code = e.error_code
             error_msg = e.error_message
-        # Trace 记录 LLM 错误
+        # Trace 记录 LLM 错误（独立短 session，对齐 ADR-017）
         if recorder:
             recorder.record_error(error_msg)
-            await recorder.finish(db)
+            async with async_session() as s:
+                try:
+                    await recorder.finish(s)
+                    await s.commit()
+                except Exception:
+                    await s.rollback()
         yield format_sse_event("error", {
             "code": error_code,
             "message": error_msg,
@@ -440,71 +447,90 @@ async def _generate_sse_stream(
 
     t_sources_end = time.perf_counter()  # 引用构建结束
 
-    # 保存助手消息（仅 LLM 正常完成后落库，对齐 API.md §6）
-    try:
-        assistant_msg = Message(
-            conversation_id=conv.id,
-            role="assistant",
-            content=assistant_content,
-            thinking_content=None,  # Phase 3 不落库
-            token_count=token_usage.get("total", 0),
-        )
-        db.add(assistant_msg)
-        conv.message_count += 1
-        # 手动同步 updated_at + last_message_at（对齐 ARCHITECTURE.md §8.6）
-        _now = datetime.now(timezone.utc)
-        conv.updated_at = _now
-        conv.last_message_at = _now
-        await db.flush()
-        await db.refresh(assistant_msg)
+    # 持久化阶段：独立短生命周期 session，消息 + Trace 单事务提交（ADR-017）
+    # LLM 流式期间不持有 DB 连接，session 仅在最后持久化阶段短暂占用
+    title = None
+    message_id = 0  # 异常回退时的默认值
+    async with async_session() as s:
+        try:
+            # 跨 session 重新查询 conv，确保绑定到当前 session
+            conv_in = await s.get(Conversation, conv.id)
+            if conv_in is None:
+                logger.error("会话 %d 在持久化时已不存在", conv.id)
+                raise ConversationNotFoundException(conv.id)
 
-        # 标题生成（首轮：截断标题立即返回，LLM 标题异步更新）
-        title = None
-        if is_first_turn:
-            title = _generate_title(question)
-            conv.title = title
+            # 保存助手消息
+            assistant_msg = Message(
+                conversation_id=conv_in.id,
+                role="assistant",
+                content=assistant_content,
+                thinking_content=None,  # Phase 3 不落库
+                token_count=token_usage.get("total", 0),
+            )
+            s.add(assistant_msg)
+            conv_in.message_count += 1
+            # 手动同步 updated_at + last_message_at（对齐 ARCHITECTURE.md §8.6）
+            _now = datetime.now(timezone.utc)
+            conv_in.updated_at = _now
+            conv_in.last_message_at = _now
+            await s.flush()
+            await s.refresh(assistant_msg)
+            message_id = assistant_msg.id
 
-        await db.commit()
+            # 标题生成（首轮：截断标题立即返回，LLM 标题异步更新）
+            if is_first_turn:
+                title = _generate_title(question)
+                conv_in.title = title
 
-        # 发送 finish 事件（含截断标题，保证不延迟）
-        yield format_sse_event("finish", {
-            "message_id": assistant_msg.id,
-            "title": title,
-            "token_usage": token_usage,
-        })
+            # Trace 写入（commit=False，由外层统一提交，确保与消息在同一事务）
+            if recorder:
+                await recorder.finish(s, commit=False)
 
-        t_finish = time.perf_counter()
-        _ttft = (t_first_token - t0) if t_first_token else -1
-        logger.info(
-            "PERF 首Token=%.3fs 生成=%.3fs 引用构建=%.3fs 收尾=%.3fs 总计=%.3fs",
-            _ttft,
-            (t_stream_end - t_first_token) if (t_first_token and t_stream_end) else -1,
-            (t_sources_end - t_stream_end) if (t_stream_end and t_sources_end) else -1,
-            (t_finish - t_sources_end) if t_sources_end else -1,
-            t_finish - t0,
-        )
+            await s.commit()
 
-        # Trace: 流完成，写入 traces 表
-        if recorder:
-            await recorder.finish(db)
+        except Exception:
+            logger.exception("保存助手消息失败")
+            await s.rollback()
+            yield format_sse_event("error", {
+                "code": "E9001",
+                "message": "保存消息失败",
+            })
+            return
 
-        # SSE 流结束后，异步调用 LLM 生成更好标题
-        if is_first_turn:
-            try:
-                llm_title = await _generate_title_llm(question)
-                conv.title = llm_title
-                await db.commit()
-                logger.info("LLM 标题生成成功: %s", llm_title)
-            except Exception:
-                logger.warning("LLM 标题生成失败，保留截断标题")
+    # session 已释放，安全发送 finish 事件（message_id 来自已提交的记录）
+    yield format_sse_event("finish", {
+        "message_id": message_id,
+        "title": title,
+        "token_usage": token_usage,
+    })
 
-    except Exception:
-        logger.exception("保存助手消息失败")
-        await db.rollback()
-        yield format_sse_event("error", {
-            "code": "E9001",
-            "message": "保存消息失败",
-        })
+    t_finish = time.perf_counter()
+    _ttft = (t_first_token - t0) if t_first_token else -1
+    logger.info(
+        "PERF 首Token=%.3fs 生成=%.3fs 引用构建=%.3fs 收尾=%.3fs 总计=%.3fs",
+        _ttft,
+        (t_stream_end - t_first_token) if (t_first_token and t_stream_end) else -1,
+        (t_sources_end - t_stream_end) if (t_stream_end and t_sources_end) else -1,
+        (t_finish - t_sources_end) if t_sources_end else -1,
+        t_finish - t0,
+    )
+
+    # SSE 流结束后，异步调用 LLM 生成更好标题（独立短 session，对齐 ADR-017）
+    if is_first_turn:
+        try:
+            llm_title = await _generate_title_llm(question)
+            async with async_session() as s2:
+                try:
+                    conv_in = await s2.get(Conversation, conv.id)
+                    if conv_in is not None:
+                        conv_in.title = llm_title
+                        await s2.commit()
+                        logger.info("LLM 标题生成成功: %s", llm_title)
+                except Exception:
+                    await s2.rollback()
+                    raise
+        except Exception:
+            logger.warning("LLM 标题生成失败，保留截断标题")
 
 
 # META 固定回复模板（对齐 ARCHITECTURE.md §5.1.6）
@@ -519,7 +545,6 @@ _META_RESPONSE = (
 
 
 async def _generate_meta_response(
-    db: AsyncSession,
     conv: Conversation,
     is_first_turn: bool,
     question: str,
@@ -529,52 +554,67 @@ async def _generate_meta_response(
 
     与 _generate_sse_stream 一致：保存 assistant 消息到数据库，
     保证对话历史完整性（用户消息已在 _validate_and_prepare 中保存）。
+
+    DB 会话管理（ADR-017）：使用独立短生命周期 session，消息 + Trace 单事务提交。
     """
     yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
     yield format_sse_event("message", {"delta": _META_RESPONSE})
 
-    # 保存 assistant 消息（对齐主流程，保持消息成对）
-    try:
-        assistant_msg = Message(
-            conversation_id=conv.id,
-            role="assistant",
-            content=_META_RESPONSE,
-            thinking_content=None,
-            token_count=0,
-        )
-        db.add(assistant_msg)
-        conv.message_count += 1
-        _now = datetime.now(timezone.utc)
-        conv.updated_at = _now
-        conv.last_message_at = _now
+    # 持久化阶段：独立短生命周期 session，消息 + Trace 单事务提交（ADR-017）
+    title = None
+    message_id = 0  # 异常回退时的默认值
+    async with async_session() as s:
+        try:
+            # 跨 session 重新查询 conv，确保绑定到当前 session
+            conv_in = await s.get(Conversation, conv.id)
+            if conv_in is None:
+                logger.error("会话 %d 在 META 持久化时已不存在", conv.id)
+                raise ConversationNotFoundException(conv.id)
 
-        title = None
-        if is_first_turn:
-            title = _generate_title(question)
-            conv.title = title
+            assistant_msg = Message(
+                conversation_id=conv_in.id,
+                role="assistant",
+                content=_META_RESPONSE,
+                thinking_content=None,
+                token_count=0,
+            )
+            s.add(assistant_msg)
+            conv_in.message_count += 1
+            _now = datetime.now(timezone.utc)
+            conv_in.updated_at = _now
+            conv_in.last_message_at = _now
+            await s.flush()
+            await s.refresh(assistant_msg)
+            message_id = assistant_msg.id
 
-        await db.commit()
-        await db.refresh(assistant_msg)
+            if is_first_turn:
+                title = _generate_title(question)
+                conv_in.title = title
 
-        yield format_sse_event("sources", {"chunks": []})
-        yield format_sse_event("finish", {
-            "message_id": assistant_msg.id,
-            "title": title,
-            "token_usage": {"prompt": 0, "completion": 0, "total": 0},
-        })
+            # Trace 写入（commit=False，由外层统一提交，确保与消息在同一事务）
+            if recorder:
+                await recorder.finish(s, commit=False)
 
-        # Trace: META 路径完成
-        if recorder:
-            await recorder.finish(db)
-    except Exception:
-        logger.exception("META 响应保存失败")
-        await db.rollback()
-        yield format_sse_event("sources", {"chunks": []})
-        yield format_sse_event("finish", {
-            "message_id": 0,
-            "title": None,
-            "token_usage": {"prompt": 0, "completion": 0, "total": 0},
-        })
+            await s.commit()
+
+        except Exception:
+            logger.exception("META 响应保存失败")
+            await s.rollback()
+            yield format_sse_event("sources", {"chunks": []})
+            yield format_sse_event("finish", {
+                "message_id": 0,
+                "title": None,
+                "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+            })
+            return
+
+    # session 已释放，安全发送事件
+    yield format_sse_event("sources", {"chunks": []})
+    yield format_sse_event("finish", {
+        "message_id": message_id,
+        "title": title,
+        "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+    })
 
 
 async def _validate_and_prepare(
@@ -859,7 +899,7 @@ async def chat(
         recorder.kb_id = e.conv.kb_id
         return StreamingResponse(
             stream_with_heartbeat(_generate_meta_response(
-                db=db, conv=e.conv, is_first_turn=e.is_first_turn, question=question,
+                conv=e.conv, is_first_turn=e.is_first_turn, question=question,
                 recorder=recorder,
             )),
             media_type="text/event-stream",
@@ -877,7 +917,6 @@ async def chat(
 
     return StreamingResponse(
         stream_with_heartbeat(_generate_sse_stream(
-            db=db,
             conv=conv,
             task_id=task_id,
             question=question,

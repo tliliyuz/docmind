@@ -1,14 +1,14 @@
 """Pydantic 请求/响应模型"""
 
-from .admin import (  # noqa: F401
+from app.schemas.admin import (  # noqa: F401
     AdminStatsResponse,
     AdminKBItem,
     AdminKBListResponse,
     AdminDocItem,
     AdminDocListResponse,
 )
-from .auth import RegisterRequest, LoginRequest, TokenResponse  # noqa: F401
-from .knowledge_base import (  # noqa: F401
+from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse  # noqa: F401
+from app.schemas.knowledge_base import (  # noqa: F401
     KnowledgeBaseCreate,
     KnowledgeBaseUpdate,
     KnowledgeBaseResponse,
@@ -17,7 +17,7 @@ from .knowledge_base import (  # noqa: F401
     PublicKnowledgeBaseResponse,
     PublicKnowledgeBaseListResponse,
 )
-from .document import (  # noqa: F401
+from app.schemas.document import (  # noqa: F401
     DocumentResponse,
     DocumentListResponse,
     DocumentUploadResponse,
@@ -29,7 +29,7 @@ from .document import (  # noqa: F401
     DocumentChunkResponse,
     DocumentChunkListResponse,
 )
-from .chat import (  # noqa: F401
+from app.schemas.chat import (  # noqa: F401
     ChatRequest,
     ChatSourceChunk,
     ChatFinishData,

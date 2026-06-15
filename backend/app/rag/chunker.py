@@ -97,17 +97,24 @@ def chunk_document(
     return ChunkingResult(chunks=chunks, total_chunks=len(chunks))
 
 
+# 页分隔符：必须与 parser.py 中 ParsedResult.full_text 的 join 分隔符一致
+# parser.py 使用 "\n\n".join(p.content for p in self.pages ...) 拼接全文
+_PAGE_SEPARATOR = "\n\n"
+_PAGE_SEPARATOR_LEN = len(_PAGE_SEPARATOR)  # = 2
+
+
 def _build_page_offset_map(pages: list[ParsedPage]) -> list[tuple[int, int]]:
     """构建 (字符偏移量, 页码) 映射列表，按偏移量升序。
 
-    重建 full_text 拼接逻辑：每页 content 后跟 "\n\n" 分隔符。
+    重建 full_text 拼接逻辑：每页 content 后跟 _PAGE_SEPARATOR 分隔符。
+    偏移量计算必须与 parser.py 中 ParsedResult.full_text 的拼接方式一致。
     """
     offset_map: list[tuple[int, int]] = []
     pos = 0
     for page in pages:
         if page.success and page.content:
             offset_map.append((pos, page.page_number))
-            pos += len(page.content) + 2  # +2 for "\n\n"
+            pos += len(page.content) + _PAGE_SEPARATOR_LEN
     return offset_map
 
 
@@ -139,5 +146,9 @@ def estimate_tokens(text: str) -> int:
         return 1
 
     chinese_chars = sum(1 for c in text if '一' <= c <= '鿿')
-    ratio = 1.5 if chinese_chars / len(text) > 0.3 else 4.0
+    ratio = (
+        settings.TOKEN_CHINESE_RATIO
+        if chinese_chars / len(text) > settings.TOKEN_CHINESE_THRESHOLD
+        else settings.TOKEN_ENGLISH_RATIO
+    )
     return max(1, int(len(text) / ratio))

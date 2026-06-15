@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from app.config import settings
+from app.core.exceptions import EmbeddingTimeoutException, VectorStoreErrorException
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ async def _call_embed_api(texts: list[str], text_type: str = "document") -> Embe
             delay = settings.EMBED_BASE_DELAY * (2 ** attempt)  # 1, 2, 4, 8, 16
             await asyncio.sleep(delay)
 
-    raise RuntimeError(
+    raise EmbeddingTimeoutException(
         f"Embedding API 调用失败，已重试 {settings.EMBED_MAX_RETRIES} 次: {last_error}"
     )
 
@@ -95,13 +96,13 @@ def _parse_embed_response(data: dict, text_count: int) -> EmbedResult:
     embeddings = []
     for item in embeddings_raw:
         if "embedding" not in item:
-            raise ValueError(
+            raise VectorStoreErrorException(
                 f"DashScope API 返回格式异常: 第 {item.get('text_index', '?')} 条缺少 embedding 字段"
             )
         embeddings.append(item["embedding"])
 
     if len(embeddings) != text_count:
-        raise ValueError(
+        raise VectorStoreErrorException(
             f"Embedding 数量不匹配: 期望 {text_count}, 实际 {len(embeddings)}"
         )
 

@@ -20,11 +20,16 @@ from sqlalchemy import delete, func, select, update
 from app.config import settings
 from app.core.redis_client import get_redis
 from app.core.chroma_client import get_collection
-from app.rag.bm25 import invalidate_bm25_cache
+from app.rag.bm25 import invalidate_bm25_cache, invalidate_bm25_cache_async
 from app.core.database import async_session
 from app.core.storage import local_storage
 from app.ingest.celery_app import celery_app
-from app.ingest.lock import acquire_idempotency_lock, release_idempotency_lock
+from app.ingest.lock import (
+    acquire_idempotency_lock,
+    acquire_idempotency_lock_async,
+    release_idempotency_lock,
+    release_idempotency_lock_async,
+)
 from app.models.chunk import Chunk
 from app.models.conversation import Conversation
 from app.models.document import Document
@@ -106,8 +111,8 @@ async def _ingest_document_async(doc_id: int) -> dict:
       - chunk 插入前先清理旧 chunks（幂等去重），避免重试导致重复记录
     """
 
-    # 1. 获取幂等锁
-    if not acquire_idempotency_lock(doc_id, "ingest"):
+    # 1. 获取幂等锁（异步上下文使用异步 Redis，避免阻塞事件循环）
+    if not await acquire_idempotency_lock_async(doc_id, "ingest"):
         logger.warning(f"文档 {doc_id} 幂等锁已被占用，拒绝重复入队")
         return {"status": "locked", "doc_id": doc_id}
 
@@ -469,7 +474,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
             )
 
         # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
-        invalidate_bm25_cache(kb_id)
+        await invalidate_bm25_cache_async(kb_id)
 
         return {
             "status": final_status.value,
@@ -478,7 +483,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
         }
 
     finally:
-        release_idempotency_lock(doc_id, "ingest")
+        await release_idempotency_lock_async(doc_id, "ingest")
 
 
 def _build_error_msg(parse_result, threshold: float) -> str:
@@ -502,8 +507,8 @@ def _build_error_msg(parse_result, threshold: float) -> str:
 async def _delete_document_async(doc_id: int) -> dict:
     """文档异步删除实现：ChromaDB 向量清理 → 磁盘文件删除 → MySQL 物理删除（FK CASCADE 清 chunks）"""
 
-    # 1. 获取幂等锁
-    if not acquire_idempotency_lock(doc_id, "delete"):
+    # 1. 获取幂等锁（异步上下文使用异步 Redis，避免阻塞事件循环）
+    if not await acquire_idempotency_lock_async(doc_id, "delete"):
         logger.warning("文档 %d 删除幂等锁已被占用，拒绝重复入队", doc_id)
         return {"status": "locked", "doc_id": doc_id}
 
@@ -559,12 +564,12 @@ async def _delete_document_async(doc_id: int) -> dict:
                 logger.info("文档 %d MySQL 记录已物理删除，KB %d 计数已更新", doc_id, kb_id)
 
         # 清除 BM25 缓存，下次查询时懒加载重建（对齐 ARCHITECTURE.md §6.2）
-        invalidate_bm25_cache(kb_id)
+        await invalidate_bm25_cache_async(kb_id)
 
         return {"status": "completed", "doc_id": doc_id}
 
     finally:
-        release_idempotency_lock(doc_id, "delete")
+        await release_idempotency_lock_async(doc_id, "delete")
 
 
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=300, autoretry_for=(Exception,), retry_backoff=True)

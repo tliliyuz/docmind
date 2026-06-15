@@ -56,3 +56,23 @@ def check_idempotency_lock(doc_id: int, task_type: str) -> bool:
     """
     key = _build_lock_key(doc_id, task_type)
     return get_redis().exists(key) > 0
+
+
+async def acquire_idempotency_lock_async(
+    doc_id: int, task_type: str, ttl: int = settings.IDEMPOTENCY_LOCK_TTL
+) -> bool:
+    """异步版幂等锁获取，供 async 上下文使用（避免阻塞事件循环）。"""
+    from app.core.redis_client import get_async_redis
+
+    key = _build_lock_key(doc_id, task_type)
+    redis_client = await get_async_redis()
+    return bool(await redis_client.set(key, "locked", ex=ttl, nx=True))
+
+
+async def release_idempotency_lock_async(doc_id: int, task_type: str) -> None:
+    """异步版幂等锁释放，供 async 上下文使用（避免阻塞事件循环）。"""
+    from app.core.redis_client import get_async_redis
+
+    key = _build_lock_key(doc_id, task_type)
+    redis_client = await get_async_redis()
+    await redis_client.delete(key)

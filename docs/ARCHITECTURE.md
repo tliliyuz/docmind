@@ -1,9 +1,9 @@
 # ARCHITECTURE — 架构设计文档
 
-| 属性 | 值 |
-|:---|:---|
-| 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 属性 | 值          |
+|:---|:-----------|
+| 文档版本 | v1.0       |
+| 最后更新 | 2026-06-15 |
 
 > 本文档描述 DocMind 系统的目标架构设计。实现进度和开发排期见 [ROADMAP.md](ROADMAP.md)。
 
@@ -362,6 +362,18 @@ def ingest_document(self, doc_id):
 | BM25 缓存 | Redis 不可用 → MySQL 懒加载重建 |
 | Evidence Highlight | 切句失败 → `preview_text = None`，前端自行降级 |
 | LLM 调用 | 流式失败 → `event: error` + 全量 sources |
+
+### 5.4 SSE 流 DB 会话生命周期解耦
+
+> **设计决策**：[ADR-017](decisions/ADR-017-SSE流DB会话生命周期解耦.md)（2026-06-15 采纳）
+
+SSE 流式期间 Generator 不再持有外部 `db` 连接，持久化阶段自管短生命周期 session，避免连接池被长连接耗尽（15 并发 SSE 即占满 `pool_size=5, max_overflow=10`）。
+
+| 决策点 | 说明 |
+|:---|:---|
+| Session 自管 | Generator 内部 `async with async_session()` 创建独立短 session，LLM 流式阶段不占用 DB 连接，DB 占用从 30s 降至 ~10ms |
+| 单事务提交 | 消息 + Trace 同一事务 `commit()`，`TraceRecorder.finish()` 新增 `commit=False` 参数由外层统一提交，避免部分落库 |
+| 对象重查询 | `conv` 跨 session 处于 detached 状态，通过 `await s.get(Conversation, conv.id)` 重新绑定并获取最新状态 |
 
 ---
 

@@ -48,8 +48,7 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 15  # access_token 短有效期（对齐 API.md §2）
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # access_token 短有效期（别名，与 JWT_EXPIRE_MINUTES 同步）
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # access_token 短有效期（对齐 API.md §2）
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # refresh_token 长有效期
     REFRESH_TOKEN_SECRET_KEY: str = ""  # 空则回退到 JWT_SECRET_KEY
 
@@ -79,6 +78,9 @@ class Settings(BaseSettings):
     # ── Chunking ──
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 150
+    TOKEN_CHINESE_RATIO: float = 1.5       # 中文场景 token/字符 比率
+    TOKEN_ENGLISH_RATIO: float = 4.0       # 英文场景 token/字符 比率
+    TOKEN_CHINESE_THRESHOLD: float = 0.3   # 中文占比阈值（超过则使用中文比率）
 
     # ── Retrieval ──
     VECTOR_TOP_K: int = 10

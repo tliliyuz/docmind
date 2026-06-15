@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import RetrievalServiceException
-from app.core.redis_client import get_redis
+from app.core.redis_client import get_async_redis, get_redis
 from app.models.chunk import Chunk
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
@@ -311,7 +311,6 @@ async def invalidate_bm25_cache_async(kb_id: int) -> None:
 
     # 清除 Redis 缓存
     try:
-        from app.core.redis_client import get_async_redis
         async_redis = await get_async_redis()
         cache_key = _build_cache_key(kb_id)
         await async_redis.delete(cache_key)

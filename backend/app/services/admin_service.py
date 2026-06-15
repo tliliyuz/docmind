@@ -4,8 +4,6 @@
 """
 
 import logging
-import os
-from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +30,14 @@ from app.schemas.admin import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _escape_like(value: str) -> str:
+    r"""转义 SQL LIKE 通配符 `%` 和 `_`，防止用户输入被解释为 LIKE 模式。
+
+    MySQL / SQLite 默认使用 ``\`` 作为 ESCAPE 字符。
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def get_stats(db: AsyncSession) -> AdminStatsResponse:
@@ -119,7 +125,7 @@ async def list_all_kbs(
     if visibility is not None:
         conditions.append(KnowledgeBase.visibility == visibility)
     if search:
-        conditions.append(KnowledgeBase.name.like(f"%{search}%"))
+        conditions.append(KnowledgeBase.name.like(f"%{_escape_like(search)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)
@@ -193,7 +199,7 @@ async def list_all_documents(
     if status is not None:
         conditions.append(Document.status == status)
     if filename:
-        conditions.append(Document.filename.like(f"%{filename}%"))
+        conditions.append(Document.filename.like(f"%{_escape_like(filename)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)
@@ -275,7 +281,7 @@ async def list_users(
     if status is not None:
         conditions.append(User.status == status)
     if search:
-        conditions.append(User.username.like(f"%{search}%"))
+        conditions.append(User.username.like(f"%{_escape_like(search)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)

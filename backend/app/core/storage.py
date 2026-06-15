@@ -1,4 +1,5 @@
 """文件存储 — 抽象 StorageBackend + 本地磁盘实现，对齐 ARCHITECTURE.md §7.5"""
+import asyncio
 import os
 import re
 import uuid
@@ -63,28 +64,30 @@ class LocalStorage(StorageBackend):
     async def save(self, file: UploadFile, kb_id: int, doc_id: int) -> str:
         stored_name = generate_stored_filename(file.filename or "unnamed")
         target_dir = self._get_dir(kb_id, doc_id)
-        target_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(target_dir.mkdir, parents=True, exist_ok=True)
 
         file_path = target_dir / stored_name
         content = await file.read()
-        file_path.write_bytes(content)
+        await asyncio.to_thread(file_path.write_bytes, content)
         # 重置文件指针位置，供后续可能的重复读取
         await file.seek(0)
 
         return str(file_path)
 
     async def read(self, path: str) -> bytes:
-        return Path(path).read_bytes()
+        return await asyncio.to_thread(Path(path).read_bytes)
 
     async def delete(self, path: str) -> None:
         file_path = Path(path)
-        if file_path.is_file():
-            file_path.unlink()
+        if await asyncio.to_thread(file_path.is_file):
+            await asyncio.to_thread(file_path.unlink)
         # 尝试清理空目录（最多向上清理到知识库层级）
         for parent in [file_path.parent, file_path.parent.parent]:
             try:
-                if parent.is_dir() and not any(parent.iterdir()):
-                    parent.rmdir()
+                if await asyncio.to_thread(parent.is_dir) and not any(
+                    await asyncio.to_thread(list, parent.iterdir())
+                ):
+                    await asyncio.to_thread(parent.rmdir)
             except OSError:
                 break
 

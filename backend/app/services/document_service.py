@@ -1,9 +1,8 @@
 """文档业务逻辑 — 上传/批量上传/列表/详情/分块/删除/重新处理"""
+import asyncio
 import logging
 import uuid as uuid_lib
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 from typing import Any
 
 from fastapi import UploadFile
@@ -46,6 +45,8 @@ from app.schemas.document import (
 from app.ingest.tasks import delete_document as _delete_doc_task
 from app.ingest.tasks import ingest_document as _ingest_doc_task
 from app.services.knowledge_base_service import check_kb_active
+
+logger = logging.getLogger(__name__)
 
 # 允许的排序字段
 SORT_ALLOWED_FIELDS = {"created_at", "updated_at", "filename", "file_size", "status"}
@@ -144,10 +145,10 @@ async def upload_document(
                 if kb is not None:
                     kb.chunk_count = max(0, kb.chunk_count - old_chunk_count)
 
-            # 清理旧向量（ChromaDB）
+            # 清理旧向量（ChromaDB，同步 IO 包装到线程避免阻塞事件循环）
             try:
                 collection = get_collection()
-                collection.delete(where={"doc_id": doc.id})
+                await asyncio.to_thread(collection.delete, where={"doc_id": doc.id})
             except Exception:
                 logger.warning("ChromaDB 清理 doc=%d 向量失败，跳过", doc.id)
 
@@ -450,9 +451,10 @@ async def reprocess_document(
         )
 
     # 清理 ChromaDB 旧向量（新文档分块数可能少于旧文档，残留向量需清除）
+    # 同步 IO 包装到线程避免阻塞事件循环
     try:
         collection = get_collection()
-        collection.delete(where={"doc_id": doc_id})
+        await asyncio.to_thread(collection.delete, where={"doc_id": doc_id})
         logger.info("文档 %d reprocess 前 ChromaDB 旧向量已清理", doc_id)
     except Exception:
         logger.exception("文档 %d reprocess 前 ChromaDB 旧向量清理失败", doc_id)
