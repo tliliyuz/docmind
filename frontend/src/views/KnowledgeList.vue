@@ -11,7 +11,7 @@
           @input="onSearch"
         >
           <template #prefix>
-            <i class="fas fa-search" style="color: var(--dm-text-tertiary)"></i>
+            <i class="fas fa-search search-icon"></i>
           </template>
         </el-input>
       </div>
@@ -63,12 +63,12 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="edit">
-                  <i class="fas fa-pen" style="margin-right: 8px; width: 14px;"></i>
+                  <i class="fas fa-pen icon-gap-md icon-fw"></i>
                   编辑
                 </el-dropdown-item>
                 <el-dropdown-item command="delete" divided>
-                  <i class="fas fa-trash" style="margin-right: 8px; width: 14px; color: var(--dm-danger);"></i>
-                  <span style="color: var(--dm-danger);">删除</span>
+                  <i class="fas fa-trash icon-gap-md icon-fw text-danger"></i>
+                  <span class="text-danger">删除</span>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -141,11 +141,11 @@
         <el-form-item label="可见性" prop="visibility">
           <el-radio-group v-model="formData.visibility">
             <el-radio value="private">
-              <i class="fas fa-lock" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              <i class="fas fa-lock icon-gap-sm text-tertiary"></i>
               私有 — 仅自己和管理员可见
             </el-radio>
             <el-radio value="public">
-              <i class="fas fa-globe" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              <i class="fas fa-globe icon-gap-sm text-tertiary"></i>
               公开 — 所有用户可查看和检索
             </el-radio>
           </el-radio-group>
@@ -576,4 +576,12 @@ onMounted(() => {
   font-size: var(--dm-text-body);
   color: var(--dm-text-secondary);
 }
+
+/* 工具类 */
+.search-icon   { color: var(--dm-text-tertiary); }
+.icon-gap-sm   { margin-right: 4px; }
+.icon-gap-md   { margin-right: 8px; }
+.icon-fw       { width: 14px; }
+.text-tertiary { color: var(--dm-text-tertiary); }
+.text-danger   { color: var(--dm-danger); }
 </style>

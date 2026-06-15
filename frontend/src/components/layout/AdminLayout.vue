@@ -117,7 +117,7 @@ const isUsersActive = computed(() => {
 
 /* ===== Admin 侧边栏 ===== */
 .admin-sidebar {
-  width: 220px;
+  width: var(--dm-sidebar-width-admin);
   background: var(--dm-bg-sidebar);
   border-right: 1px solid var(--dm-border);
   box-shadow: var(--dm-shadow-sidebar);

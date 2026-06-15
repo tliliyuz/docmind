@@ -13,15 +13,15 @@
       </div>
       <div class="detail-header-actions" v-if="canManage">
         <button v-if="isOwner" class="ghost-btn" @click="openEditDialog">
-          <i class="fas fa-pen" style="margin-right: 4px;"></i> 编辑
+          <i class="fas fa-pen icon-gap-sm"></i> 编辑
         </button>
         <button class="ghost-btn danger" @click="confirmDeleteKb">
-          <i class="fas fa-trash" style="margin-right: 4px;"></i> 删除
+          <i class="fas fa-trash icon-gap-sm"></i> 删除
         </button>
       </div>
       <div class="detail-header-actions" v-else>
         <button class="btn-primary" @click="goToChat">
-          <i class="fas fa-comments" style="margin-right: 6px;"></i> 开始问答
+          <i class="fas fa-comments icon-gap-md"></i> 开始问答
         </button>
       </div>
     </div>
@@ -104,7 +104,7 @@
             placeholder="全部状态"
             clearable
             size="default"
-            style="width: 180px;"
+            class="filter-input-180"
             @change="reloadDocList"
           >
             <el-option label="全部状态" value="" />
@@ -129,7 +129,7 @@
               @input="reloadDocList"
             >
               <template #prefix>
-                <i class="fas fa-search" style="color: var(--dm-text-tertiary);"></i>
+                <i class="fas fa-search search-icon"></i>
               </template>
             </el-input>
           </div>
@@ -137,7 +137,7 @@
           <el-select
             v-model="sortOrder"
             size="default"
-            style="width: 130px;"
+            class="filter-input-st"
             @change="reloadDocList"
           >
             <el-option label="最新优先" value="desc" />
@@ -158,7 +158,7 @@
         v-else
         :data="store.docList"
         v-loading="store.docLoading"
-        style="width: 100%"
+        class="table-full"
         row-key="uuid"
       >
         <el-table-column prop="filename" label="文件名" min-width="200">
@@ -286,11 +286,11 @@
         <el-form-item label="可见性" prop="visibility">
           <el-radio-group v-model="editFormData.visibility">
             <el-radio value="private">
-              <i class="fas fa-lock" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              <i class="fas fa-lock icon-gap-sm text-tertiary"></i>
               私有 — 仅自己和管理员可见
             </el-radio>
             <el-radio value="public">
-              <i class="fas fa-globe" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              <i class="fas fa-globe icon-gap-sm text-tertiary"></i>
               公开 — 所有用户可查看和检索
             </el-radio>
           </el-radio-group>
@@ -325,7 +325,7 @@
           <div class="chunk-content">{{ chunk.preview || chunk.content }}</div>
         </div>
         <!-- 分块分页 -->
-        <div v-if="store.chunkTotal > chunkPageSize" class="pagination-wrap" style="margin-top: 16px;">
+        <div v-if="store.chunkTotal > chunkPageSize" class="pagination-wrap section-gap">
           <el-pagination
             v-model:current-page="chunkPage"
             :page-size="chunkPageSize"
@@ -346,6 +346,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { useKnowledgeStore, TERMINAL_STATUSES, isTerminal } from '@/stores/knowledge'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -699,30 +700,12 @@ function getStatusLabel(status) {
 }
 
 // ==================== 格式化工具函数 ====================
-function formatFileSize(bytes) {
-  if (!bytes) return '-'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
 function formatDate(dateStr) {
   if (!dateStr) return '-'
   return new Date(dateStr).toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  })
-}
-
-function formatDateTime(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
   })
 }
 
@@ -1188,4 +1171,14 @@ onUnmounted(() => {
   color: var(--dm-text-secondary);
   line-height: var(--dm-leading-body);
 }
+
+/* 工具类 */
+.filter-input-180 { width: 180px; }
+.filter-input-st  { width: 130px; }
+.table-full       { width: 100%; }
+.search-icon      { color: var(--dm-text-tertiary); }
+.icon-gap-sm      { margin-right: 4px; }
+.icon-gap-md      { margin-right: 6px; }
+.text-tertiary    { color: var(--dm-text-tertiary); }
+.section-gap      { margin-top: 16px; }
 </style>

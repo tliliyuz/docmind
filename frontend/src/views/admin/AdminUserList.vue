@@ -13,12 +13,12 @@
           placeholder="搜索用户名..."
           size="default"
           clearable
-          style="width: 240px;"
+          class="filter-input-xl"
           @input="onSearchInput"
           @clear="onSearchClear"
         >
           <template #prefix>
-            <i class="fas fa-search" style="color: var(--dm-text-tertiary);"></i>
+            <i class="fas fa-search search-icon"></i>
           </template>
         </el-input>
         <el-select
@@ -26,7 +26,7 @@
           placeholder="角色"
           clearable
           size="default"
-          style="width: 120px;"
+          class="filter-input-sm"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -38,7 +38,7 @@
           placeholder="状态"
           clearable
           size="default"
-          style="width: 120px;"
+          class="filter-input-sm"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -61,7 +61,7 @@
       v-else
       :data="list"
       v-loading="loading"
-      style="width: 100%"
+      class="table-full"
       row-key="id"
       highlight-current-row
       @row-click="goToDetail"
@@ -516,4 +516,10 @@ onMounted(loadList)
 .empty-desc {
   font-size: var(--dm-text-body);
 }
+
+/* 工具类 */
+.filter-input-sm { width: 120px; }
+.filter-input-xl { width: 240px; }
+.table-full      { width: 100%; }
+.search-icon     { color: var(--dm-text-tertiary); }
 </style>

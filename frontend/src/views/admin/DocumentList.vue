@@ -13,12 +13,12 @@
           placeholder="搜索文件名..."
           size="default"
           clearable
-          style="width: 220px;"
+          class="filter-input-lg"
           @input="onSearchInput"
           @clear="onSearchClear"
         >
           <template #prefix>
-            <i class="fas fa-search" style="color: var(--dm-text-tertiary);"></i>
+            <i class="fas fa-search search-icon"></i>
           </template>
         </el-input>
         <el-select
@@ -26,7 +26,7 @@
           placeholder="全部状态"
           clearable
           size="default"
-          style="width: 140px;"
+          class="filter-input-md"
           @change="reloadList"
         >
           <el-option label="全部状态" value="" />
@@ -44,7 +44,7 @@
         <el-select
           v-model="sortBy"
           size="default"
-          style="width: 120px;"
+          class="filter-input-sm"
           @change="reloadList"
         >
           <el-option label="上传时间" value="created_at" />
@@ -56,7 +56,7 @@
         <el-select
           v-model="sortOrder"
           size="default"
-          style="width: 100px;"
+          class="filter-input-xs"
           @change="reloadList"
         >
           <el-option label="降序" value="desc" />
@@ -78,7 +78,7 @@
       v-else
       :data="list"
       v-loading="loading"
-      style="width: 100%"
+      class="table-full"
       row-key="uuid"
     >
       <el-table-column prop="filename" label="文件名" min-width="200">
@@ -160,6 +160,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getAdminDocuments } from '@/api/admin'
 import { deleteDocument } from '@/api/knowledge'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 
 // ==================== 列表数据 ====================
 const loading = ref(false)
@@ -279,23 +280,6 @@ const STATUS_LABELS = {
 
 function getStatusLabel(status) {
   return STATUS_LABELS[status] || status || '--'
-}
-
-function formatFileSize(bytes) {
-  if (bytes == null) return '--'
-  const num = Number(bytes)
-  if (num === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.min(Math.floor(Math.log(num) / Math.log(1024)), units.length - 1)
-  return (num / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i]
-}
-
-function formatDateTime(isoString) {
-  if (!isoString) return '--'
-  const d = new Date(isoString)
-  if (isNaN(d.getTime())) return '--'
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 onMounted(loadList)
@@ -467,7 +451,7 @@ onMounted(loadList)
 }
 
 .empty-icon {
-  font-size: 48px;
+  font-size: var(--dm-text-4xl);
   margin-bottom: var(--dm-space-4);
   opacity: 0.5;
 }
@@ -482,4 +466,16 @@ onMounted(loadList)
 .empty-desc {
   font-size: var(--dm-text-body);
 }
+
+/* 筛选栏输入框宽度 */
+.filter-input-xs { width: 100px; }
+.filter-input-sm { width: 120px; }
+.filter-input-md { width: 140px; }
+.filter-input-lg { width: 220px; }
+
+/* 表格全宽 */
+.table-full { width: 100%; }
+
+/* 搜索图标 */
+.search-icon { color: var(--dm-text-tertiary); }
 </style>

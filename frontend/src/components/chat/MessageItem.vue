@@ -568,10 +568,9 @@ function getSourcePreviewHtml(src) {
 }
 
 /* 智能预览高亮标记（v-html 渲染，需 :deep() 穿透）
-   对齐 ARCHITECTURE.md §5.1.7：引用片段用 <mark> 黄色背景高亮
-   使用可见黄色替代 --dm-warning-light（#FFFBEB 过淡不可辨） */
+   对齐 ARCHITECTURE.md §5.1.7：引用片段用 <mark> 黄色背景高亮 */
 .source-content :deep(mark) {
-  background: #FFF3B0;
+  background: var(--dm-evidence-highlight-bg);
   color: var(--dm-text-primary);
   padding: 1px 3px;
   border-radius: 2px;

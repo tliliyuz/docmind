@@ -5,6 +5,7 @@
  * 使用 utils/sse.js 的 createSSEStream 处理事件流。
  */
 
+import api from './index.js'
 import { createSSEStream } from '@/utils/sse'
 
 /**
@@ -52,7 +53,6 @@ export function sendMessage(params, callbacks) {
  * @returns {Promise<{mine: Array, public: Array}>}
  */
 export async function fetchSelectableKBs() {
-  const { default: api } = await import('./index.js')
   const response = await api.get('/knowledge-bases/selectable')
   return response.data.data
 }

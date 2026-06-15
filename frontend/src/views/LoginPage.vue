@@ -211,7 +211,7 @@ async function handleSubmit() {
   background: var(--dm-bg-card);
   color: var(--dm-text-primary);
   font-weight: var(--dm-weight-semibold);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+  box-shadow: var(--dm-shadow-sm);
 }
 
 /* 表单 */

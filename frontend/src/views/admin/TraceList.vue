@@ -57,12 +57,12 @@
           placeholder="搜索问题..."
           size="default"
           clearable
-          style="width: 220px;"
+          class="filter-input-lg"
           @input="onSearchInput"
           @clear="onSearchClear"
         >
           <template #prefix>
-            <i class="fas fa-search" style="color: var(--dm-text-tertiary);"></i>
+            <i class="fas fa-search search-icon"></i>
           </template>
         </el-input>
         <el-select
@@ -70,7 +70,7 @@
           placeholder="状态"
           clearable
           size="default"
-          style="width: 120px;"
+          class="filter-input-sm"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -83,7 +83,7 @@
           placeholder="意图"
           clearable
           size="default"
-          style="width: 130px;"
+          class="filter-input-st"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -96,7 +96,7 @@
           placeholder="响应模式"
           clearable
           size="default"
-          style="width: 140px;"
+          class="filter-input-md"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -113,7 +113,7 @@
           start-placeholder="开始日期"
           end-placeholder="结束日期"
           size="default"
-          style="width: 260px;"
+          class="filter-input-xxl"
           :clearable="true"
           @change="reloadList"
         />
@@ -133,7 +133,7 @@
       v-else
       :data="list"
       v-loading="loading"
-      style="width: 100%"
+      class="table-full"
       row-key="trace_id"
       highlight-current-row
       @row-click="goToDetail"
@@ -233,6 +233,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getTraceList } from '@/api/trace'
+import { formatDateTime } from '@/utils/format'
 
 const router = useRouter()
 
@@ -347,14 +348,6 @@ function formatDuration(ms) {
   if (ms == null) return '--'
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
-}
-
-function formatDateTime(isoString) {
-  if (!isoString) return '--'
-  const d = new Date(isoString)
-  if (isNaN(d.getTime())) return '--'
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function statusEmoji(status) {
@@ -642,4 +635,15 @@ onMounted(loadList)
 .empty-desc {
   font-size: var(--dm-text-body);
 }
+
+/* 筛选栏输入框宽度 */
+.filter-input-sm  { width: 120px; }
+.filter-input-st  { width: 130px; }
+.filter-input-md  { width: 140px; }
+.filter-input-lg  { width: 220px; }
+.filter-input-xxl { width: 260px; }
+
+/* 通用工具类 */
+.table-full { width: 100%; }
+.search-icon { color: var(--dm-text-tertiary); }
 </style>

@@ -18,6 +18,9 @@
     --dm-danger-light: #FEF2F2;
     --dm-info-light: #EFF6FF;
 
+    /* ===== Evidence 高亮标记（RAG 引用片段，需比 --dm-warning-light 更醒目） ===== */
+    --dm-evidence-highlight-bg: #FFF3B0;
+
     /* ===== 孤儿会话警告横幅（会话关联 KB 被删除时显示） ===== */
     --dm-orphan-bg: #FFF8E1;
     --dm-orphan-border: #FFE082;
@@ -60,6 +63,7 @@
 
     /* ===== 字号 ===== */
     --dm-text-3xl: 36px;
+    --dm-text-4xl: 48px;
     --dm-text-2xl: 28px;
     --dm-text-xl: 24px;
     --dm-text-lg: 20px;

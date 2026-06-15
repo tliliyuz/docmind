@@ -253,7 +253,9 @@ function formatDuration(ms) {
 function highlightJson(obj) {
   const jsonStr = JSON.stringify(obj, null, 2)
   const result = hljs.highlight(jsonStr, { language: 'json' })
-  return result.value
+  // 防御层：剥离 highlight.js 可能引入的非 span 标签（如 <script>），
+  // JSON.stringify 已转义数据中的 HTML 实体，此层为纵深防御
+  return result.value.replace(/<(?!\/?span[ >])[^>]*>/gi, '')
 }
 
 function statusEmoji(status) {

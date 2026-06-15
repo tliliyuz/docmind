@@ -169,6 +169,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminUserDetail, changeUserStatus, resetUserPassword } from '@/api/admin'
+import { formatDateTime } from '@/utils/format'
 
 const router = useRouter()
 const route = useRoute()
@@ -286,14 +287,6 @@ async function handleResetSubmit() {
 }
 
 // ==================== 工具函数 ====================
-function formatDateTime(isoString) {
-  if (!isoString) return '--'
-  const d = new Date(isoString)
-  if (isNaN(d.getTime())) return '--'
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 function formatRelativeTime(isoString) {
   if (!isoString) return '从未活跃'
   const d = new Date(isoString)

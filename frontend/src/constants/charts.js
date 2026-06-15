@@ -1,49 +1,62 @@
 /** ECharts 图表配置常量
 
-颜色方案对齐 UIDESIGN.md Design Token，保持视觉一致性。
+颜色方案对齐 UIDESIGN.md Design Token，通过 CSS 自定义属性运行时同步。
+使用 `getChartColors()` 获取当前主题下的颜色值，保持与 Design Token 一致。
 */
 
-/** 颜色方案 — 基于 Design Token 语义色 */
-export const CHART_COLORS = {
-  // 系列色
-  success: '#10B981',   // --dm-success
-  danger: '#EF4444',    // --dm-danger
-  info: '#3B82F6',      // --dm-info
-  warning: '#F59E0B',   // --dm-warning
-  primary: '#1A1A1A',   // --dm-primary
+/**
+ * 从 CSS 自定义属性（Design Token）读取图表颜色
+ * 运行时同步，支持暗色模式切换
+ * @returns {{ success, danger, info, warning, primary, inputToken, outputToken, p50, p95, p99, textSecondary, textTertiary, border, bgPage }}
+ */
+export function getChartColors() {
+  const style = getComputedStyle(document.documentElement)
+  const get = (name) => style.getPropertyValue(name).trim() || null
 
-  // Token 图表用色
-  inputToken: '#3B82F6',   // 蓝色（输入）
-  outputToken: '#10B981',  // 绿色（输出）
+  return {
+    // 系列色（对齐语义色 Design Token）
+    success: get('--dm-success') || '#10B981',
+    danger: get('--dm-danger') || '#EF4444',
+    info: get('--dm-info') || '#3B82F6',
+    warning: get('--dm-warning') || '#F59E0B',
+    primary: get('--dm-primary') || '#1A1A1A',
 
-  // 延迟图表用色
-  p50: '#3B82F6',    // 蓝色
-  p95: '#F59E0B',    // 橙色
-  p99: '#EF4444',    // 红色
+    // Token 图表用色
+    inputToken: get('--dm-info') || '#3B82F6',
+    outputToken: get('--dm-success') || '#10B981',
 
-  // 中性色
-  textSecondary: '#737373',
-  textTertiary: '#A3A3A3',
-  border: '#E0E0E0',
-  bgPage: '#F2F2F2',
+    // 延迟图表用色
+    p50: get('--dm-info') || '#3B82F6',
+    p95: get('--dm-warning') || '#F59E0B',
+    p99: get('--dm-danger') || '#EF4444',
+
+    // 中性色
+    textSecondary: get('--dm-text-secondary') || '#737373',
+    textTertiary: get('--dm-text-tertiary') || '#A3A3A3',
+    border: get('--dm-border') || '#E0E0E0',
+    bgPage: get('--dm-bg-page') || '#F2F2F2',
+  }
 }
 
-/** 通用 tooltip 配置 */
-export const TOOLTIP_CONFIG = {
-  trigger: 'axis',
-  backgroundColor: '#FFFFFF',
-  borderColor: '#E0E0E0',
-  borderWidth: 1,
-  textStyle: {
-    color: '#1A1A1A',
-    fontSize: 13,
-  },
-  axisPointer: {
-    type: 'cross',
-    crossStyle: {
-      color: '#A3A3A3',
+/** 通用 tooltip 配置（颜色从 CSS Token 读取） */
+export function getTooltipConfig() {
+  const c = getChartColors()
+  return {
+    trigger: 'axis',
+    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--dm-bg-card').trim() || '#FFFFFF',
+    borderColor: c.border,
+    borderWidth: 1,
+    textStyle: {
+      color: c.primary,
+      fontSize: 13,
     },
-  },
+    axisPointer: {
+      type: 'cross',
+      crossStyle: {
+        color: c.textTertiary,
+      },
+    },
+  }
 }
 
 /** 通用 grid 配置 */
@@ -56,43 +69,52 @@ export const GRID_CONFIG = {
 }
 
 /** 通用 legend 配置 */
-export const LEGEND_CONFIG = {
-  top: 0,
-  right: 0,
-  textStyle: {
-    color: '#737373',
-    fontSize: 13,
-  },
-  itemWidth: 16,
-  itemHeight: 2,
+export function getLegendConfig() {
+  const c = getChartColors()
+  return {
+    top: 0,
+    right: 0,
+    textStyle: {
+      color: c.textSecondary,
+      fontSize: 13,
+    },
+    itemWidth: 16,
+    itemHeight: 2,
+  }
 }
 
 /** 通用 X 轴配置 */
-export const X_AXIS_CONFIG = {
-  type: 'category',
-  boundaryGap: false,
-  axisLine: {
-    lineStyle: { color: '#E0E0E0' },
-  },
-  axisTick: { show: false },
-  axisLabel: {
-    color: '#A3A3A3',
-    fontSize: 12,
-  },
+export function getXAxisConfig() {
+  const c = getChartColors()
+  return {
+    type: 'category',
+    boundaryGap: false,
+    axisLine: {
+      lineStyle: { color: c.border },
+    },
+    axisTick: { show: false },
+    axisLabel: {
+      color: c.textTertiary,
+      fontSize: 12,
+    },
+  }
 }
 
 /** 通用 Y 轴配置 */
-export const Y_AXIS_CONFIG = {
-  type: 'value',
-  splitLine: {
-    lineStyle: { color: '#EBEBEB', type: 'dashed' },
-  },
-  axisLine: { show: false },
-  axisTick: { show: false },
-  axisLabel: {
-    color: '#A3A3A3',
-    fontSize: 12,
-  },
+export function getYAxisConfig() {
+  const c = getChartColors()
+  return {
+    type: 'value',
+    splitLine: {
+      lineStyle: { color: c.bgPage, type: 'dashed' },
+    },
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: {
+      color: c.textTertiary,
+      fontSize: 12,
+    },
+  }
 }
 
 /** 毫秒格式化（tooltip/axisLabel 共用） */

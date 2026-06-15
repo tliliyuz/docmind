@@ -16,12 +16,12 @@
 import { watch } from 'vue'
 import { useECharts } from '@/composables/useECharts'
 import {
-  CHART_COLORS,
-  TOOLTIP_CONFIG,
+  getChartColors,
+  getTooltipConfig,
   GRID_CONFIG,
-  LEGEND_CONFIG,
-  X_AXIS_CONFIG,
-  Y_AXIS_CONFIG,
+  getLegendConfig,
+  getXAxisConfig,
+  getYAxisConfig,
   formatMs,
 } from '@/constants/charts'
 
@@ -37,6 +37,7 @@ const { chartRef, setOption } = useECharts()
 function renderChart() {
   if (!props.data || props.data.length === 0) return
 
+  const colors = getChartColors()
   const dates = props.data.map((item) => item.date)
   const p50Data = props.data.map((item) => item.p50)
   const p95Data = props.data.map((item) => item.p95)
@@ -44,7 +45,7 @@ function renderChart() {
 
   setOption({
     tooltip: {
-      ...TOOLTIP_CONFIG,
+      ...getTooltipConfig(),
       formatter(params) {
         const lines = params.map(
           (p) => `${p.marker} ${p.seriesName}: <b>${formatMs(p.value)}</b>`
@@ -53,18 +54,18 @@ function renderChart() {
       },
     },
     legend: {
-      ...LEGEND_CONFIG,
+      ...getLegendConfig(),
       data: ['P50', 'P95', 'P99'],
     },
     grid: GRID_CONFIG,
     xAxis: {
-      ...X_AXIS_CONFIG,
+      ...getXAxisConfig(),
       data: dates,
     },
     yAxis: {
-      ...Y_AXIS_CONFIG,
+      ...getYAxisConfig(),
       axisLabel: {
-        ...Y_AXIS_CONFIG.axisLabel,
+        ...getYAxisConfig().axisLabel,
         formatter: (val) => formatMs(val),
       },
     },
@@ -75,8 +76,8 @@ function renderChart() {
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: CHART_COLORS.p50 },
-        itemStyle: { color: CHART_COLORS.p50 },
+        lineStyle: { width: 2, color: colors.p50 },
+        itemStyle: { color: colors.p50 },
         data: p50Data,
       },
       {
@@ -85,8 +86,8 @@ function renderChart() {
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: CHART_COLORS.p95 },
-        itemStyle: { color: CHART_COLORS.p95 },
+        lineStyle: { width: 2, color: colors.p95 },
+        itemStyle: { color: colors.p95 },
         data: p95Data,
       },
       {
@@ -95,8 +96,8 @@ function renderChart() {
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: CHART_COLORS.p99 },
-        itemStyle: { color: CHART_COLORS.p99 },
+        lineStyle: { width: 2, color: colors.p99 },
+        itemStyle: { color: colors.p99 },
         data: p99Data,
       },
     ],

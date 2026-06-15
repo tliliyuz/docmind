@@ -13,12 +13,12 @@
           placeholder="搜索知识库名称..."
           size="default"
           clearable
-          style="width: 240px;"
+          class="filter-input-xl"
           @input="onSearchInput"
           @clear="onSearchClear"
         >
           <template #prefix>
-            <i class="fas fa-search" style="color: var(--dm-text-tertiary);"></i>
+            <i class="fas fa-search search-icon"></i>
           </template>
         </el-input>
         <el-select
@@ -26,7 +26,7 @@
           placeholder="可见性"
           clearable
           size="default"
-          style="width: 130px;"
+          class="filter-input-sm"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -38,7 +38,7 @@
           placeholder="状态"
           clearable
           size="default"
-          style="width: 130px;"
+          class="filter-input-sm"
           @change="reloadList"
         >
           <el-option label="全部" value="" />
@@ -61,7 +61,7 @@
       v-else
       :data="list"
       v-loading="loading"
-      style="width: 100%"
+      class="table-full"
       row-key="uuid"
     >
       <el-table-column prop="name" label="名称" min-width="180">
@@ -163,11 +163,11 @@
         <el-form-item label="可见性" prop="visibility">
           <el-radio-group v-model="editFormData.visibility">
             <el-radio value="private">
-              <i class="fas fa-lock" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              <i class="fas fa-lock icon-gap-sm text-tertiary"></i>
               私有
             </el-radio>
             <el-radio value="public">
-              <i class="fas fa-globe" style="margin-right: 4px; color: var(--dm-text-tertiary);"></i>
+              <i class="fas fa-globe icon-gap-sm text-tertiary"></i>
               公开
             </el-radio>
           </el-radio-group>
@@ -188,6 +188,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getAdminKnowledgeBases } from '@/api/admin'
 import { updateKnowledgeBase, deleteKnowledgeBase } from '@/api/knowledge'
+import { formatDateTime } from '@/utils/format'
 
 // ==================== 列表数据 ====================
 const loading = ref(false)
@@ -347,15 +348,6 @@ async function confirmDelete(row) {
   }
 }
 
-// ==================== 工具函数 ====================
-function formatDateTime(isoString) {
-  if (!isoString) return '--'
-  const d = new Date(isoString)
-  if (isNaN(d.getTime())) return '--'
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 onMounted(loadList)
 </script>
 
@@ -513,7 +505,7 @@ onMounted(loadList)
 }
 
 .empty-icon {
-  font-size: 48px;
+  font-size: var(--dm-text-4xl);
   margin-bottom: var(--dm-space-4);
   opacity: 0.5;
 }
@@ -528,4 +520,16 @@ onMounted(loadList)
 .empty-desc {
   font-size: var(--dm-text-body);
 }
+
+/* 筛选栏输入框宽度 */
+.filter-input-sm { width: 130px; }
+.filter-input-xl { width: 240px; }
+
+/* 表格全宽 */
+.table-full { width: 100%; }
+
+/* 通用工具类 */
+.search-icon { color: var(--dm-text-tertiary); }
+.icon-gap-sm { margin-right: 4px; }
+.text-tertiary { color: var(--dm-text-tertiary); }
 </style>

@@ -16,12 +16,12 @@
 import { watch } from 'vue'
 import { useECharts } from '@/composables/useECharts'
 import {
-  CHART_COLORS,
-  TOOLTIP_CONFIG,
+  getChartColors,
+  getTooltipConfig,
   GRID_CONFIG,
-  LEGEND_CONFIG,
-  X_AXIS_CONFIG,
-  Y_AXIS_CONFIG,
+  getLegendConfig,
+  getXAxisConfig,
+  getYAxisConfig,
 } from '@/constants/charts'
 
 const props = defineProps({
@@ -36,13 +36,14 @@ const { chartRef, setOption } = useECharts()
 function renderChart() {
   if (!props.data || props.data.length === 0) return
 
+  const colors = getChartColors()
   const dates = props.data.map((item) => item.date)
   const successData = props.data.map((item) => item.success)
   const errorData = props.data.map((item) => item.error)
 
   setOption({
     tooltip: {
-      ...TOOLTIP_CONFIG,
+      ...getTooltipConfig(),
       formatter(params) {
         const lines = params.map(
           (p) => `${p.marker} ${p.seriesName}: <b>${p.value}</b> 次`
@@ -51,16 +52,16 @@ function renderChart() {
       },
     },
     legend: {
-      ...LEGEND_CONFIG,
+      ...getLegendConfig(),
       data: ['成功', '失败'],
     },
     grid: GRID_CONFIG,
     xAxis: {
-      ...X_AXIS_CONFIG,
+      ...getXAxisConfig(),
       data: dates,
     },
     yAxis: {
-      ...Y_AXIS_CONFIG,
+      ...getYAxisConfig(),
       minInterval: 1,
     },
     series: [
@@ -70,8 +71,8 @@ function renderChart() {
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: CHART_COLORS.success },
-        itemStyle: { color: CHART_COLORS.success },
+        lineStyle: { width: 2, color: colors.success },
+        itemStyle: { color: colors.success },
         areaStyle: {
           color: {
             type: 'linear',
@@ -90,8 +91,8 @@ function renderChart() {
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: CHART_COLORS.danger },
-        itemStyle: { color: CHART_COLORS.danger },
+        lineStyle: { width: 2, color: colors.danger },
+        itemStyle: { color: colors.danger },
         areaStyle: {
           color: {
             type: 'linear',

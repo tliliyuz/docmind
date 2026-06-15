@@ -16,12 +16,12 @@
 import { watch } from 'vue'
 import { useECharts } from '@/composables/useECharts'
 import {
-  CHART_COLORS,
-  TOOLTIP_CONFIG,
+  getChartColors,
+  getTooltipConfig,
   GRID_CONFIG,
-  LEGEND_CONFIG,
-  X_AXIS_CONFIG,
-  Y_AXIS_CONFIG,
+  getLegendConfig,
+  getXAxisConfig,
+  getYAxisConfig,
   formatTokens,
 } from '@/constants/charts'
 
@@ -37,13 +37,14 @@ const { chartRef, setOption } = useECharts()
 function renderChart() {
   if (!props.data || props.data.length === 0) return
 
+  const colors = getChartColors()
   const dates = props.data.map((item) => item.date)
   const inputData = props.data.map((item) => item.input)
   const outputData = props.data.map((item) => item.output)
 
   setOption({
     tooltip: {
-      ...TOOLTIP_CONFIG,
+      ...getTooltipConfig(),
       formatter(params) {
         const lines = params.map(
           (p) => `${p.marker} ${p.seriesName}: <b>${formatTokens(p.value)}</b>`
@@ -52,19 +53,19 @@ function renderChart() {
       },
     },
     legend: {
-      ...LEGEND_CONFIG,
+      ...getLegendConfig(),
       data: ['Input Token', 'Output Token'],
     },
     grid: GRID_CONFIG,
     xAxis: {
-      ...X_AXIS_CONFIG,
+      ...getXAxisConfig(),
       boundaryGap: true,
       data: dates,
     },
     yAxis: {
-      ...Y_AXIS_CONFIG,
+      ...getYAxisConfig(),
       axisLabel: {
-        ...Y_AXIS_CONFIG.axisLabel,
+        ...getYAxisConfig().axisLabel,
         formatter: (val) => formatTokens(val),
       },
     },
@@ -75,7 +76,7 @@ function renderChart() {
         stack: 'token',
         barWidth: '40%',
         itemStyle: {
-          color: CHART_COLORS.inputToken,
+          color: colors.inputToken,
           borderRadius: [0, 0, 0, 0],
         },
         data: inputData,
@@ -86,7 +87,7 @@ function renderChart() {
         stack: 'token',
         barWidth: '40%',
         itemStyle: {
-          color: CHART_COLORS.outputToken,
+          color: colors.outputToken,
           borderRadius: [4, 4, 0, 0],
         },
         data: outputData,
