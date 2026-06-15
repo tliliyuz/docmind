@@ -31,6 +31,7 @@ from app.schemas.trace import (
     TraceLatencyItem,
     TraceListItem,
     TraceListResponse,
+    TraceListSummary,
     TraceResponseDistItem,
     TraceStatsResponse,
     TraceTokenItem,
@@ -42,12 +43,11 @@ from app.schemas.trace import (
 
 
 def _make_trace_list_item(
-    id=1,
     trace_id="trace-001",
     user_id=1,
     username="testuser",
-    conversation_id=100,
-    kb_id=10,
+    conversation_uuid="100000-0000-0000-0000-000000000100",
+    kb_uuid="000000-0000-0000-0000-000000000010",
     kb_name="测试KB",
     question="测试问题",
     status="success",
@@ -58,12 +58,11 @@ def _make_trace_list_item(
 ):
     """构造 TraceListItem"""
     return TraceListItem(
-        id=id,
         trace_id=trace_id,
         user_id=user_id,
         username=username,
-        conversation_id=conversation_id,
-        kb_id=kb_id,
+        conversation_uuid=conversation_uuid,
+        kb_uuid=kb_uuid,
         kb_name=kb_name,
         question=question,
         status=status,
@@ -75,14 +74,25 @@ def _make_trace_list_item(
     )
 
 
-def _make_trace_list_response(total=2, page=1, page_size=20, items=None):
+def _make_trace_list_response(total=2, page=1, page_size=20, items=None, summary=None):
     """构造 TraceListResponse"""
     if items is None:
         items = [
-            _make_trace_list_item(id=1, trace_id="trace-001", username="user1"),
-            _make_trace_list_item(id=2, trace_id="trace-002", username="user2"),
+            _make_trace_list_item(trace_id="trace-001", username="user1"),
+            _make_trace_list_item(trace_id="trace-002", username="user2"),
         ]
-    return TraceListResponse(total=total, page=page, page_size=page_size, items=items)
+    if summary is None and total > 0:
+        summary = TraceListSummary(
+            success=total,
+            error=0,
+            running=0,
+            success_rate=100.0,
+            avg_duration_ms=1500.0,
+            p95_duration_ms=1500.0,
+        )
+    return TraceListResponse(
+        total=total, page=page, page_size=page_size, items=items, summary=summary,
+    )
 
 
 def _make_trace_detail(
@@ -92,13 +102,12 @@ def _make_trace_detail(
 ):
     """构造 TraceDetailResponse"""
     return TraceDetailResponse(
-        id=1,
         trace_id=trace_id,
         user_id=1,
         username="testuser",
-        conversation_id=100,
+        conversation_uuid="100000-0000-0000-0000-000000000100",
         conversation_title="报销流程咨询",
-        kb_id=10,
+        kb_uuid="000000-0000-0000-0000-000000000010",
         kb_name="测试KB",
         question="报销需要哪些材料？",
         status=status,
@@ -288,7 +297,7 @@ class TestTraceListAPI:
                 total=50,
                 page=2,
                 page_size=5,
-                items=[_make_trace_list_item(id=i, trace_id=f"trace-{i:03d}") for i in range(6, 11)],
+                items=[_make_trace_list_item(trace_id=f"trace-{i:03d}") for i in range(6, 11)],
             )
 
             resp = await async_client.get(

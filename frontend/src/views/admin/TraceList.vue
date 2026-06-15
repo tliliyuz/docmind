@@ -25,7 +25,7 @@
           <i class="fas fa-percentage"></i>
         </div>
         <div>
-          <div class="stat-value">{{ summary.successRate }}%</div>
+          <div class="stat-value">{{ summary.success_rate }}%</div>
           <div class="stat-label">成功率</div>
         </div>
       </div>
@@ -34,7 +34,7 @@
           <i class="fas fa-clock"></i>
         </div>
         <div>
-          <div class="stat-value">{{ summary.avgDuration }} <span class="stat-unit">s</span></div>
+          <div class="stat-value">{{ formatSummaryDuration(summary.avg_duration_ms) }} <span class="stat-unit">s</span></div>
           <div class="stat-label">平均耗时</div>
         </div>
       </div>
@@ -43,7 +43,7 @@
           <i class="fas fa-tachometer-alt"></i>
         </div>
         <div>
-          <div class="stat-value">{{ summary.p95Duration }} <span class="stat-unit">s</span></div>
+          <div class="stat-value">{{ formatSummaryDuration(summary.p95_duration_ms) }} <span class="stat-unit">s</span></div>
           <div class="stat-label">P95 耗时</div>
         </div>
       </div>
@@ -229,7 +229,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getTraceList } from '@/api/trace'
@@ -250,22 +250,14 @@ const filterIntent = ref('')
 const filterResponse = ref('')
 const dateRange = ref(null)
 
-// 概览统计（基于当前页数据）
-const summary = computed(() => {
-  const items = list.value
-  const cnt = items.length
-  if (cnt === 0) {
-    return { success: 0, error: 0, running: 0, successRate: '0.0', avgDuration: '0.00', p95Duration: '0.00' }
-  }
-  const success = items.filter(t => t.status === 'success').length
-  const error = items.filter(t => t.status === 'error').length
-  const running = items.filter(t => t.status === 'partial').length
-  const successRate = ((success / cnt) * 100).toFixed(1)
-  const durations = items.map(t => t.total_duration_ms).sort((a, b) => a - b)
-  const avgDuration = (durations.reduce((s, v) => s + v, 0) / cnt / 1000).toFixed(2)
-  const p95Index = Math.ceil(cnt * 0.95) - 1
-  const p95Duration = (durations[Math.max(0, p95Index)] / 1000).toFixed(2)
-  return { success, error, running, successRate, avgDuration, p95Duration }
+// 概览统计（基于全量筛选结果，由后端计算）
+const summary = ref({
+  success: 0,
+  error: 0,
+  running: 0,
+  success_rate: '0.0',
+  avg_duration_ms: 0,
+  p95_duration_ms: 0,
 })
 
 let searchTimer = null
@@ -291,6 +283,9 @@ async function loadList() {
     if (data.code === '0') {
       list.value = data.data.items
       total.value = data.data.total
+      if (data.data.summary) {
+        summary.value = data.data.summary
+      }
     } else {
       ElMessage.error(data.message || '获取 Trace 列表失败')
     }
@@ -348,6 +343,11 @@ function formatDuration(ms) {
   if (ms == null) return '--'
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+function formatSummaryDuration(ms) {
+  if (ms == null || ms === 0) return '0.00'
+  return (ms / 1000).toFixed(2)
 }
 
 function statusEmoji(status) {

@@ -55,8 +55,28 @@ const MOCK_TRACES = [
 ]
 
 function mockSuccessResponse(items = MOCK_TRACES, total = 3) {
+  // 计算 summary（模拟后端行为）
+  let summary = null
+  if (items.length > 0) {
+    const success = items.filter(i => i.status === 'success').length
+    const error = items.filter(i => i.status === 'error').length
+    const running = items.filter(i => i.status === 'partial').length
+    const durations = items.map(i => i.total_duration_ms).filter(d => d != null)
+    const avg = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0
+    const sorted = [...durations].sort((a, b) => a - b)
+    const p95Idx = sorted.length ? Math.max(0, Math.floor(sorted.length * 0.95) - 1) : 0
+    const p95 = sorted.length ? sorted[Math.min(p95Idx, sorted.length - 1)] : 0
+    summary = {
+      success,
+      error,
+      running,
+      success_rate: total > 0 ? parseFloat(((success / total) * 100).toFixed(1)) : 0.0,
+      avg_duration_ms: Math.round(avg * 10) / 10,
+      p95_duration_ms: p95,
+    }
+  }
   mockGetTraceList.mockResolvedValue({
-    data: { code: '0', data: { items, total } },
+    data: { code: '0', data: { items, total, summary } },
   })
 }
 

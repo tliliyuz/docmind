@@ -25,6 +25,16 @@ class TraceListItem(BaseModel):
     created_at: datetime
 
 
+class TraceListSummary(BaseModel):
+    """Trace 列表概览统计（基于全量筛选结果，非单页）"""
+    success: int = 0
+    error: int = 0
+    running: int = Field(0, description="partial 状态数量")
+    success_rate: float = Field(0.0, description="成功率百分比")
+    avg_duration_ms: float = Field(0.0, description="平均耗时（毫秒）")
+    p95_duration_ms: float = Field(0.0, description="P95 耗时（毫秒）")
+
+
 class TraceListResponse(BaseModel):
     """GET /api/admin/traces 响应
 
@@ -34,6 +44,7 @@ class TraceListResponse(BaseModel):
     page: int
     page_size: int
     items: list[TraceListItem]
+    summary: TraceListSummary | None = None
 
 
 class TraceSpanBase(BaseModel):

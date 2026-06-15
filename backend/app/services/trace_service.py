@@ -24,6 +24,7 @@ from app.schemas.trace import (
     TraceLatencyItem,
     TraceListResponse,
     TraceListItem,
+    TraceListSummary,
     TraceResponseDistItem,
     TraceStatsResponse,
     TraceTokenItem,
@@ -104,6 +105,71 @@ async def list_traces(
     count_q = select(func.count()).select_from(base_q.subquery())
     total = (await db.execute(count_q)).scalar() or 0
 
+    # 概览统计（基于全量筛选结果，非单页）
+    summary = TraceListSummary()
+    if total > 0:
+        # 构建仅针对 Trace 表的筛选查询（不含 JOIN，避免子查询列引用问题）
+        def _trace_where(q):
+            if user_id is not None:
+                q = q.where(Trace.user_id == user_id)
+            if status is not None:
+                q = q.where(Trace.status == status)
+            if intent_type is not None:
+                q = q.where(Trace.intent_type == intent_type)
+            if response_mode is not None:
+                q = q.where(Trace.response_mode == response_mode)
+            if start_date is not None:
+                q = q.where(Trace.created_at >= start_date)
+            if end_date is not None:
+                q = q.where(Trace.created_at <= end_date)
+            if search:
+                q = q.where(Trace.question.like(f"%{search}%"))
+            return q
+
+        # 按状态分组计数
+        status_q = _trace_where(
+            select(Trace.status, func.count().label("cnt"))
+        ).group_by(Trace.status)
+        status_rows = (await db.execute(status_q)).all()
+        success = 0
+        error = 0
+        running = 0
+        for row in status_rows:
+            if row.status == "success":
+                success = row.cnt
+            elif row.status == "error":
+                error = row.cnt
+            elif row.status == "partial":
+                running = row.cnt
+        success_rate = round((success / total) * 100, 1)
+
+        # 平均耗时
+        avg_q = _trace_where(
+            select(func.coalesce(func.avg(Trace.total_duration_ms), 0))
+        )
+        avg_duration_ms = float((await db.execute(avg_q)).scalar() or 0)
+
+        # P95 耗时（排序取第 95 百分位）
+        durations_q = _trace_where(
+            select(Trace.total_duration_ms)
+            .where(Trace.total_duration_ms.isnot(None))
+            .order_by(Trace.total_duration_ms)
+        )
+        duration_rows = (await db.execute(durations_q)).scalars().all()
+        p95_duration_ms = 0.0
+        if duration_rows:
+            p95_index = max(0, int(len(duration_rows) * 0.95) - 1)
+            p95_duration_ms = float(duration_rows[min(p95_index, len(duration_rows) - 1)])
+
+        summary = TraceListSummary(
+            success=success,
+            error=error,
+            running=running,
+            success_rate=success_rate,
+            avg_duration_ms=round(avg_duration_ms, 1),
+            p95_duration_ms=p95_duration_ms,
+        )
+
     # 分页数据
     q = (
         base_q
@@ -132,7 +198,7 @@ async def list_traces(
         ))
 
     return TraceListResponse(
-        total=total, page=page, page_size=page_size, items=items,
+        total=total, page=page, page_size=page_size, items=items, summary=summary,
     )
 
 
