@@ -86,9 +86,11 @@ def _mock_db_with_conversation(db, conv, kb=None, doc_count=1, user_msg=None, as
         assistant_msg.content = "这是LLM的回答"
 
     def get_side_effect(model, pk):
-        if model.__name__ == "KnowledgeBase":
+        name = getattr(model, '__name__', '')
+        if name == "KnowledgeBase":
             return kb
-        if model.__name__ == "Conversation":
+        if name == "Conversation" or not name:
+            # not name → model is a MagicMock（patched class），返回 conv
             return conv
         return None
 
@@ -148,14 +150,16 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
     if llm_chunks is None:
         llm_chunks = _make_llm_chunks()
 
-    _mock_db_with_conversation(db, conv)
-
     mock_conv = MagicMock()
     mock_conv.id = conv.id
     mock_conv.uuid = _TEST_CONV_UUID
     mock_conv.user_id = conv.user_id
     mock_conv.message_count = getattr(conv, 'message_count', 0)
     mock_conv.title = getattr(conv, 'title', '新对话')
+
+    # 使用 mock_conv 统一 db.get 和 mock_session.get 的返回值，
+    # 确保 _validate_and_prepare 和 generator 对 message_count/title 的修改落在同一对象上
+    _mock_db_with_conversation(db, mock_conv)
 
     mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
     mock_assistant_msg = MagicMock(
@@ -165,6 +169,22 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
 
     with ExitStack() as stack:
         mocks = {}
+
+        # Mock async_session：generator 内部自管短 session（ADR-017）
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_conv)
+        mock_session.add = MagicMock()
+        mock_session.flush = AsyncMock()
+        mock_session.refresh = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mocks['async_session'] = stack.enter_context(
+            patch("app.services.chat_service.async_session",
+                  return_value=mock_ctx))
+        mocks['mock_session'] = mock_session
 
         if with_conversation:
             mocks['conv_patch'] = stack.enter_context(
@@ -510,17 +530,20 @@ class TestChatMessageSaved:
             )
             await _consume_sse(response)
 
-        # 验证 db.add 被调用 3 次：Conversation + Message(user) + Message(assistant)
-        add_calls = db.add.call_args_list
-        assert len(add_calls) == 3
+        # 验证消息落库（ADR-017：generator 内短 session）
+        # db.add：Conversation + Message(user) — 在 _validate_and_prepare 中
+        db_add_calls = db.add.call_args_list
+        assert len(db_add_calls) == 2
 
         # 第二次调用是 user message
-        user_msg_arg = add_calls[1][0][0]
+        user_msg_arg = db_add_calls[1][0][0]
         assert user_msg_arg.role == "user"
         assert user_msg_arg.content == "测试问题"
 
-        # 第三次调用是 assistant message
-        assistant_msg_arg = add_calls[2][0][0]
+        # mock_session.add：Message(assistant) — 在 generator 短 session 中
+        session_add_calls = mocks['mock_session'].add.call_args_list
+        assert len(session_add_calls) == 1
+        assistant_msg_arg = session_add_calls[0][0][0]
         assert assistant_msg_arg.role == "assistant"
         assert assistant_msg_arg.thinking_content is None
 
@@ -546,7 +569,7 @@ class TestChatMessageCount:
         with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
                                   llm_chunks=_make_llm_chunks(["回答"]),
                                   token_estimate=30,
-                                  with_conversation=False, with_messages=False):
+                                  with_conversation=False, with_messages=False) as mocks:
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=_TEST_CONV_UUID, kb_id=_TEST_KB_UUID,
@@ -555,7 +578,9 @@ class TestChatMessageCount:
             await _consume_sse(response)
 
         # message_count: 初始 10 → +1(user) → +1(assistant) = 12
-        assert conv.message_count == 12
+        # ADR-017: _validate_and_prepare 和 generator 通过 _mock_db_with_conversation(db, mock_conv)
+        # 统一修改 mocks['conv']，确保两个阶段落在同一对象上
+        assert mocks['conv'].message_count == 12
 
 
 class TestChatTitleGeneration:

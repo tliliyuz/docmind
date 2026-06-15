@@ -191,8 +191,8 @@ class TestIdempotencyLockIntegration:
     @pytest.mark.asyncio
     async def test_锁被占用时返回locked(self):
         """幂等锁已被占用时，任务应返回 locked 状态"""
-        with patch("app.ingest.tasks.acquire_idempotency_lock", return_value=False):
-            with patch("app.ingest.tasks.release_idempotency_lock"):
+        with patch("app.ingest.tasks.acquire_idempotency_lock_async", return_value=False):
+            with patch("app.ingest.tasks.release_idempotency_lock_async"):
                 result = await _ingest_document_async(1)
 
         assert result["status"] == "locked"

@@ -7,6 +7,7 @@ from dataclasses import asdict
 import httpx
 
 from app.config import settings
+from app.core.exceptions import EmbeddingTimeoutException
 from app.rag.embedder import (
     EmbedResult,
     embed_chunks,
@@ -283,14 +284,14 @@ class TestEmbedRetry:
         assert mock_client.__aenter__.return_value.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_全部重试失败后抛出RuntimeError(self):
-        """5 次全部失败，抛出 RuntimeError"""
+    async def test_全部重试失败后抛出EmbeddingTimeoutException(self):
+        """5 次全部失败，抛出 EmbeddingTimeoutException"""
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value.post.side_effect = httpx.TimeoutException("timeout")
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             with patch("asyncio.sleep", AsyncMock()):
-                with pytest.raises(RuntimeError, match="已重试 5 次"):
+                with pytest.raises(EmbeddingTimeoutException, match="已重试 5 次"):
                     await embed_chunks(["测试"])
 
         assert mock_client.__aenter__.return_value.post.call_count == settings.EMBED_MAX_RETRIES

@@ -40,7 +40,13 @@ def _make_history(messages: list[tuple[str, str]]) -> list[dict[str, str]]:
 # ===== 触发判断 _needs_rewrite() =====
 
 class TestNeedsRewrite:
-    """触发判断测试（U8.20–U8.33）"""
+    """触发判断测试（U8.20–U8.33）
+
+    **技术债务**：直接测试私有函数 `_needs_rewrite()`，违反 CLAUDE.md「禁止直接测试
+    `_` 前缀的私有方法」规范。保留现有测试（纯逻辑函数单元测试有工程价值，
+    信号词判断的 14 个边界用例通过 rewrite_query() 测试需要 mock LLM 开销过大），
+    后续应在 rewrite_query() 集成测试中增加代表性触发/跳过用例。
+    """
 
     # --- 无历史 ---
 
@@ -277,6 +283,47 @@ class TestRewriteQueryCorrectness:
         assert "第二轮的回答内容" in user_msg_content
         assert "代码评审的标准是什么？" in user_msg_content
         assert "代码评审需要至少 2 位资深工程师参与" in user_msg_content
+
+    @pytest.mark.asyncio
+    async def test_无历史时仍调用LLM完成改写(self):
+        """无历史时 rewrite_query 仍调用 LLM，验证公共 API 完整流程"""
+        mock_result = MagicMock()
+        mock_result.content = "请假申请流程是什么？"
+        mock_result.prompt_tokens = 30
+        mock_result.completion_tokens = 10
+
+        with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_result
+            result = await rewrite_query("它需要几个人参加？", history=[])
+
+        mock_llm.assert_called_once()
+        assert result.rewritten == "请假申请流程是什么？"
+        assert result.metadata["model"] is not None
+        assert result.metadata["input_tokens"] == 30
+        assert result.metadata["output_tokens"] == 10
+
+    @pytest.mark.asyncio
+    async def test_完整问题经LLM返回不变(self):
+        """完整问题经 rewrite_query → LLM 返回相同问题，结果正确"""
+        history = _make_history([
+            ("user", "年假怎么申请？"),
+            ("assistant", "年假需要在 OA 系统提交……"),
+        ])
+        mock_result = MagicMock()
+        mock_result.content = "新员工入职流程具体包含哪些步骤？"
+        mock_result.prompt_tokens = 60
+        mock_result.completion_tokens = 15
+
+        with patch("app.rag.query_rewriter.chat_completion", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = mock_result
+            result = await rewrite_query(
+                "新员工入职流程具体包含哪些步骤？", history=history
+            )
+
+        mock_llm.assert_called_once()
+        assert result.rewritten == "新员工入职流程具体包含哪些步骤？"
+        assert result.metadata["input_tokens"] == 60
+        assert result.metadata["output_tokens"] == 15
 
 
 # ===== 降级行为 =====

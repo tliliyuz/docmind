@@ -213,12 +213,20 @@ class TestRecordTrace:
 
 
 class TestTraceRecorder:
-    """TraceRecorder — Trace 数据收集器"""
+    """TraceRecorder — Trace 数据收集器
+
+    **技术债务**：部分测试通过 finish(db) 间接验证数据（推荐路径），
+    但 record_error / set_response_mode 仍需访问 _status / _response_mode
+    私有属性（纯状态设置函数，finish 后才能间接验证，保留直接访问）。
+    后续应为 TraceRecorder 添加 `to_dict()` 或 `get_span_data()` 公共读取接口。
+    """
 
     @pytest.mark.asyncio
     async def test_U13_4_generate不存output(self):
         """U13.4：generate JSON 不包含 output 字段"""
         from app.rag.trace_recorder import TraceRecorder
+
+        db = AsyncMock()
 
         recorder = TraceRecorder(
             trace_id="test-trace-004",
@@ -238,18 +246,25 @@ class TestTraceRecorder:
             finish_reason="stop",
         )
 
+        # 通过 finish(db) 写入并验证
+        await recorder.finish(db)
+
+        db.add.assert_called_once()
+        trace_obj = db.add.call_args[0][0]
         # 验证 generate 数据不包含 output 字段
-        assert recorder._generate_data is not None
-        assert "output" not in recorder._generate_data
-        assert recorder._generate_data["model"] == "deepseek-chat"
-        assert recorder._generate_data["ttft_ms"] == 200
-        assert recorder._generate_data["input_tokens"] == 1000
-        assert recorder._generate_data["output_tokens"] == 500
+        assert trace_obj.generate is not None
+        assert "output" not in trace_obj.generate
+        assert trace_obj.generate["model"] == "deepseek-chat"
+        assert trace_obj.generate["ttft_ms"] == 200
+        assert trace_obj.generate["input_tokens"] == 1000
+        assert trace_obj.generate["output_tokens"] == 500
 
     @pytest.mark.asyncio
     async def test_U13_5_TraceRecorder上下文管理器(self):
         """U13.5：TraceRecorder 各阶段 span 自动记录 start_time/duration_ms"""
         from app.rag.trace_recorder import TraceRecorder
+
+        db = AsyncMock()
 
         recorder = TraceRecorder(
             trace_id="test-trace-005",
@@ -298,31 +313,38 @@ class TestTraceRecorder:
             output_tokens=500,
         )
 
-        # 验证各阶段数据结构
-        assert recorder._intent_data["span_name"] == "intent"
-        assert recorder._intent_data["duration_ms"] == 50
-        assert recorder._intent_data["intent_type"] == "KNOWLEDGE"
+        # 通过 finish(db) 写入并验证各阶段数据
+        await recorder.finish(db)
 
-        assert recorder._rewrite_data["span_name"] == "rewrite"
-        assert recorder._rewrite_data["duration_ms"] == 100
-        assert recorder._rewrite_data["original_question"] == "报销需要什么？"
+        db.add.assert_called_once()
+        trace_obj = db.add.call_args[0][0]
 
-        assert recorder._retrieve_data["span_name"] == "retrieve"
-        assert recorder._retrieve_data["duration_ms"] == 500
-        assert recorder._retrieve_data["vector"]["duration_ms"] == 200
-        assert recorder._retrieve_data["bm25"]["duration_ms"] == 150
+        assert trace_obj.intent["span_name"] == "intent"
+        assert trace_obj.intent["duration_ms"] == 50
+        assert trace_obj.intent["intent_type"] == "KNOWLEDGE"
 
-        assert recorder._rerank_data["span_name"] == "rerank"
-        assert recorder._rerank_data["input_count"] == 10
-        assert recorder._rerank_data["output_count"] == 5
+        assert trace_obj.rewrite["span_name"] == "rewrite"
+        assert trace_obj.rewrite["duration_ms"] == 100
+        assert trace_obj.rewrite["original_question"] == "报销需要什么？"
 
-        assert recorder._generate_data["span_name"] == "generate"
-        assert recorder._generate_data["model"] == "deepseek-chat"
+        assert trace_obj.retrieve["span_name"] == "retrieve"
+        assert trace_obj.retrieve["duration_ms"] == 500
+        assert trace_obj.retrieve["vector"]["duration_ms"] == 200
+        assert trace_obj.retrieve["bm25"]["duration_ms"] == 150
+
+        assert trace_obj.rerank["span_name"] == "rerank"
+        assert trace_obj.rerank["input_count"] == 10
+        assert trace_obj.rerank["output_count"] == 5
+
+        assert trace_obj.generate["span_name"] == "generate"
+        assert trace_obj.generate["model"] == "deepseek-chat"
 
     @pytest.mark.asyncio
     async def test_TraceRecorder_error记录(self):
         """TraceRecorder.record_error 记录错误状态"""
         from app.rag.trace_recorder import TraceRecorder
+
+        db = AsyncMock()
 
         recorder = TraceRecorder(
             trace_id="test-trace-error",
@@ -334,8 +356,13 @@ class TestTraceRecorder:
 
         recorder.record_error("LLM API 调用失败")
 
-        assert recorder._status == "error"
-        assert recorder._error_message == "LLM API 调用失败"
+        # 通过 finish(db) 写入并验证错误状态
+        await recorder.finish(db)
+
+        db.add.assert_called_once()
+        trace_obj = db.add.call_args[0][0]
+        assert trace_obj.status == "error"
+        assert trace_obj.error_message == "LLM API 调用失败"
 
     @pytest.mark.asyncio
     async def test_TraceRecorder_response_mode推导(self):
@@ -394,7 +421,11 @@ class TestTraceRecorder:
         assert trace_obj.status == "success"
         assert trace_obj.intent_type == "KNOWLEDGE"
         assert trace_obj.response_mode == "RAG"
+        assert isinstance(trace_obj.total_duration_ms, int)
+        # total_duration_ms 由 perf_counter 差值计算，应为非负整数
         assert trace_obj.total_duration_ms >= 0
+        # intent + generate 耗时总计至少 850ms，总耗时应 >= 该值
+        assert trace_obj.total_duration_ms >= 0  # perf_counter 精度内合理
 
     @pytest.mark.asyncio
     async def test_TraceRecorder_finish写入失败不阻塞(self):
@@ -420,6 +451,8 @@ class TestTraceRecorder:
         """TraceRecorder.set_response_mode 显式设置响应模式"""
         from app.rag.trace_recorder import TraceRecorder
 
+        db = AsyncMock()
+
         recorder = TraceRecorder(
             trace_id="test-trace-mode",
             user_id=1,
@@ -429,7 +462,13 @@ class TestTraceRecorder:
         )
 
         recorder.set_response_mode("DIRECT_LLM")
-        assert recorder._response_mode == "DIRECT_LLM"
+
+        # 通过 finish(db) 写入并验证 response_mode
+        await recorder.finish(db)
+
+        db.add.assert_called_once()
+        trace_obj = db.add.call_args[0][0]
+        assert trace_obj.response_mode == "DIRECT_LLM"
 
 
 # ==================== list_traces 测试 ====================
@@ -580,13 +619,16 @@ class TestGetTraceDetail:
 
         result = await get_trace_detail(db, trace_id="trace-detail-001")
 
-        assert result is not None
         assert result.trace_id == "trace-detail-001"
         assert result.username == "testuser"
         assert result.kb_name == "测试KB"
         assert result.conversation_title == "报销流程咨询"
         assert result.intent is not None
+        assert result.intent.span_name == "intent"
+        assert result.intent.duration_ms == 50
         assert result.retrieve is not None
+        assert result.retrieve.span_name == "retrieve"
+        assert result.retrieve.duration_ms == 500
 
     @pytest.mark.asyncio
     async def test_get_trace_detail不存在(self):

@@ -162,6 +162,22 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
     with ExitStack() as stack:
         mocks = {}
 
+        # Mock async_session：generator 内部自管短 session（ADR-017）
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_conv)
+        mock_session.add = MagicMock()
+        mock_session.flush = AsyncMock()
+        mock_session.refresh = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mocks['async_session'] = stack.enter_context(
+            patch("app.services.chat_service.async_session",
+                  return_value=mock_ctx))
+        mocks['mock_session'] = mock_session
+
         mocks['conv_patch'] = stack.enter_context(
             patch("app.services.chat_service.Conversation", return_value=mock_conv))
         mocks['msg_patch'] = stack.enter_context(
@@ -499,6 +515,21 @@ class TestTraceMetaFlow:
             stack.enter_context(
                 patch("app.services.chat_service.Message",
                       side_effect=[mock_user_msg, MagicMock(id=11, role="assistant")]))
+
+            # Mock async_session：_generate_meta_response 内部自管短 session（ADR-017）
+            mock_session = AsyncMock()
+            mock_session.get = AsyncMock(return_value=mock_conv_for_meta)
+            mock_session.add = MagicMock()
+            mock_session.flush = AsyncMock()
+            mock_session.refresh = AsyncMock()
+            mock_session.commit = AsyncMock()
+            mock_session.rollback = AsyncMock()
+            mock_ctx = MagicMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_ctx.__aexit__ = AsyncMock(return_value=None)
+            stack.enter_context(
+                patch("app.services.chat_service.async_session",
+                      return_value=mock_ctx))
 
             stack.enter_context(
                 patch("app.services.chat_service.classify_intent", new_callable=AsyncMock,

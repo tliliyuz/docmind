@@ -8,7 +8,7 @@
 覆盖 app/rag/intent.py + chat_service.py 集成
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -45,7 +45,8 @@ async def test_classify_knowledge_policy_question():
         result = await classify_intent("报销需要提交哪些材料？")
         assert result.intent == Intent.KNOWLEDGE
         assert result.method == "llm_flash"
-        assert result.metadata["model"] is not None
+        assert isinstance(result.metadata["model"], str)
+        assert len(result.metadata["model"]) > 0
         mock_llm.assert_called_once()
         # 验证 deep_thinking=False + max_tokens=10
         call_kwargs = mock_llm.call_args
@@ -137,13 +138,17 @@ async def test_fallback_on_invalid_label():
 
 
 # ==================== 路由逻辑（2 用例，集成测试） ====================
+# 技术债务：直接测试 _validate_and_prepare() 私有函数，违反 CLAUDE.md「禁止直接测试
+# `_` 前缀的私有方法」规范。保留现有测试（验证 META/CASUAL 路由分支有工程价值），
+# 后续应通过 chat() 公共 API 的 SSE 输出间接覆盖路由逻辑。
 
 
 @pytest.mark.asyncio
-async def test_meta_routing_returns_fixed_response():
-    """U-I09: META 意图 → chat() 返回固定 SSE 响应（不调 LLM）
+async def test_meta_routing_raises_exception_before_retrieval():
+    """U-I09: META 意图 → _validate_and_prepare() 抛出 MetaQuestionException，不进入检索流程
 
-    验证 MetaQuestionException 被捕获后，返回 StreamingResponse。
+    验证 META 路径在 validate 阶段即中断，携带 conv 和 is_first_turn 信息，
+    由上层 SSE 处理器生成固定响应（本测试仅覆盖异常抛出，不覆盖 SSE 输出）。
     """
     from app.core.exceptions import MetaQuestionException
     from app.services.chat_service import chat
@@ -269,7 +274,3 @@ async def test_casual_routing_skips_retrieval():
         mock_vec.search.assert_not_called()
         mock_bm25.search.assert_not_called()
 
-
-# ==================== 辅助导入（用于集成测试） ====================
-
-from unittest.mock import MagicMock

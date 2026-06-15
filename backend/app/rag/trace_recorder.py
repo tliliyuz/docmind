@@ -216,10 +216,15 @@ class TraceRecorder:
         self._status = "error"
         self._error_message = error_message
 
-    async def finish(self, db: AsyncSession) -> None:
+    async def finish(self, db: AsyncSession, commit: bool = True) -> None:
         """计算总耗时并写入 traces 表。
 
         使用传入的 db session 写入。写入失败仅 log.warning，不阻塞主流程。
+
+        Args:
+            db: 数据库 session
+            commit: 是否在 add 后立即 commit。设为 False 时由调用方统一提交，
+                    用于与 assistant 消息在同一事务中落库（对齐 ADR-017）。
         """
         total_duration_ms = int((time.perf_counter() - self._t_start) * 1000)
 
@@ -237,6 +242,7 @@ class TraceRecorder:
         try:
             await record_trace(
                 db,
+                commit=commit,
                 trace_id=self.trace_id,
                 user_id=self.user_id,
                 conversation_id=self.conversation_id,

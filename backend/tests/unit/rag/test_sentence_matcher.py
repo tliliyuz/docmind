@@ -86,8 +86,8 @@ class TestMatchSentencesSingleSentence:
         # _SENTENCE_SEP 按 。！？!?\n 切句，切分后 strip() 去除标点
         assert "员工须提前3个工作日提交请假申请" in result.results[0].matched_sentence
         assert len(result.results[0].matched_sentence) >= 10
-        assert result.results[0].matched_sentence_score is not None
         assert isinstance(result.results[0].matched_sentence_score, float)
+        # BM25 在单文档语料中 IDF 可为负值，仅验证类型为 float
 
     def test_单句chunk_无句末标点仍可定位(self):
         """chunk 无句末标点（被 _SENTENCE_SEP 处理后为单句）"""
@@ -124,7 +124,9 @@ class TestMatchSentencesMultiChunk:
         assert "年假" in result.results[0].matched_sentence
         # chunk2 应匹配到病假相关句子（因为 question 含"年假"，与 chunk2 相关性低）
         assert result.results[1].matched_sentence is not None
-        assert len(result.results[1].matched_sentence) > 0
+        assert "病假" in result.results[1].matched_sentence, (
+            f"chunk2 应匹配病假相关句子，实际: {result.results[1].matched_sentence}"
+        )
 
     def test_同chunk不同question定位不同句子(self):
         """同一 chunk，不同 question 应定位到不同句子（确定性验证）"""
@@ -195,8 +197,8 @@ class TestMatchSentencesScore:
         result = match_sentences(output, "入职流程")
 
         score = result.results[0].matched_sentence_score
-        assert score is not None
         assert isinstance(score, float)
+        # BM25 在单文档语料中 IDF 可为负值，仅验证类型为 float
 
     def test_最佳句score高于其他句(self):
         """最佳句的 BM25 分数应高于（或等于）其他句"""
@@ -210,7 +212,7 @@ class TestMatchSentencesScore:
 
         # 验证最佳句确实是关于年假的
         assert "年假" in result.results[0].matched_sentence
-        assert result.results[0].matched_sentence_score is not None
+        assert isinstance(result.results[0].matched_sentence_score, float)
 
 
 # ==================== RetrievalResult 字段透传 ====================

@@ -237,12 +237,14 @@ class TestEvidencePreviewShortChunk:
         matched = match_sentences(output, "AAAA BBBB")
 
         # 有 matched_sentence 则应有 preview + highlight
-        if matched.results[0].matched_sentence:
-            sources = _build_sources(matched.results, {1: "test.txt"})
-            assert sources[0].preview_text is not None
-            assert len(sources[0].preview_text) <= len(chunk_with_periods)
-            assert sources[0].highlight_start is not None
-            assert sources[0].highlight_end is not None
+        # "AAAA。BBBB。CCCC。" + "X" * 182 中 "AAAA" 和 "BBBB" 应被匹配到
+        matched_sentence = matched.results[0].matched_sentence
+        assert matched_sentence is not None, "AAAA BBBB 应能匹配到含 AAAA 和 BBBB 的句子"
+        sources = _build_sources(matched.results, {1: "test.txt"})
+        assert sources[0].preview_text is not None
+        assert len(sources[0].preview_text) <= len(chunk_with_periods)
+        assert sources[0].highlight_start is not None
+        assert sources[0].highlight_end is not None
 
 
 # ==================== highlight_start/end 精确校验 ====================
@@ -278,10 +280,11 @@ class TestHighlightRange:
         sources = _build_sources(matched.results, {1: "test.md"})
         src = sources[0]
 
-        if src.highlight_start is not None:
-            assert 0 <= src.highlight_start <= len(src.preview_text)
-            assert 0 <= src.highlight_end <= len(src.preview_text)
-            assert src.highlight_start < src.highlight_end
+        # "目标句子在这里。" 应被匹配到，highlight 必须存在
+        assert src.highlight_start is not None, "目标句子应被定位到，highlight_start 不应为 None"
+        assert 0 <= src.highlight_start <= len(src.preview_text)
+        assert 0 <= src.highlight_end <= len(src.preview_text)
+        assert src.highlight_start < src.highlight_end
 
     def test_无matched_sentence时highlight为None(self):
         """直接构造无 matched_sentence 的 result → highlight 为 None"""

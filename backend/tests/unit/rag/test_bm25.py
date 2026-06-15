@@ -81,6 +81,10 @@ def clear_local_cache():
 
 
 # ==================== 辅助函数测试 ====================
+# 技术债务：直接测试私有函数 _build_cache_key()、_tokenize()、_local_cache，
+# 违反 CLAUDE.md「禁止直接测试 `_` 前缀的私有方法」规范。保留现有测试
+# （纯逻辑函数单元测试有工程价值），后续应通过 BM25Retriever.search()
+# 公共 API 间接覆盖缓存 key 构建、分词、进程内缓存命中/过期逻辑。
 
 
 class TestBuildCacheKey:
@@ -155,7 +159,7 @@ class TestInvalidateBM25CacheAsync:
     """异步缓存失效测试"""
 
     @pytest.mark.asyncio
-    @patch("app.core.redis_client.get_async_redis")
+    @patch("app.rag.bm25.get_async_redis")
     async def test_正常清除(self, mock_get_async_redis):
         mock_redis = AsyncMock()
         mock_get_async_redis.return_value = mock_redis
@@ -165,7 +169,7 @@ class TestInvalidateBM25CacheAsync:
         assert 1 not in _local_cache
 
     @pytest.mark.asyncio
-    @patch("app.core.redis_client.get_async_redis")
+    @patch("app.rag.bm25.get_async_redis")
     async def test_redis异常不影响调用方(self, mock_get_async_redis):
         mock_redis = AsyncMock()
         mock_redis.delete.side_effect = Exception("Redis 连接失败")

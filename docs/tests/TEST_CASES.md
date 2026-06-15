@@ -3,7 +3,7 @@
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 最后更新 | 2026-06-15 |
 
 ---
 
@@ -184,7 +184,7 @@
 | P2-U6.4 | 解析容错-中等错误 | `parser.py` | 20-50% 页面失败 | 标记 partial_failed | ✅ | 2026-05-19 | Mock PyPDF2 |
 | P2-U6.5 | 解析容错-严重错误 | `parser.py` | >50% 页面失败 | 标记 failed | ✅ | 2026-05-19 | Mock PyPDF2 |
 | P2-U6.6 | 分块逻辑 | `chunker.py` | 长文本 | 按分隔符优先级分块，每块 800-1200 chars | ✅ | 2026-05-20 | 35 用例全部通过 |
-| P2-U6.7 | Embedding 批次 checkpoint | `tasks.py` / `test_tasks.py` | 中途失败 | 从 last_success_batch 恢复 | ✅ | 2026-05-21 | test_tasks.py 覆盖断点恢复/阶段检测/ChromaDB 清理失败标记/锁集成（11 用例） |
+| P2-U6.7 | Embedding 批次 checkpoint | `tasks.py` / `test_tasks.py` | 中途失败 | 从 last_success_batch 恢复 | ✅ | 2026-06-15 | test_tasks.py 覆盖断点恢复/阶段检测/ChromaDB 清理失败标记/锁集成（11 用例）；修复：幂等锁集成测试 mock 目标从同步改为异步版本 |
 | P2-U6.8 | 存储-保存文件 | `storage.py` | 上传文件 | 文件写入磁盘，返回路径 `uploads/{kb_id}/{doc_id}/{uuid}_{filename}` | ✅ | 2026-05-21 | tempfile 临时目录 + Mock UploadFile |
 | P2-U6.9 | 存储-读取文件 | `storage.py` | 已有文件 | 返回 bytes 内容 | ✅ | 2026-05-21 | — |
 | P2-U6.10 | 存储-删除文件 | `storage.py` | 已有文件 | 文件删除，空目录自动清理 | ✅ | 2026-05-21 | 含多级空目录清理 + 同目录有其他文件保留目录 |
@@ -328,7 +328,7 @@
 | P3-U7.24 | 缓存-文档终态后重建 | Celery task | 文档入库完成 | 触发 `DEL bm25_tokens:{kb_id}` → 下次查询懒加载 | ✅ | 2026-06-11 | `invalidate_bm25_cache(kb_id)` 同步版 |
 | P3-U7.25 | 缓存-文档删除后失效 | Celery task | 文档删除完成 | `DEL bm25_tokens:{kb_id}` | ✅ | 2026-06-11 | — |
 | P3-U7.26 | BM25Okapi 实例化性能 | `BM25Okapi(corpus)` | 1000 chunk 语料 | 构造时间 < 50ms（仅 NumPy 计算，不含分词） | ⏭️ | — | 性能测试，可选 |
-| P3-U7.29 | 缓存-异步清除 | `invalidate_bm25_cache_async()` | FastAPI 上下文 | 清除进程内缓存 + Redis 缓存 | ✅ | 2026-06-11 | 新增 TestInvalidateBM25CacheAsync |
+| P3-U7.29 | 缓存-异步清除 | `invalidate_bm25_cache_async()` | FastAPI 上下文 | 清除进程内缓存 + Redis 缓存 | ✅ | 2026-06-15 | 修复：patch 路径从定义处改为使用处 `app.rag.bm25.get_async_redis` |
 | P3-U7.30 | 缓存-同步清除 | `invalidate_bm25_cache()` | Celery 上下文 | 仅清除 Redis 缓存（进程内缓存由 FastAPI 管理） | ✅ | 2026-06-11 | 新增 TestInvalidateBM25Cache |
 
 ### 5.4 后端 — RRF 融合算法测试
@@ -1183,7 +1183,7 @@
 | `ingest/lock.py` | ≥ 80% | ✅ 100% | 16 个测试全覆盖（幂等锁获取/重复拒绝/过期重入） |
 | `rag/parser.py` | ≥ 80% | ✅ 100% | 35 个测试全覆盖（PDF/DOCX逐段容错/MD/TXT 解析 + 容错分级） |
 | `rag/chunker.py` | ≥ 80% | ✅ 100% | 36 个测试全覆盖（分隔符优先级/偏移量页码追踪/中英文自适应token估算/重叠） |
-| `rag/embedder.py` | ≥ 80% | ✅ 100% | 28 个测试全覆盖（DashScope API/重试/批量/响应解析/指数退避） |
+| `rag/embedder.py` | ≥ 80% | ✅ 100% | 28 个测试全覆盖（DashScope API/重试/批量/响应解析/指数退避）；修复：重试失败异常类型从 RuntimeError 对齐为 EmbeddingTimeoutException |
 | `core/storage.py` | ≥ 80% | ✅ 100% | 29 个测试全覆盖（sanitize_filename/generate_stored_filename/LocalStorage save/read/delete/空目录清理） |
 | `schemas/knowledge_base.py` | ≥ 85% | ✅ 100% | visibility 字段校验 10 用例（P25-U9.1-P25-U9.8），Phase 2.5 |
 | `services/knowledge_base_service.py` | ≥ 80% | ✅ 33 用例 | `test_kb_service.py` 全覆盖：`_get_real_chunk_counts`(4) + `create_kb`(3) + `get_kb`(8) + `list_kbs`(3) + `list_public_kbs`(2) + `update_kb`(8) + `delete_kb`(3) + `check_kb_active`(2) |

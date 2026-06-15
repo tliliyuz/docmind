@@ -33,15 +33,21 @@ from app.schemas.trace import (
 logger = logging.getLogger(__name__)
 
 
-async def record_trace(db: AsyncSession, **kwargs) -> None:
+async def record_trace(db: AsyncSession, commit: bool = True, **kwargs) -> None:
     """写入单条 Trace 记录。
 
     由 TraceRecorder.finish() 调用，kwargs 对应 Trace 模型字段。
     使用独立 session 时由调用方传入 db。
+
+    Args:
+        db: 数据库 session
+        commit: 是否在 add 后立即 commit。设为 False 时由调用方统一提交，
+                用于与 assistant 消息在同一事务中落库（对齐 ADR-017）。
     """
     trace = Trace(**kwargs)
     db.add(trace)
-    await db.commit()
+    if commit:
+        await db.commit()
 
 
 async def list_traces(

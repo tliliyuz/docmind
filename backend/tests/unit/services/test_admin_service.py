@@ -64,6 +64,19 @@ def _make_doc_row(doc_id=1, kb_id=1, filename="测试文档.pdf", file_type="pdf
     return (doc, kb_name, kb_uuid, kb_visibility, owner_id, owner_username)
 
 
+def _setup_db_list_mock(db, count_value, rows):
+    """配置 db.execute 的 count + data 两次查询 mock。
+
+    消除 list_all_kbs / list_all_documents 测试中重复的
+    count_mock + data_mock + db.execute = AsyncMock(side_effect=[...]) 模式。
+    """
+    count_mock = MagicMock()
+    count_mock.scalar.return_value = count_value
+    data_mock = MagicMock()
+    data_mock.all.return_value = rows
+    db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+
+
 # ==================== get_stats 测试 ====================
 
 
@@ -163,15 +176,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(i, f"KB_{i}") for i in range(1, 4)]  # 3 条
-
-        # 第一次 execute：count 查询
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 3
-        # 第二次 execute：数据查询
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=3, rows=rows)
 
         result = await list_all_kbs(db, page=1, page_size=20)
 
@@ -192,13 +197,7 @@ class TestListAllKBs:
         from app.services.admin_service import list_all_kbs
 
         db = AsyncMock()
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 0
-        data_mock = MagicMock()
-        data_mock.all.return_value = []
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=0, rows=[])
 
         result = await list_all_kbs(db)
 
@@ -212,13 +211,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(1, "私有KB", visibility="private")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_kbs(db, visibility="private")
 
@@ -232,13 +225,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(1, "删除中KB", status="deleting")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_kbs(db, status="deleting")
 
@@ -252,13 +239,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(1, "用户5的KB", user_id=5)]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_kbs(db, user_id=5)
 
@@ -272,13 +253,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(1, "公司报销制度")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_kbs(db, search="报销")
 
@@ -292,13 +267,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(21, "KB_21")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 25
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=25, rows=rows)
 
         result = await list_all_kbs(db, page=2, page_size=20)
 
@@ -314,13 +283,7 @@ class TestListAllKBs:
 
         db = AsyncMock()
         rows = [_make_kb_row(1, "KB", user_id=5, visibility="public", status="active")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_kbs(
             db, user_id=5, visibility="public", status="active"
@@ -346,12 +309,7 @@ class TestListAllDocuments:
             _make_doc_row(2, 2, "文档B.md", "md", 512, "uploaded", chunk_count=0),
         ]
 
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 2
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=2, rows=rows)
 
         result = await list_all_documents(db, page=1, page_size=20)
 
@@ -382,13 +340,7 @@ class TestListAllDocuments:
         from app.services.admin_service import list_all_documents
 
         db = AsyncMock()
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 0
-        data_mock = MagicMock()
-        data_mock.all.return_value = []
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=0, rows=[])
 
         result = await list_all_documents(db)
 
@@ -402,13 +354,7 @@ class TestListAllDocuments:
 
         db = AsyncMock()
         rows = [_make_doc_row(1, 1, "失败文档.pdf", status="partial_failed")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_documents(db, status="partial_failed")
 
@@ -425,13 +371,7 @@ class TestListAllDocuments:
             _make_doc_row(doc_id=1, kb_id=3, filename="KB3文档.pdf"),
             _make_doc_row(doc_id=2, kb_id=3, filename="KB3文档2.md"),
         ]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 2
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=2, rows=rows)
 
         result = await list_all_documents(db, kb_id=3)
 
@@ -445,13 +385,7 @@ class TestListAllDocuments:
 
         db = AsyncMock()
         rows = [_make_doc_row(1, 1, "公司报销制度v2.pdf")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_documents(db, filename="报销")
 
@@ -468,13 +402,7 @@ class TestListAllDocuments:
             _make_doc_row(1, 1, "小文件.txt", file_size=100),
             _make_doc_row(2, 1, "大文件.pdf", file_size=10000),
         ]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 2
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=2, rows=rows)
 
         result = await list_all_documents(db, sort_by="file_size", order="asc")
 
@@ -493,13 +421,7 @@ class TestListAllDocuments:
             _make_doc_row(1, 1, "Z文件.pdf"),
             _make_doc_row(2, 1, "A文件.pdf"),
         ]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 2
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=2, rows=rows)
 
         result = await list_all_documents(db, sort_by="filename", order="desc")
 
@@ -512,13 +434,7 @@ class TestListAllDocuments:
 
         db = AsyncMock()
         rows = [_make_doc_row(1, 1, "doc.pdf")]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         # 不会抛异常
         result = await list_all_documents(db, sort_by="invalid_field")
@@ -531,13 +447,7 @@ class TestListAllDocuments:
         from app.services.admin_service import list_all_documents
 
         db = AsyncMock()
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 10
-        data_mock = MagicMock()
-        data_mock.all.return_value = []
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=10, rows=[])
 
         result = await list_all_documents(db, page=100, page_size=20)
 
@@ -554,13 +464,7 @@ class TestListAllDocuments:
             _make_doc_row(1, 1, "失败文档.pdf", status="failed",
                           error_msg="解析失败：PDF 文件已损坏"),
         ]
-
-        count_mock = MagicMock()
-        count_mock.scalar.return_value = 1
-        data_mock = MagicMock()
-        data_mock.all.return_value = rows
-
-        db.execute = AsyncMock(side_effect=[count_mock, data_mock])
+        _setup_db_list_mock(db, count_value=1, rows=rows)
 
         result = await list_all_documents(db)
 

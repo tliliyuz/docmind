@@ -6,6 +6,59 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [0.53] - 2026-06-15
+
+### Fixed
+- **3 个测试用例修复**（mock 路径/异常类型过时）：① `test_tasks.py` 幂等锁集成测试 mock 目标从同步 `acquire_idempotency_lock` 改为异步 `acquire_idempotency_lock_async`；② `test_bm25.py` 异步缓存失效测试 patch 路径从定义处 `app.core.redis_client.get_async_redis` 改为使用处 `app.rag.bm25.get_async_redis`；③ `test_embedder.py` 重试失败断言从 `RuntimeError` 对齐为 `EmbeddingTimeoutException`
+- **SSE 流 DB 会话生命周期解耦**（N3）：`_generate_sse_stream()`/`_generate_meta_response()` 移除 `db: AsyncSession` 参数，generator 内部 `async with async_session()` 创建独立短生命周期 session。消息 + Trace 单事务提交（`commit=False` → 统一 `await s.commit()`），`yield finish` 在 session 外部。`record_trace()`/`TraceRecorder.finish()` 新增 `commit: bool = True` 参数。详细设计见 [ADR-017](docs/decisions/ADR-017-SSE流DB会话生命周期解耦.md)
+- **模板内联 style 清理**（N10）：6 个 Vue 文件（DocumentList/KnowledgeList(admin)/TraceList/AdminUserList/KnowledgeDetail/KnowledgeList）的 ~18 处模板内联 `style` 迁移到 CSS 类（`filter-input-*`/`table-full`/`search-icon`/`icon-gap-*`/`text-*`），消除硬编码布局值和间距值
+- **test_sources_preview.py 条件断言**（T1）：2 处 `if ...:` 包裹断言改为 `assert ... is not None` 前置校验 + 无条件断言，消除条件断言反模式
+- **test_admin_service.py mock 重复**（T4）：提取 `_setup_db_list_mock()` 辅助函数，替换全部 ~15 处重复的 `count_mock + data_mock + db.execute = AsyncMock(side_effect=[...])` mock 模式
+- **test_intent.py 测试名实不符**（T5）：`test_meta_routing_returns_fixed_response` 重命名为 `test_meta_routing_raises_exception_before_retrieval`，更新 docstring 反映实际断言行为（`MetaQuestionException`）
+- **test_sentence_matcher.py 弱断言**（T6/T10）：`assert len(...) > 0` 改为 `assert "病假" in ...` 语义断言；4 处 `is not None`/`isinstance` 弱断言改为 `isinstance(score, float)` 类型断言（BM25 单文档语料 IDF 可为负值，不强制正数约束）
+- **test_trace_service.py 无意义断言**（T7）：`assert total_duration_ms >= 0` 前添加 `assert isinstance(total_duration_ms, int)` 类型断言
+- **test_intent.py 弱断言**（T8）：`assert result.metadata["model"] is not None` 改为 `assert isinstance(..., str)` + `assert len(...) > 0`
+- **test_trace_service.py 弱断言**（T9）：`get_trace_detail` 测试中 `is not None` 弱断言改为 Pydantic 模型属性断言（`result.intent.span_name`/`result.retrieve.duration_ms`）
+- **test_query_rewriter.py 公共 API 测试**（T11）：新增 2 个通过公共 `rewrite_query()` 的集成测试（无历史时 LLM 调用、完整问题经 LLM 返回不变）
+
+### Changed
+- **test_intent.py import 顺序**（N25）：`from unittest.mock import MagicMock` 从文件末尾移至顶部统一导入
+- **test_query_rewriter.py 技术债务标注**（N26/T11）：`TestNeedsRewrite` 类添加技术债务注释，说明直接测试私有函数 `_needs_rewrite()` 的原因及后续改进方向
+- **test_trace_service.py 私有属性访问**（N27）：4 个 TraceRecorder 测试改为通过 `finish(db)` 公共接口写入后验证 `db.add.call_args`，不再直接访问 `_generate_data`/`_intent_data` 等私有属性；`TestTraceRecorder` 类添加技术债务注释
+- **test_document_service.py / test_bm25.py 技术债务标注**（T2）：为私有方法测试类添加技术债务注释，说明保留原因及后续改进方向
+- **.env 配置同步**（N14 关联）：`JWT_EXPIRE_MINUTES=1440` → `ACCESS_TOKEN_EXPIRE_MINUTES=15`，与 config.py 默认值对齐
+
+## [0.52] - 2026-06-15
+
+### Fixed
+- **bm25.py 局部导入**（`backend/app/rag/bm25.py:314`）：`get_async_redis` 在 `invalidate_bm25_cache_async()` 内局部导入（违反 CLAUDE.md 禁止函数内局部导入）。修复：`get_async_redis` 移至顶部 `from app.core.redis_client import` 统一导入
+- **admin_service.py 未使用导入**（`backend/app/services/admin_service.py:7-8`）：`import os` 和 `from pathlib import Path` 从未使用。修复：直接移除
+- **document_service.py logger 导入顺序**（`backend/app/services/document_service.py:4-6`）：`logger = logging.getLogger(__name__)` 夹在两个 import 语句中间（违反 PEP 8 导入顺序）。修复：logger 移至全部导入完成后
+- **schemas/__init__.py 相对导入**（`backend/app/schemas/__init__.py:3-40`）：5 处 `from .xxx import` 相对导入。修复：全部改为 `from app.schemas.xxx import` 绝对导入
+- **embedder.py 裸 RuntimeError/ValueError**（`backend/app/rag/embedder.py:84,98,104`）：Embedding API 重试耗尽抛 `RuntimeError`，响应格式异常/数量不匹配抛 `ValueError`（违反 CLAUDE.md 业务异常继承 AppException）。修复：分别改为 `EmbeddingTimeoutException`（E2008）和 `VectorStoreErrorException`（E2007）
+- **document_service.py ChromaDB 同步调用阻塞事件循环**（`backend/app/services/document_service.py:148-151, 453-455`）：`collection.delete()` 为 ChromaDB 同步 SQLite IO，直接调用阻塞 async 事件循环。修复：包装到 `asyncio.to_thread(collection.delete, ...)`
+- **storage.py 同步文件 IO 未包装**（`backend/app/core/storage.py:66,70,77,82,87`）：`async def save/read/delete` 内直接调用同步 `mkdir/write_bytes/read_bytes/unlink/rmdir`，阻塞事件循环。修复：5 处同步 IO 全部包装到 `asyncio.to_thread()`
+- **Celery 异步任务内同步 Redis**（`backend/app/ingest/tasks.py:110,472,481,506,562,567` + `backend/app/ingest/lock.py` + `backend/app/core/redis_client.py`）：`_ingest_document_async()` / `_delete_document_async()` 内调用同步 `acquire_idempotency_lock()` / `invalidate_bm25_cache()` / `release_idempotency_lock()`，阻塞 Celery worker 内的事件循环。修复：`lock.py` 新增 `acquire_idempotency_lock_async()` / `release_idempotency_lock_async()`；`tasks.py` async 函数内改用异步版；`ThreadedRedisClient` 新增 `set()` 方法支持 `EX`/`NX` 参数
+- **AdminLayout 侧边栏宽度硬编码**（`frontend/src/components/layout/AdminLayout.vue:120`）：`width: 220px` 未引用 Design Token（`--dm-sidebar-width-admin: 240px`）。修复：替换为 `var(--dm-sidebar-width-admin)`
+- **chat.js 不必要的动态导入**（`frontend/src/api/chat.js:55`）：`fetchSelectableKBs()` 内 `await import('./index.js')` 非循环导入、非可选依赖场景。修复：改为顶部静态 `import api from './index.js'`
+- **MessageItem.vue evidence highlight 硬编码**（`frontend/src/components/chat/MessageItem.vue:574`）：`background: #FFF3B0` 硬编码未引用 Design Token（`--dm-warning-light` 过淡不可辨）。修复：`global.css` 新增 `--dm-evidence-highlight-bg: #FFF3B0`，组件引用 `var(--dm-evidence-highlight-bg)`
+- **LoginPage.vue box-shadow 硬编码**（`frontend/src/views/LoginPage.vue:214`）：`box-shadow: 0 1px 3px rgba(0,0,0,0.10)` 未引用 Token。修复：替换为 `var(--dm-shadow-sm)`
+- **chunker.py 页分隔符隐式依赖**（`backend/app/rag/chunker.py:110`）：`pos += len(page.content) + 2` 的 `+2` 隐式依赖 `parser.py` 的 `"\n\n"` 分隔符（脆弱跨模块耦合）。修复：提取 `_PAGE_SEPARATOR = "\n\n"` + `_PAGE_SEPARATOR_LEN = 2` 常量，添加与 `parser.py` 同步的注释说明。
+
+### Security
+- **admin_service.py LIKE 查询通配符注入**（`backend/app/services/admin_service.py:122,196,278`）：3 处 `.like(f"%{search}%")` 未转义用户输入中的 `%`/`_`，攻击者可构造通配符遍历/消耗数据库。修复：新增 `_escape_like()` 函数，所有 LIKE 查询添加 `escape="\\"` 参数
+- **TraceDetail.vue v-html XSS 纵深防御**（`frontend/src/views/admin/TraceDetail.vue:147`）：`highlightJson()` 虽经 `JSON.stringify` 转义，但缺少额外消毒层。修复：输出端添加正则剥离非 `<span>` 标签（`replace(/<(?!\/?span[ >])[^>]*>/gi, '')`），纵深防御
+
+### Changed
+- **formatDateTime/formatFileSize 重复定义消除**（`frontend/src/utils/format.js` 新建 + 5 个 Vue 文件）：`formatDateTime()` 在 5 个文件中重复定义、`formatFileSize()` 在 2 个文件中重复定义。重构：提取到 `@/utils/format.js` 共享模块，5 文件统一 `import` 引用并删除本地定义
+- **charts.js 图表颜色运行时同步**（`frontend/src/constants/charts.js` + 3 个图表组件）：14 个 hex 颜色值硬编码，声称对齐 Design Token 但无同步机制。重构：新增 `getChartColors()`/`getTooltipConfig()`/`getLegendConfig()`/`getXAxisConfig()`/`getYAxisConfig()` 函数，运行时从 CSS 自定义属性读取颜色；3 个图表组件同步更新调用方式
+- **chunker.py Token 估算参数配置化**（`backend/app/rag/chunker.py:142` + `backend/app/config.py`）：中英文自适应比率的阈值 `0.3`、中文比率 `1.5`、英文比率 `4.0` 硬编码。重构：新增 `TOKEN_CHINESE_THRESHOLD`/`TOKEN_CHINESE_RATIO`/`TOKEN_ENGLISH_RATIO` 三个 Settings 字段，`estimate_tokens()` 从 `settings` 读取
+
+### Removed
+- **config.py 配置冗余**（`backend/app/config.py:51`）：`JWT_EXPIRE_MINUTES` 与 `ACCESS_TOKEN_EXPIRE_MINUTES` 重复，前者全项目零引用。修复：移除 `JWT_EXPIRE_MINUTES`，保留 `ACCESS_TOKEN_EXPIRE_MINUTES`
+
+---
+	
 ## [0.51] - 2026-06-15
 
 ### Fixed
