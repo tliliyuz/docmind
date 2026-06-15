@@ -8,32 +8,44 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ## [Unreleased] - 2026-06-15
 
-### Changed
-- **文档一致性修复**（D2-D9）：① API.md §3 移除 `selectable` 接口过时的「实现：Phase 3」标注；② API.md 文档列表/详情/分块接口权限描述更新，反映 v0.50 `allow_public_read` 变更（public KB 允许所有登录用户只读访问）；③ DATABASE.md + ORM 模型 `uuid` 列 COMMENT 从「UUID v4」修正为「UUID」（MySQL `UUID()` 生成 v1，应用层用 `uuid4()` 显式生成 v4）；④ ROADMAP.md §4.5 移除已实现的推迟项「Admin 在 KB 详情页的管理权限」；⑤ ROADMAP.md Phase 5 状态 `[⏳]` → `[⏳ 90%]`；⑥ DEVELOPMENT.md 移除已废弃的 `sse-starlette` 依赖、标注 `unstructured` 为死依赖；⑦ PRD.md §6 验收标准 MRR/Precision@5 标注「压测待补充」
-
 ### Added
-- **BaseVectorStore 抽象基类 + ChromaVectorStore 实现**（A1+A3）：定义 `search`/`add`/`delete` 三个核心异步接口。新增 `get_vector_store()` 工厂函数。详见 [ADR-018](docs/decisions/ADR-018-向量存储抽象层.md)
+- **Phase 5.5 — Prompt 陈述知识 vs 引用知识原则**：`SYSTEM_PROMPT_TEMPLATE` 从简单的「请仅基于文档回答」升级为完整的陈述知识/引用知识判断框架，包含核心原则、判断方法、必然属于引用知识的场景枚举、拒答规则。预计单独消除 60-80% 的「引用知识被当成答案」问题
+- **Phase 5.5 — 句级修辞过滤**：`sentence_matcher.py` 新增 `detect_sentence_role()` 和 `filter_chunk_sentences()` 函数，基于 `_REFERENTIAL_PATTERNS` 规则层（显式标记 + 结构层 JSON/代码块检测）在 chunk 内部过滤引用性句子，解决 Chunk 内部混合陈述句和引用句的污染问题；`knowledge_pipeline.py` 在 `match_sentences()` 前插入过滤步骤
+- **Phase 5.5 — 程序级三层证据审计**：新增 `app/rag/evidence_auditor.py` 模块，实现引用存在性检查（第一层）、来源一致性检查（第二层）、句级证据回溯（第三层）。审计在 LLM 流完成后、sources 事件构建阶段执行，不影响 SSE 流输出。sources 事件新增 `confidence` / `confidence_note` 字段
+- **Phase 5.5 — 前端置信度展示**：`MessageItem.vue` 新增置信度警告组件，当证据审计发现 medium/low 置信度时展示警告提示和详细说明；`chat.js` store 从 sources SSE 事件中提取 `confidence` / `confidence_note` 字段
+- **Phase 5.5 §8.6 — DashScope Rerank API 接入**：`reranker.py` 新增 `DashScopeReranker(BaseReranker)` 类，调用 DashScope text-rerank API（`gte-rerank-v2`）对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常降级回退到原始 RRF 排序。`knowledge_pipeline.py` 默认使用 `DashScopeReranker` 替换 `NoopReranker`。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项。新增 22 个 DashScopeReranker 单元测试
+- **ADR-019 句级修辞过滤**：架构决策记录，覆盖修辞角色判定、过滤策略、Prompt 模板升级设计
+- **ADR-020 三层证据审计**：架构决策记录，覆盖三层审计机制、综合置信度计算、容错策略
+
+### Changed
+- **Phase 5.5 知识库质量治理**：句级修辞过滤 + 三层证据审计组合预计消除 85%+ 的污染问题，总代码量 ~200 行，无 DB 变更
+- **ROADMAP.md**：新增 Phase 5.5「知识库质量治理」（§8），插入 Phase 5（§7）和 Phase 6（§9）之间，含 §8.1-§8.7 子任务（Prompt 升级 / 修辞过滤 / 证据审计 / 前端置信度 / 测试 / 推迟项 / DashScope Reranker）；Phase 5 状态 → ✅；Phase 6 重编号为 §9
+- **ARCHITECTURE.md**：§3.2 模块树新增修辞过滤和证据审计节点；§5.1 管线流程图新增修辞过滤和证据审计步骤；§5.2 设计表新增 3 行；§5.3 降级策略表新增 2 行
+- **RAG_PIPELINE.md**：§1.1-§1.2 流程图新增修辞过滤和证据审计步骤；§3 Prompt 模板升级为陈述/引用知识判断框架；新增 §7 句级修辞过滤 + Evidence Highlight；新增 §9 三层证据审计；§10 伪代码更新；§11 源文件表新增 evidence_auditor.py
+- **DEVELOPMENT.md**：目录结构树新增 evidence_auditor.py，更新 sentence_matcher.py / prompt_builder.py / knowledge_pipeline.py 描述
+- **TEST_CASES.md**：§7.5 标题更新为「句级修辞过滤 + Evidence 定位」，新增 P5.5-SF.1-SF.7（7 用例）；新增 §7.6 三层证据审计，P5.5-EA.1-EA.14（14 用例）；新增 §10 DashScope Reranker 测试用例（10 用例，待实现）；§7.7-§7.11 重编号；覆盖率表更新 sentence_matcher.py / evidence_auditor.py / reranker.py 行
+- **TESTING.md**：v1.0→v1.1；新增 §2.3 RAG 管线新增阶段测试原则（分层边界测试 / 回退路径测试 / 确定性验证 / SSE 字段传播）；新增 §9 修辞过滤与证据审计测试策略（含逐层独立测试 / 综合置信度矩阵 / 容错降级 / SSE 传播）；§10 执行计划新增 Phase 5.5 条目（5 行）
+- **FRONTEND.md**：sources 事件描述新增 confidence / confidence_note 字段；sources 渲染规范新增置信度警告；MessageItem 组件描述更新
+- **文档一致性修复**（D2-D9）：① API.md §3 移除 `selectable` 接口过时的「实现：Phase 3」标注；② API.md 文档列表/详情/分块接口权限描述更新，反映 v0.50 `allow_public_read` 变更；③ DATABASE.md + ORM 模型 `uuid` 列 COMMENT 从「UUID v4」修正为「UUID」；④ ROADMAP.md §4.5 移除已实现的推迟项；⑤ DEVELOPMENT.md 移除已废弃的 `sse-starlette` 依赖、标注 `unstructured` 为死依赖；⑥ PRD.md §6 验收标准 MRR/Precision@5 标注「压测待补充」
+- **BaseVectorStore 抽象基类 + ChromaVectorStore 实现**（A1+A3）：定义 `search`/`add`/`delete` 三个核心异步接口。新增 `get_vector_store()` 工厂函数。详见 [ADR-018](decisions/ADR-018-向量存储抽象层.md)
 - **KnowledgePipeline 知识管线**（A2）：从 `chat_service.py` 解耦提取检索+上下文构建管线（查询重写→双路检索→RRF融合→Rerank→句子匹配→Prompt构建）
 - **共享权限检查函数**（A4）：`require_kb_readable` / `require_kb_writable` / `require_kb_owner`（`core/permissions.py`）
-
-### Changed
 - `VectorRetriever` 依赖 `BaseVectorStore` 抽象而非 ChromaDB `Collection`
 - KB 权限检查统一使用 `core/permissions.py` 共享函数
 - 前端 `TERMINAL_STATUSES` 消除 `DocumentList.vue` 值重复，新增 `TERMINAL_STATUSES_SET` 导出
 - `document_service.py` / `ingest/tasks.py` / `eval_retrieval.py` 使用 `get_vector_store()` 替代 `get_collection()`
-- Celery task 别名统一：`_delete_doc_task` → `delete_doc_task`、`_ingest_doc_task` → `ingest_doc_task`，对齐 `knowledge_base_service.py` 中 `delete_kb_task` 命名风格（B9）
-- `_load_doc()` 返回值从 `Document | None` 改为 `_LoadDocResult` 数据类，区分 NOT_FOUND/DELETING/OK 三种状态，消除 8 处冗余 `db.get()` 调用（B8）
+- Celery task 别名统一：`_delete_doc_task` → `delete_doc_task`、`_ingest_doc_task` → `ingest_doc_task`（B9）
+- `_load_doc()` 返回值从 `Document | None` 改为 `_LoadDocResult` 数据类（B8）
 - RAG 硬编码参数移入 `config.py`：`EMBED_TIMEOUT`/`INTENT_MAX_TOKENS`/`REWRITE_MIN_LENGTH`/`REWRITE_HISTORY_MESSAGES`/`BM25_LOCAL_CACHE_TTL`（B7）
 
 ### Fixed
 - `ThreadedRedisClient.close()` 从 `pass` 改为调用 `asyncio.to_thread(self._sync.close)`，避免资源泄漏（B2）
-- `_delete_kb_async` 添加幂等锁（`acquire_idempotency_lock_async` + `release` in `finally`），对齐 `_delete_document_async` 并发安全模式（B3）
+- `_delete_kb_async` 添加幂等锁，对齐 `_delete_document_async` 并发安全模式（B3）
 - `requirements.txt` 移除未使用的 `sse-starlette==2.1.*` 依赖（B5）
-
-### Fixed
-- **KnowledgeDetail.vue 多文件上传未调用批量接口**（`frontend/src/views/KnowledgeDetail.vue:454-510`）：`uploadFiles()` 用 `for...of` 逐文件调用 `store.uploadDoc()` 单文件上传，未使用已定义的 `store.batchUploadDocs()`。修复：校验阶段将文件分为无冲突组（`validFiles`）和需覆盖组（`forceUploadFiles`）；无冲突文件收集到单个 `FormData`（字段名 `files`）一次调用批量接口；有同名冲突且用户确认覆盖的文件因批量接口不支持 `force` 参数仍走单文件覆盖；上传完成后统一刷新列表并启动轮询。根据批量返回的 `success`/`failed` 数组分别展示提示
-- **TraceList.vue 概览卡片统计仅基于当前页数据**（`frontend/src/views/admin/TraceList.vue:254-269`）：`summary` computed 属性基于 `list.value`（当前页最多 20 条）计算成功/失败/运行中数量及平均耗时、P95 耗时，导致首页全 success 时始终显示 `20 / 0 / 0`，耗时也只反映当前页。修复：后端 `TraceListResponse` 新增 `TraceListSummary` 模型（`backend/app/schemas/trace.py`），`list_traces()` 新增基于全量筛选结果的 SQL 聚合查询（状态计数 + AVG + P95），前端 `summary` 从 `computed` 改为 `ref`，直接使用后端返回的 `data.summary`。翻页/筛选时统计值自动更新。测试文件同步更新（前端 mock 加入 summary、后端 fixture 加入 `TraceListSummary`，顺带修复 `conversation_id`/`kb_id` → `conversation_uuid`/`kb_uuid` 字段名过时问题）
-
+- **KnowledgeDetail.vue 多文件上传未调用批量接口**：校验阶段将文件分为无冲突组和需覆盖组，无冲突文件批量上传，有冲突文件单文件覆盖
+- **TraceList.vue 概览卡片统计仅基于当前页数据**：后端新增 `TraceListSummary` 模型和 SQL 聚合查询，前端 `summary` 从 `computed` 改为 `ref`
+- **Trace 链路 `reranker` 标识硬编码 `"noop"`**（`trace_recorder.py:173` + `knowledge_pipeline.py:178`）：`record_rerank()` 默认参数 `reranker="noop"` 导致 Trace 中永远写入 `"noop"`，Ignore 实际使用的 `DashScopeReranker`。修复：`NoopReranker`/`DashScopeReranker` 各自新增 `name` 类属性（`"noop"`/`"dashscope"`），`knowledge_pipeline.py` 调用时传入 `reranker=self._reranker.name`
+- **Trace 链路 `finish_reason` 硬编码 `"stop"`**（`chat_service.py:344`）：`record_generate()` 的 `finish_reason` 写死为 `"stop"`，未捕获 DeepSeek 流式 API 返回的真实 `finish_reason`（`LLMChunk.finish_reason`）。修复：流式循环中捕获 `llm_finish_reason = chunk.finish_reason`，传入 `record_generate()` 时用 `llm_finish_reason or "stop"` 兜底
 ---
 
 ## [0.53] - 2026-06-15

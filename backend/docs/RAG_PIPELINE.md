@@ -2,10 +2,10 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 文档版本 | v1.1 |
+| 最后更新 | 2026-06-15（Phase 5.5 DashScope Rerank API 接入完成） |
 
-本文档描述 DocMind 问答管线（RAG Pipeline）的完整设计，涵盖多路检索、Prompt 组装、问题重写、意图识别、Evidence Highlight、Trace 链路追踪、SSE 事件流等核心模块。
+本文档描述 DocMind 问答管线（RAG Pipeline）的完整设计，涵盖多路检索、Prompt 组装、问题重写、意图识别、句级修辞过滤、Evidence Highlight、三层证据审计、Trace 链路追踪、SSE 事件流等核心模块。
 
 ---
 
@@ -26,11 +26,17 @@
     ↓
 [Fusion] RRF 融合排序 → 合并两路结果                     ← [Implemented]
     ↓
-[Rerank] 重排序 → NoopReranker 占位，后续接入 DashScope  ← [Implemented]
+[Rerank] 重排序 → DashScope Rerank API 精排              ← [Phase 5.5 ✅]
     ↓
-[Prompt] 组装 Prompt → 拼接检索结果 + 用户问题           ← [Implemented]
+[修辞过滤] 句级修辞角色过滤 → 过滤引用性句子              ← [Phase 5.5 ADR-019]
+    ↓
+[Evidence] 句级 BM25 定位 → 选出最佳证据句               ← [Implemented]
+    ↓
+[Prompt] 组装 Prompt → 陈述/引用知识判断框架 + 检索结果   ← [Phase 5.5 升级]
     ↓
 [LLM] 调用 LLM → SSE 流式返回答案                        ← [Implemented]
+    ↓
+[证据审计] 三层程序级审计 → 置信度标注                    ← [Phase 5.5 ADR-020]
 ```
 
 ### 1.2 Phase 4 实际问答流程
@@ -50,15 +56,19 @@ Phase 4 在 Phase 3 单轮链路基础上加入**会话记忆**和**问题重写
     ↓
 [Fusion] RRF 融合排序 → 合并两路结果
     ↓
-[Rerank] NoopReranker → 保持 RRF 排序（相关性降序） + 截取 top_k=5
+[Rerank] DashScope Rerank API → 语义精排（Phase 5.5，原 NoopReranker 占位）
     ↓
-[Evidence Highlight] 句级 BM25 定位 → 每个 chunk 内切句 → BM25Okapi → 记录 best_sentence  ← §6
+[句级修辞过滤] filter_chunk_sentences() → 过滤引用性句子，仅保留陈述知识  ← §7.1
     ↓
-[Prompt] 组装 Prompt → 拼接检索结果 + 历史消息 + 用户问题，软上限预算控制  ← §3
+[Evidence Highlight] 句级 BM25 定位 → 每个 chunk 内切句 → BM25Okapi → 记录 best_sentence  ← §7
+    ↓
+[Prompt] 组装 Prompt → 陈述/引用知识判断框架 + 检索结果 + 历史消息 + 用户问题，软上限预算控制  ← §3
     ↓
 [LLM] 调用 LLM → 流式 `chat/completions`，解析 content + reasoning_content
     ↓
-[SSE] StreamingResponse → 6 事件类型 + 15s 心跳  ← §5
+[证据审计] 三层程序级审计 → 引用存在性 + 来源一致性 + 句级证据回溯 → confidence 标注  ← §9
+    ↓
+[SSE] StreamingResponse → 6 事件类型 + 15s 心跳（sources 含 confidence）  ← §5
     ↓
 [标题生成] 首轮截取前 12 字 → event: finish 返回 title → 异步 LLM 更新
 ```
@@ -152,7 +162,7 @@ score(doc) = Σ 1 / (k + rank_i(doc))   # k=60
 | Chunking | 固定 chunk_size=1000 chars，overlap=150 | 已实现，Prompt 阶段不二次裁剪 |
 | 检索后排序 | 保持 RRF 融合排序（相关性降序） | RRF 已按相关性分数降序排列，相关性优先于长度 |
 | Prompt 组装 | 软上限 + 相关性优先填充 | 超预算时跳过当前 chunk 尝试下一个，而非直接 break |
-| TopK 控制 | RRF → NoopReranker 截取 top_k=5 | 控制数量而非逐 chunk 截断 |
+| TopK 控制 | RRF → DashScope Rerank 精排 top_k=5（Phase 5.5） | 控制数量而非逐 chunk 截断 |
 
 **Token 预算计算**（复用 chunker 中英文自适应算法）：
 ```python
@@ -162,15 +172,23 @@ def estimate_tokens(text: str) -> int:
     return int(len(text) / ratio)
 ```
 
-**Prompt 模板结构**：
+**Prompt 模板结构**（对齐 ROADMAP.md §8.1）：
 ```python
-SYSTEM_PROMPT = """你是一个企业知识库助手。请仅基于以下文档内容回答问题。
-如果文档中没有相关信息，请明确说明"知识库中未找到相关信息"，不要编造。
+SYSTEM_PROMPT = """你是一个企业知识库助手。请严格遵循以下规则。
+
+【核心原则：陈述知识 vs 引用知识】
+在回答前，你必须先判断每个来源的"写作目的"：
+■ 陈述知识（可作为答案依据）：该段文字的主要目的是定义、说明、规定、描述某项事实...
+■ 引用知识（不可作为答案依据）：该段文字只是把知识作为示例、测试数据、历史记录...
+
+【判断方法】【拒答规则】【回答要求】
+...（完整模板见 prompt_builder.py SYSTEM_PROMPT_TEMPLATE）
 
 参考文档：
 {context}
 
-请用中文回答，引用来源时标注 [来源N]（N 为文档编号）。"""
+- 引用来源时标注 [来源N]（N 为文档编号）
+- 请用中文回答"""
 
 # messages 结构
 [
@@ -321,11 +339,11 @@ Stage 2: Flash 模型兜底（~1-2s）
 
 ---
 
-## 7. Evidence Highlight — 句级 BM25 定位
+## 7. 句级修辞过滤 + Evidence Highlight
 
-**背景**：旧方案 `_locate_preview()` 在 LLM 生成后从 `assistant_content` 提取 snippet 做子串匹配，有根本性缺陷：「事后猜 LLM 引用了哪里」不可靠、定位质量依赖 LLM 引用格式、~100 行业务逻辑内嵌在 chat_service 中。
+**背景**：旧方案 `_locate_preview()` 在 LLM 生成后从 `assistant_content` 提取 snippet 做子串匹配，有根本性缺陷。Phase 5 重构为 **Evidence Highlight**：将定位时机从「LLM 生成后」前移到「检索时」。
 
-Phase 5.5 重构为 **Evidence Highlight**：将定位时机从「LLM 生成后」前移到「检索时」，在 chunk 内部用 BM25 直接选出与 question 最相关的句子。核心原则：**检索时就确定证据句，而非事后猜 LLM 引用了哪里**。
+**Phase 5.5 新增句级修辞过滤**：在 Evidence Highlight 之前插入修辞角色过滤步骤，解决 Chunk 内部混合陈述句和引用句的污染问题（对齐 ROADMAP.md §8.2）。详见 [ADR-019](../../docs/decisions/ADR-019-句级修辞过滤.md)。
 
 ### 7.1 数据流
 
@@ -334,7 +352,13 @@ Vector + BM25 检索（chunk 级）
     ↓
 RRF 融合 → Rerank
     ↓
-【句级 BM25 定位】← sentence_matcher.py
+【句级修辞过滤】← sentence_matcher.py detect_sentence_role() + filter_chunk_sentences()
+  chunk 切句 → 逐句判断修辞角色（assertive/referential）→ 仅保留陈述句
+  规则层：_REFERENTIAL_PATTERNS（示例/测试/用户提问/TODO 等显式标记）
+  结构层：JSON/代码块内容 → 大概率是示例
+  默认：陈述（宁可放过，不可错杀）
+    ↓
+【句级 BM25 定位】← sentence_matcher.py match_sentences()
   chunk 切句 → BM25Okapi(sentences) → 取 argmax → 记录 best_sentence + score
     ↓
 Prompt 组装 → LLM 生成
@@ -342,7 +366,17 @@ Prompt 组装 → LLM 生成
 _build_sources()：matched_sentence → preview_text + preview_range
 ```
 
-### 7.2 设计要点
+### 7.2 修辞过滤设计要点
+
+| 要点 | 决策 | 原因 |
+|:---|:---|:---|
+| 过滤时机 | Rerank 后、BM25 定位前 | 先清除引用性句子，再做证据定位，提高证据质量 |
+| 判断策略 | 规则层 + 结构层，不用 LLM | 零额外延迟（纯正则 + 字符串判断），确定性结果 |
+| 回退策略 | 过滤后为空 → 返回原始 chunk | 宁可放过不可错杀，避免误删陈述知识 |
+| 规则维护 | 手工维护 `_REFERENTIAL_PATTERNS` 正则列表 | 当前覆盖高频场景，后续可从审计日志自动挖掘 |
+| 性能 | 每 chunk ~0.1ms | 纯正则匹配 + 字符串操作，5 chunks < 1ms |
+
+### 7.3 Evidence Highlight 设计要点
 
 | 要点 | 决策 | 原因 |
 |:---|:---|:---|
@@ -352,7 +386,7 @@ _build_sources()：matched_sentence → preview_text + preview_range
 | 确定性 | 同一 question 永远返回同一 sentence | 纯算法，无 LLM 随机性 |
 | 性能 | 每 chunk ~1ms | 5 chunks × 1ms = 5ms，无感知影响 |
 
-### 7.3 SSE sources 事件格式
+### 7.4 SSE sources 事件格式
 
 ```json
 {
@@ -365,23 +399,23 @@ _build_sources()：matched_sentence → preview_text + preview_range
     "preview_range": {"start": 5, "end": 205},
     "highlight_start": 14,
     "highlight_end": 38
-  }]
+  }],
+  "confidence": "high",
+  "confidence_note": ""
 }
 ```
 
 | 字段 | 类型 | 说明 |
 |:---|:---|:---|
-| `preview_text` | string / null | Evidence 定位后的预览文本（以 `matched_sentence` 为中心的 ±100 字符窗口） |
-| `preview_range.start` | int | 预览窗口在 chunk.content 中的起始位置 |
-| `preview_range.end` | int | 预览窗口在 chunk.content 中的结束位置 |
-| `highlight_start` | int / null | 高亮区间在 preview_text 内的起始偏移 |
-| `highlight_end` | int / null | 高亮区间在 preview_text 内的结束偏移 |
+| `chunks` | array | 引用的 chunk 列表（含 preview 和 highlight 信息） |
+| `confidence` | string / 缺省 | 证据审计置信度：`high`（默认）/ `medium` / `low`，由三层审计计算（§9） |
+| `confidence_note` | string / 缺省 | 置信度说明，仅在 medium/low 时非空，描述审计发现的问题 |
 
-### 7.4 前端渲染规格
+### 7.5 前端渲染规格
 
 前端 `getSourcePreviewHtml(src)` 基于后端提供的 `highlight_start` / `highlight_end` 做纯切片渲染，**零匹配逻辑**。旧 snippet 体系（~80 行）已全部删除。
 
-### 7.5 降级策略
+### 7.6 降级策略
 
 | 降级场景 | 处理 |
 |:---|:---|
@@ -389,7 +423,7 @@ _build_sources()：matched_sentence → preview_text + preview_range
 | chunk.content 为空 | `matched_sentence = None` → `preview_text = None` |
 | 检索结果为空 | `match_sentences()` 直接返回，无 chunk 可定位 |
 
-### 7.6 已知局限
+### 7.7 已知局限
 
 | 局限 | 说明 | 缓解 |
 |:---|:---|:---|
@@ -472,7 +506,60 @@ INDEX idx_user_created (user_id, created_at)
 
 ---
 
-## 9. 问答核心逻辑（伪代码）
+## 9. 三层证据审计（Evidence Auditor）
+
+**背景**：LLM 以「生成式补全」模式工作，看到与问题相关的文字就默认作为答案输出。v2.1 方案让 LLM 自我评估证据状态（`EVIDENCE_STATUS`），存在根本逻辑漏洞——证据状态的判断者和答案的生成者是同一个模型。v3.0 改为**程序级三层审计**：不让模型证明自己没有幻觉，而让系统验证每一句结论都能回溯到可审计的证据。详见 [ADR-020](../../docs/decisions/ADR-020-三层证据审计.md)。
+
+### 9.1 三层审计架构
+
+```
+LLM 生成完成 → assistant_content 完整文本
+    ↓
+【第一层：引用存在性检查】
+  正则匹配 [来源N] 标注 → has_citation + cited_indices
+  答案含实质性内容但零引用 → 大概率编造
+    ↓
+【第二层：来源一致性检查】
+  统计引用涉及的唯一文档数 → consistency_status
+  1 个文档 → consistent | 2 个 → acceptable | 3+ → dispersed（可疑）
+    ↓
+【第三层：句级证据回溯】
+  对答案切句 → jieba 提取关键词 → 在 used_chunks 中搜索匹配
+  ≥50% 事实句无来源支撑 → unsupported | ≤50% → partial | 0% → supported
+    ↓
+【综合置信度】
+  ≥2 问题 or unsupported → low | 1 问题 → medium | 无问题 → high
+```
+
+### 9.2 设计要点
+
+| 要点 | 决策 | 原因 |
+|:---|:---|:---|
+| 执行时机 | LLM 流完成后、sources 事件构建阶段 | 不影响 SSE 流输出延迟，审计结果附加到 sources 事件 |
+| 审计粒度 | 三层独立检查，综合计算 | 每层各自发现不同维度的问题 |
+| 关键词提取 | jieba 分词 + top-3 长词 | 复用已有依赖，长词区分度高 |
+| 匹配阈值 | ≥2/3 关键词命中即认为有证据 | 平衡精确度和召回率 |
+| 降级策略 | 审计执行失败 → 跳过，不影响 sources 发送 | 审计是增强功能，不应阻断主流程 |
+
+### 9.3 置信度输出
+
+| `confidence_level` | 含义 | 前端行为 |
+|:---|:---|:---|
+| `high` | 三层审计均无问题 | 正常展示，无额外提示 |
+| `medium` | 有一项问题（如零引用或部分断言无证据） | 黄色警告：「以下答案部分内容可能不准确，请注意核实」 |
+| `low` | 两项以上问题或证据状态 unsupported | 黄色警告：「以下答案可能存在偏差，建议核实原始文档」 |
+
+### 9.4 已知局限
+
+| 局限 | 说明 | 缓解 |
+|:---|:---|:---|
+| 关键词匹配精度 | jieba 分词 + 子串匹配可能漏判或误判 | 仅作为置信度标注，不阻断答案输出 |
+| 不检测语义正确性 | 仅检查关键词可追溯性，不验证事实正确性 | Phase 6 可考虑接入 NLI 模型做语义验证 |
+| 引用格式依赖 | 第一层依赖 LLM 输出 `[来源N]` 格式 | LLM 未遵守格式时退化为无引用检测 |
+
+---
+
+## 10. 问答核心逻辑（伪代码）
 
 ```python
 # chat_service.py 核心流程
@@ -507,6 +594,9 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
         bm25_results = await bm25_retriever.search(question, kb_id, top_k=10)
         merged = rrf_fusion(vector_results, bm25_results, k=60)
         reranked = await reranker.rerank(question, merged, top_k=5)
+        # 句级修辞过滤（Phase 5.5 ADR-019）
+        for r in reranked.results:
+            r.content = filter_chunk_sentences(r.content)
         reranked = match_sentences(reranked, question)  # Evidence Highlight
     else:
         reranked = []
@@ -514,29 +604,35 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
     # 4. 拼 Prompt + LLM SSE 流式输出
     prompt_messages = prompt_builder.build(question, reranked, history=history_messages)
     # ... SSE StreamingResponse ...
+    # LLM 流完成后：
+    
+    # 5. 三层证据审计（Phase 5.5 ADR-020）
+    audit_result = audit_evidence(assistant_content, prompt_result.used_chunks)
+    # → sources 事件含 confidence / confidence_note 字段
 ```
 
 ---
 
-## 10. 相关源文件
+## 11. 相关源文件
 
 | 文件 | 职责 |
 |:---|:---|
-| `backend/app/services/chat_service.py` | 问答核心流程编排 |
+| `backend/app/services/chat_service.py` | 问答核心流程编排 + 证据审计集成 |
 | `backend/app/rag/query_rewriter.py` | Query Rewrite 触发判断 + LLM 改写 |
 | `backend/app/rag/intent.py` | 意图分类（规则 + Flash 模型） |
-| `backend/app/rag/sentence_matcher.py` | Evidence Highlight 句级 BM25 定位 |
+| `backend/app/rag/sentence_matcher.py` | 句级修辞过滤 + Evidence Highlight 句级 BM25 定位 |
+| `backend/app/rag/evidence_auditor.py` | 三层证据审计（引用存在性 + 来源一致性 + 句级证据回溯） |
 | `backend/app/rag/retriever.py` | 向量检索 |
 | `backend/app/rag/bm25_retriever.py` | BM25 关键词检索 + 三级缓存 |
 | `backend/app/rag/fusion.py` | RRF 融合排序 |
-| `backend/app/rag/reranker.py` | Rerank（当前 NoopReranker） |
-| `backend/app/rag/prompt_builder.py` | Prompt 组装 |
+| `backend/app/rag/reranker.py` | Rerank（DashScope Rerank API 精排 + NoopReranker 降级回退） |
+| `backend/app/rag/prompt_builder.py` | Prompt 组装（陈述/引用知识判断框架） |
 | `backend/app/rag/trace_recorder.py` | Trace 上下文管理器 |
 | `backend/app/core/llm.py` | LLM 调用封装（流式/非流式） |
 
 ---
 
-## 11. 相关文档
+## 12. 相关文档
 
 - [架构设计文档](../../docs/ARCHITECTURE.md) — 技术选型、系统架构、基础设施
 - [接口文档](API.md) — REST 接口定义、SSE 事件格式、错误码

@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v1.0 |
-| 最后更新 | 2026-06-15 |
+| 文档版本 | v1.1 |
+| 最后更新 | 2026-06-15（Phase 5.5 知识库质量治理测试用例已添加） |
 
 ---
 
@@ -352,6 +352,33 @@
 | P3-U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-04 | — |
 | P3-U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-04 | — |
 | P3-U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅截取数量，chunk 的 content/metadata 不变 | ✅ | 2026-06-04 | — |
+
+### 5.5+ 后端 — DashScopeReranker 测试（Phase 5.5 §8.6）
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| P55-RR.1 | DashScopeReranker-正常解析降序结果 | `_parse_rerank_response()` | API 返回 3 条结果 | 按 relevance_score 降序提取 index 列表 | ✅ | 2026-06-15 | — |
+| P55-RR.2 | DashScopeReranker-部分结果截取 top_n | `_parse_rerank_response()` | 5 篇文档，top_n=2 | 返回 2 条结果的 index | ✅ | 2026-06-15 | — |
+| P55-RR.3 | DashScopeReranker-单条结果 | `_parse_rerank_response()` | 1 篇文档 | 返回 [0] | ✅ | 2026-06-15 | — |
+| P55-RR.4 | DashScopeReranker-空 output 降级 | `_parse_rerank_response()` | API 返回 output={} | 降级返回全部原始索引 | ✅ | 2026-06-15 | — |
+| P55-RR.5 | DashScopeReranker-空 results 降级 | `_parse_rerank_response()` | API 返回 results=[] | 降级返回全部原始索引 | ✅ | 2026-06-15 | — |
+| P55-RR.6 | DashScopeReranker-缺少 index 抛异常 | `_parse_rerank_response()` | 结果项缺 index 字段 | ValueError，含「缺少 index 字段」 | ✅ | 2026-06-15 | — |
+| P55-RR.7 | DashScopeReranker-index 越界抛异常 | `_parse_rerank_response()` | index=5, doc_count=3 | ValueError，含「索引越界」 | ✅ | 2026-06-15 | — |
+| P55-RR.8 | DashScopeReranker-负 index 抛异常 | `_parse_rerank_response()` | index=-1 | ValueError，含「索引越界」 | ✅ | 2026-06-15 | — |
+| P55-RR.9 | DashScopeReranker-API 正常排序 | `DashScopeReranker.rerank()` | 5 条输入 top_k=3 | API 返回 [2,0,4] → 按此顺序重排 | ✅ | 2026-06-15 | Mock httpx.AsyncClient |
+| P55-RR.10 | DashScopeReranker-API 部分结果 | `DashScopeReranker.rerank()` | 5 条输入 top_k=2 | API 返回 2 条 → 输出 2 条 | ✅ | 2026-06-15 | — |
+| P55-RR.11 | DashScopeReranker-空输入 | `DashScopeReranker.rerank()` | 输入 [] | 直接返回空，不调 API | ✅ | 2026-06-15 | — |
+| P55-RR.12 | DashScopeReranker-单条输入 | `DashScopeReranker.rerank()` | 1 条输入 | 调用 API，返回 1 条 | ✅ | 2026-06-15 | — |
+| P55-RR.13 | DashScopeReranker-HTTP 错误降级 | `DashScopeReranker.rerank()` | API 返回 500 | 降级回退到原始 RRF 排序 + 截取 top_k | ✅ | 2026-06-15 | 3 次重试后降级 |
+| P55-RR.14 | DashScopeReranker-网络异常重试 | `DashScopeReranker.rerank()` | httpx.TimeoutException | 3 次重试后降级回退 | ✅ | 2026-06-15 | — |
+| P55-RR.15 | DashScopeReranker-JSON 解析错误 | `DashScopeReranker.rerank()` | API 返回非 JSON | 3 次重试后降级回退 | ✅ | 2026-06-15 | — |
+| P55-RR.16 | DashScopeReranker-top_k 大于输入 | `DashScopeReranker.rerank()` | 5 条输入 top_k=10 | effective_top_n=5，返回全部 5 条 | ✅ | 2026-06-15 | — |
+| P55-RR.17 | DashScopeReranker-请求体格式验证 | `DashScopeReranker.rerank()` | 正常请求 | model/query/documents/top_n 等字段正确 | ✅ | 2026-06-15 | — |
+| P55-RR.18 | DashScopeReranker-首次失败二次成功 | `DashScopeReranker.rerank()` | 第 1 次 500，第 2 次 200 | 返回正确结果，call_count=2 | ✅ | 2026-06-15 | — |
+| P55-RR.19 | DashScopeReranker-不改变 chunk | `DashScopeReranker.rerank()` | 正常重排 | content/doc_id/page/doc_name 不变 | ✅ | 2026-06-15 | — |
+| P55-RR.20 | DashScopeReranker-API URL | `DashScopeReranker.api_url` | — | 正确的 DashScope Rerank 端点 | ✅ | 2026-06-15 | — |
+| P55-RR.21 | DashScopeReranker-base_url | `DashScopeReranker._base_url` | base_url 带尾部斜杠 | __init__ 中 rstrip 处理 | ✅ | 2026-06-15 | — |
+| P55-RR.22 | DashScopeReranker-接口一致性 | 类继承 | — | issubclass(DashScopeReranker, BaseReranker) | ✅ | 2026-06-15 | — |
 
 ### 5.6 后端 — Prompt 模板测试
 
@@ -856,12 +883,19 @@
 | P5-U11.5 | SSE-sources 向前兼容 | `_build_sources()` | content 字段保留完整 | `content` 字段仍在且完整，旧前端不受影响 | ✅ | 2026-06-11 | TestBuildSourcesFormat.test_content字段保留完整内容_向前兼容 |
 | P5-U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 highlight_start/end 的 chunk | `getSourcePreviewHtml(src)` 纯 slice 渲染：`slice(0, s) + <mark> + slice(s, e) + </mark> + slice(e)` | ✅ | 2026-06-11 | `getSourcePreviewHtml()` 基于 `highlight_start/end` 纯切片渲染；旧 snippet 体系（extractSnippet 等 5 函数 ~80 行）已删除 |
 
-### 7.5 句级 Evidence 定位（sentence_matcher）测试用例
+### 7.5 句级修辞过滤 + Evidence 定位（sentence_matcher）测试用例
 
-> 测试文件：`tests/unit/rag/test_sentence_matcher.py`（14 用例，全部通过 ✅）。覆盖 `match_sentences()` 函数：空输入 / 单句 chunk / 多 chunk 独立定位 / 无句子 / 确定性验证 / 字段透传。
+> 测试文件：`tests/unit/rag/test_sentence_matcher.py`（32 用例，全部通过 ✅）。覆盖 `detect_sentence_role() / filter_chunk_sentences() / match_sentences()` 函数：空输入 / 单句 chunk / 多 chunk 独立定位 / 无句子 / 确定性验证 / 字段透传。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
+| P5.5-SF.1 | 陈述知识-普通描述句 | `detect_sentence_role()` | 普通描述句 | 返回 "assertive" | ✅ | 2026-06-15 | TestDetectSentenceRole (2 用例) |
+| P5.5-SF.2 | 引用知识-示例/测试/TODO 标记 | `detect_sentence_role()` | 含「示例：」「例如，」「测试用例：」「TODO」等标记 | 返回 "referential" | ✅ | 2026-06-15 | TestDetectSentenceRole (7 用例) |
+| P5.5-SF.3 | 引用知识-JSON/代码块结构 | `detect_sentence_role()` | 以 `{` 开头或含 ` ``` ` | 返回 "referential" | ✅ | 2026-06-15 | TestDetectSentenceRole (1 用例) |
+| P5.5-SF.4 | 空/空白默认为陈述 | `detect_sentence_role()` | 空字符串或纯空白 | 返回 "assertive"（宁可放过不可错杀） | ✅ | 2026-06-15 | TestDetectSentenceRole (2 用例) |
+| P5.5-SF.5 | 全陈述句原样保留 | `filter_chunk_sentences()` | 全部为陈述句 | 保留全部内容 | ✅ | 2026-06-15 | TestFilterChunkSentences (2 用例) |
+| P5.5-SF.6 | 混合内容过滤引用句 | `filter_chunk_sentences()` | 混合陈述句和引用句 | 仅保留陈述句 | ✅ | 2026-06-15 | TestFilterChunkSentences (2 用例) |
+| P5.5-SF.7 | 全引用句回退到原始内容 | `filter_chunk_sentences()` | 全部为引用句 | 回退到原始内容（宁可放过不可错杀） | ✅ | 2026-06-15 | TestFilterChunkSentences (2 用例) |
 | P5-U11.10 | 空 results 直接返回 | `match_sentences()` | `RetrievalOutput(results=[])` | 不抛异常，原样返回 | ✅ | 2026-06-11 | TestMatchSentencesEmpty (3 用例)：空 results / 空 content / 纯空白 content |
 | P5-U11.11 | 单句 chunk 即为最佳句 | `match_sentences()` | chunk 仅含 1 句 | 该句即为 `matched_sentence`，`matched_sentence_score` 为 float | ✅ | 2026-06-11 | TestMatchSentencesSingleSentence (2 用例)：单句 + 无句末标点 |
 | P5-U11.12 | 多 chunk 各自独立定位 | `match_sentences()` | 2 个 chunk 内容不同 | 各自匹配到不同最佳句 | ✅ | 2026-06-11 | TestMatchSentencesMultiChunk (3 用例)：不同句/不同 question 不同句/确定性验证 |
@@ -869,12 +903,33 @@
 | P5-U11.14 | score 字段验证 | `match_sentences()` | 正常定位 | `matched_sentence_score` 为 float，最佳句分数高于其他句 | ✅ | 2026-06-11 | TestMatchSentencesScore (2 用例) |
 | P5-U11.15 | 字段透传 + 幂等 | `match_sentences()` | 重复调用 | 原有字段不变（doc_id/content/score/page/doc_name），重复调用幂等 | ✅ | 2026-06-11 | TestMatchSentencesFieldPassthrough (2 用例) |
 
-### 7.6 Trace 链路追踪测试用例
+### 7.6 三层证据审计（evidence_auditor）测试用例
+
+> 测试文件：`tests/unit/rag/test_evidence_auditor.py`（19 用例，全部通过 ✅）。覆盖 `audit_evidence()` 三层审计 + 综合置信度计算 + 端到端集成。对齐 Phase 5.5 §8.2-§8.4 三层证据审计设计（详见 [RAG_PIPELINE.md](../../backend/docs/RAG_PIPELINE.md) §9、[ADR-020](../decisions/ADR-020-三层证据审计.md)）。
+
+| ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| P5.5-EA.1 | 有引用-检测到来源编号 | `_check_citation_exists()` | 答案含 [来源1] | has_citation=True, cited_indices=[1] | ✅ | 2026-06-15 | TestCitationExists (5 用例) |
+| P5.5-EA.2 | 零引用-has_citation 为 False | `_check_citation_exists()` | 答案无 [来源N] | has_citation=False | ✅ | 2026-06-15 | — |
+| P5.5-EA.3 | 单文档来源-consistent | `_check_source_consistency()` | 所有引用来自同一文档 | consistency_status="consistent" | ✅ | 2026-06-15 | TestSourceConsistency (5 用例) |
+| P5.5-EA.4 | 三文档以上-dispersed | `_check_source_consistency()` | 引用来自 3+ 个文档 | consistency_status="dispersed" | ✅ | 2026-06-15 | — |
+| P5.5-EA.5 | 引用索引越界安全忽略 | `_check_source_consistency()` | [来源N] 编号超出范围 | 安全忽略越界引用 | ✅ | 2026-06-15 | — |
+| P5.5-EA.6 | 全部有证据-supported | `_check_sentence_evidence()` | 所有事实句在来源中可找到 | evidence_status="supported" | ✅ | 2026-06-15 | TestSentenceEvidence (7 用例) |
+| P5.5-EA.7 | 部分无证据-partial | `_check_sentence_evidence()` | ≤50% 事实句无来源 | evidence_status="partial" | ✅ | 2026-06-15 | — |
+| P5.5-EA.8 | 大面积无证据-unsupported | `_check_sentence_evidence()` | >50% 事实句无来源 | evidence_status="unsupported" | ✅ | 2026-06-15 | — |
+| P5.5-EA.9 | 跳过引用句和短句 | `_check_sentence_evidence()` | 以「来源」开头或 <8 字符 | 不计入事实句 | ✅ | 2026-06-15 | — |
+| P5.5-EA.10 | 三层全通过-high | `_compute_confidence()` | 无问题 | confidence_level="high" | ✅ | 2026-06-15 | TestComputeConfidence (4 用例) |
+| P5.5-EA.11 | 单一问题-medium | `_compute_confidence()` | 仅一项问题 | confidence_level="medium" | ✅ | 2026-06-15 | — |
+| P5.5-EA.12 | 多项问题或 unsupported-low | `_compute_confidence()` | ≥2 问题或 unsupported | confidence_level="low" | ✅ | 2026-06-15 | — |
+| P5.5-EA.13 | 正常答案端到端-high | `audit_evidence()` | 有引用+来源一致+证据充分 | confidence_level="high" | ✅ | 2026-06-15 | TestAuditEvidenceIntegration (4 用例) |
+| P5.5-EA.14 | 空答案空 chunks 不抛异常 | `audit_evidence()` | 空输入 | 不抛异常，返回默认结果 | ✅ | 2026-06-15 | — |
+
+### 7.7 Trace 链路追踪测试用例
 
 > 后端测试文件：`tests/unit/services/test_trace_service.py`（23 用例）+ `tests/unit/api/test_trace_api.py`（17 用例），全部通过 ✅。
 > 覆盖 record_trace / list_traces / get_trace_detail / get_trace_stats + TraceRecorder + 3 个 API 端点权限校验。
 
-#### 7.6.1 后端 — Trace 模型与 Service 测试
+#### 7.7.1 后端 — Trace 模型与 Service 测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -884,7 +939,7 @@
 | P5-U13.4 | Trace 写入-generate 不存 output | `trace_service.record_trace()` | generate 含 output 字段 | output 被剥离，不写入 DB | ✅ | 2026-06-12 | 设计约束：通过 conversation_id JOIN 获取 |
 | P5-U13.5 | TraceRecorder 上下文管理器 | `trace_recorder.TraceRecorder()` | 正常问答全流程 | 各阶段 span 自动记录 start_time/duration_ms | ✅ | 2026-06-12 | 上下文管理器 + `with` 语句 |
 
-#### 7.6.2 后端 — Trace API 接口测试
+#### 7.7.2 后端 — Trace API 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -898,7 +953,7 @@
 | P5-A9.8 | Trace 详情-不存在 | GET `/api/admin/traces/invalid-id` | 无效 trace_id | 404 | ✅ | 2026-06-12 | — |
 | P5-A9.9 | Trace 非 admin 拒绝 | GET `/api/admin/traces` | 普通用户 | 403, E5005 | ✅ | 2026-06-12 | 权限矩阵 |
 
-#### 7.6.3 后端 — Trace 统计接口测试
+#### 7.7.3 后端 — Trace 统计接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -909,11 +964,11 @@
 | P5-A9.14 | 统计-response_distribution | GET `/api/admin/stats/traces?days=7` | 混合响应模式 Trace | response_distribution 各模式计数正确 | ✅ | 2026-06-12 | — |
 | P5-A9.15 | 统计-空数据 | GET `/api/admin/stats/traces?days=1` | 无 Trace 数据 | 200, 各数组为空或零值 | ✅ | 2026-06-12 | 边界 |
 
-#### 7.6.4 后端 — chat_service 集成埋点测试
+#### 7.7.4 后端 — chat_service 集成埋点测试
 
 > 测试文件：`tests/integration/test_chat_trace_integration.py`（5 用例，全部通过 ✅）。
-> **与已通过的 Trace 测试的关系**：§7.6.1-7.6.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入。
-> **测试策略**：使用真实 TraceRecorder 对象（而非 MagicMock），通过 Mock `record_trace()` 阻止真实 DB 写入，直接断言 recorder 内部属性（`_intent_data`/`_retrieve_data` 等），与 §7.6.1 Trace 模型测试互补。**细粒度检索阶段断言**（vector/bm25/fusion/match_sentence 各自 duration_ms）已移至 `tests/unit/rag/test_knowledge_pipeline.py`，当前集成测试仅关注 intent/status 级别 Trace 正确性。
+> **与已通过的 Trace 测试的关系**：§7.7.1-7.7.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入。
+> **测试策略**：使用真实 TraceRecorder 对象（而非 MagicMock），通过 Mock `record_trace()` 阻止真实 DB 写入，直接断言 recorder 内部属性（`_intent_data`/`_retrieve_data` 等），与 §7.7.1 Trace 模型测试互补。**细粒度检索阶段断言**（vector/bm25/fusion/match_sentence 各自 duration_ms）已移至 `tests/unit/rag/test_knowledge_pipeline.py`，当前集成测试仅关注 intent/status 级别 Trace 正确性。
 > **与原性能埋点的关系**：原 P5-U12.1/P5-U12.2/P5-U12.3（散落 `logger.info` 计时日志）已合并入 Trace 体系（标记 ⏭️），由 Trace 结构化写 DB 替代。本节不再重复验证日志格式，仅关注 chat_service 全链路 Trace 写入的正确性。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
@@ -924,11 +979,11 @@
 | P5-U13.13 | 埋点-错误状态 | `chat_service.chat()` | LLM 调用失败 | Trace 写入，status=error，error_message 非空 | ✅ | 2026-06-13 | recorder.record_error() 被调用；intent/retrieve 正常（在 LLM 之前完成） |
 | P5-U13.14 | 埋点-retrieve 细粒度 | `chat_service.chat()` | 正常检索 | retrieve JSON 含 vector/bm25/fusion/match_sentence 各自 duration_ms | ✅ | 2026-06-13 | BM25 stats 透传验证（redis_cache/tokenize_ms 等）；**注意**：细粒度 retrieve 断言已移至 `test_knowledge_pipeline.py` |
 
-### 7.7 ECharts 统计测试用例
+### 7.8 ECharts 统计测试用例
 
 > 后端测试文件：`tests/unit/api/test_admin_api.py`（TestAdminStatsChartsAPI 类，7 用例）。
 
-#### 7.7.1 后端 — 统计增强接口测试
+#### 7.8.1 后端 — 统计增强接口测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|---|:---|:---|:---|:---|
@@ -940,10 +995,10 @@
 | P5-A7.12 | charts.latency P50/P95/P99 | `/api/admin/stats` | 有延迟数据 | 分位数计算正确 | ✅ | 2026-06-12 | 3 用例合并（P50/P95/P99） |
 | P5-A7.13 | charts.tokens input/output | `/api/admin/stats` | 有 token 数据 | input/output 统计正确 | ✅ | 2026-06-12 | 2 用例合并（input/output） |
 
-#### 7.7.2 前端 — ECharts 组件测试
+#### 7.8.2 前端 — ECharts 组件测试
 
 > 测试文件：`tests/useECharts.test.js`（9 用例，全部通过 ✅）。覆盖 init/setOption/notMerge/resize/dispose/getInstance + pendingOption 暂存机制。
-> TrendChart/LatencyChart/TokenChart 通过 `StatsPage.test.js` 的 ECharts mock 间接覆盖（§7.7.3），无独立测试文件。
+> TrendChart/LatencyChart/TokenChart 通过 `StatsPage.test.js` 的 ECharts mock 间接覆盖（§7.8.3），无独立测试文件。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -957,7 +1012,7 @@
 | P5-C7.8 | useECharts pendingOption | `useECharts` | 挂载前 setOption | 暂存 option，挂载后自动应用 | ✅ | 2026-06-12 | 3 用例（暂存应用/正常调用/dispose 清除） |
 | P5-C7.9 | useECharts setOption notMerge | `useECharts` | notMerge 参数 | setOption 正确传递 notMerge 参数 | ✅ | 2026-06-12 | 1 用例 |
 
-#### 7.7.3 前端 — StatsPage 图表集成测试
+#### 7.8.3 前端 — StatsPage 图表集成测试
 
 > 测试文件：`tests/StatsPage.test.js`（ECharts 图表集成部分，6 用例，全部通过 ✅）。
 
@@ -970,11 +1025,11 @@
 | P5-C7.14 | 图表 API 失败容错 | `StatsPage` | getTraceStats 失败 | 不阻断页面，统计卡片正常渲染 | ✅ | 2026-06-12 | — |
 | P5-C7.15 | 并行调用两个 API | `StatsPage` | 性能 | getAdminStats 和 getTraceStats 并行调用 | ✅ | 2026-06-12 | — |
 
-### 7.8 用户管理测试用例
+### 7.9 用户管理测试用例
 
 > 后端测试文件：`tests/unit/services/test_admin_user_service.py`（17 用例）+ `tests/unit/api/test_admin_user_api.py`（21 用例），全部通过 ✅。
 
-#### 7.8.1 后端 — 用户管理 Service 测试
+#### 7.9.1 后端 — 用户管理 Service 测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -989,7 +1044,7 @@
 | P5-U15.11 | 重置密码 | `admin_service.reset_user_password()` | 有效 user_id + new_password | 密码更新成功，新密码可登录 | ✅ | 2026-06-13 | TestResetUserPassword (3 用例)：验证密码哈希更新 + 吊销 token |
 | P5-U15.12 | 重置密码-用户不存在 | `admin_service.reset_user_password()` | 无效 user_id | 抛出 NotFoundException | ✅ | 2026-06-13 | 含密码相同校验 E7004 |
 
-#### 7.8.2 后端 — 用户管理 API 接口测试
+#### 7.9.2 后端 — 用户管理 API 接口测试
 
 | ID | 测试用例 | 端点 | 场景 | 预期响应 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1004,10 +1059,10 @@
 | P5-A9.30 | 重置密码-密码过短 | POST `/api/admin/users/{user_id}/reset-password` | `{"new_password":"123"}` | 422 | ✅ | 2026-06-13 | 参数校验 + 密码相同 E7004 |
 | P5-A9.31 | 用户管理-非 admin 拒绝 | 全部用户管理端点 | 普通用户 | 403, E5005 | ✅ | 2026-06-13 | TestAdminUserPermissionMatrix (8 用例)：4 端点 × 2 场景 |
 
-#### 7.8.3 前端 — 用户管理组件测试
+#### 7.9.3 前端 — 用户管理组件测试
 
 > 前端测试文件：`frontend/tests/AdminUserList.test.js`（15 用例）+ `frontend/tests/AdminUserDetail.test.js`（16 用例）。
-> **说明**：AdminUserList.vue 和 AdminUserDetail.vue 组件已实现（2026-06-13），后端 API 测试已通过（§7.8.1-7.8.2，20 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-13，31 用例）。
+> **说明**：AdminUserList.vue 和 AdminUserDetail.vue 组件已实现（2026-06-13），后端 API 测试已通过（§7.9.1-7.9.2，20 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-13，31 用例）。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1025,10 +1080,10 @@
 | P5-C8.13 | AdminUserDetail 返回导航 | `AdminUserDetail` | 点击返回 | 跳转 `/admin/users`，错误状态下也显示返回按钮 | ✅ | 2026-06-13 | 2 用例（正常返回/错误状态返回） |
 | P5-C8.14 | AdminUserDetail 禁用/启用 | `AdminUserDetail` | 操作按钮 | 活跃用户显示禁用按钮，已禁用用户显示启用按钮 | ✅ | 2026-06-13 | 2 用例 |
 
-### 7.9 Trace 前端组件测试
+### 7.10 Trace 前端组件测试
 
 > 前端测试文件：`frontend/tests/TraceList.test.js`（23 用例）+ `frontend/tests/TraceDetail.test.js`（25 用例）。
-> **说明**：TraceList.vue 和 TraceDetail.vue 组件已实现（2026-06-12），后端 API 测试已通过（§7.6.2-7.6.3，57 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-12，48 用例）。
+> **说明**：TraceList.vue 和 TraceDetail.vue 组件已实现（2026-06-12），后端 API 测试已通过（§7.7.2-7.7.3，57 用例）。本节测试验证前端组件的渲染、交互和导航逻辑。**已通过**（2026-06-12，48 用例）。
 
 | ID | 测试用例 | 组件 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1045,11 +1100,11 @@
 | P5-C9.11 | TraceDetail JSON 折叠 | `TraceDetail` | 再次点击 | JSON 面板折叠 | ✅ | 2026-06-12 | v-if 切换验证 |
 | P5-C9.12 | TraceDetail 返回导航 | `TraceDetail` | 点击返回 | 跳转 `/admin/traces` | ✅ | 2026-06-12 | router.push 验证 |
 
-### 7.10 外部资源 UUID 化测试用例
+### 7.11 外部资源 UUID 化测试用例
 
 > 测试文件：后端 `tests/unit/core/test_uuid_helpers.py`（36 用例）+ `tests/unit/schemas/test_uuid_schemas.py`（21 用例）+ `tests/unit/api/test_uuid_api.py`（22 用例）。覆盖转换工具/Schema/API 三层。前端测试（§7.10.5）待前端适配后补充。
 
-#### 7.10.1 后端 — UUID↔ID 转换工具测试
+#### 7.11.1 后端 — UUID↔ID 转换工具测试
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1060,7 +1115,7 @@
 | P5-U16.14 | get_by_uuid — 不存在 | `get_by_uuid` | 不存在的 uuid | 抛出 NotFoundException | ✅ | 2026-06-13 | — |
 | P5-U16.15 | get_by_uuid — 无效格式 | `get_by_uuid` | 非法 uuid 字符串 | 抛出 NotFoundException | ✅ | 2026-06-13 | — |
 
-#### 7.10.2 后端 — ORM 模型测试
+#### 7.11.2 后端 — ORM 模型测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1070,7 +1125,7 @@
 | P5-U16.23 | uuid 唯一性 | `KnowledgeBase` | 创建两条记录后查 uuid | 两条记录 uuid 不同 | ✅ | 2026-06-13 | unique=True 约束验证 |
 | P5-U16.24 | id 字段仍为自增 | 三张表 | 创建多条记录 | id 仍为自增整数，与 uuid 独立 | ✅ | 2026-06-13 | autoincrement=True 验证 |
 
-#### 7.10.3 后端 — Pydantic Schema 测试
+#### 7.11.3 后端 — Pydantic Schema 测试
 
 | ID | 测试用例 | Schema | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1082,7 +1137,7 @@
 | P5-U16.35 | ChatRequest conversation_id UUID | `ChatRequest` | conversation_id="550e8400-..." | 校验通过，类型为字符串 | ✅ | 2026-06-13 | — |
 | P5-U16.36 | Trace 响应不含自增 id | `TraceListItem` | 序列化 Trace | 输出含 `trace_id`，不含自增 `id` | ✅ | 2026-06-13 | test_uuid_schemas.py TestTraceResponseSchema |
 
-#### 7.10.4 后端 — API 接口测试（路径参数 UUID 化）
+#### 7.11.4 后端 — API 接口测试（路径参数 UUID 化）
 
 | ID | 测试用例 | 端点 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1108,7 +1163,7 @@
 | P5-A10.20 | 权限校验不变 — private KB | `GET /knowledge-bases/{uuid}` | private KB 非 owner | 403, E5005（UUID 化不影响权限逻辑） | ✅ | 2026-06-13 | — |
 | P5-A10.21 | 权限校验不变 — admin 访问 | `GET /knowledge-bases/{uuid}` | admin 访问他人 KB | 200（admin 权限不受 UUID 化影响） | ✅ | 2026-06-13 | — |
 
-#### 7.10.5 前端 — 组件与路由测试
+#### 7.11.5 前端 — 组件与路由测试
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -1169,8 +1224,6 @@
 | P3 | Resumable 分片上传 | Phase 2 | 分片并发 / 断点续传 / 最终合并 |
 | P3 | 内容去重 | Phase 2 | 哈希去重 / 近似去重 / 去重提示 |
 
----
-
 ## 9. 测试覆盖率目标
 
 | 模块 | 覆盖率目标 | 当前值 | 备注 |
@@ -1194,44 +1247,16 @@
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例；适配 BaseVectorStore 抽象，AsyncMock 替代 ChromaDB Mock） |
 | `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2：BM25 检索 + 三级缓存（进程内→Redis→MySQL）+ async Redis（31 用例，含 7 个真实 jieba 集成测试 + 进程内缓存 + 异步缓存清除） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
-| `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例） |
-| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例，P3-U7.54） |
+| `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例）+ Phase 5.5：DashScopeReranker（22 用例，P55-RR.1-P55-RR.22） |
+| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例）+ Phase 5.5 陈述知识/引用知识模板 |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
-| `services/conversation_service.py` | ≥ 80% | ✅ 通过 API 测试 | Phase 4.1：会话 CRUD（5 个端点，20 用例，2026-06-05） |
-| `api/conversation.py` | ≥ 90% | ✅ 100% | Phase 4.1：会话 API（20 用例，2026-06-05） |
-| `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py，2026-06-05） |
-| `services/chat_service.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py，2026-06-05） |
+| `services/conversation_service.py` | ≥ 80% | ✅ 通过 API 测试 | Phase 4.1：会话 CRUD（5 个端点，20 用例） |
+| `api/conversation.py` | ≥ 90% | ✅ 100% | Phase 4.1：会话 API（20 用例） |
+| `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py） |
+| `services/chat_service.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py） |
 | `core/error_handlers.py` | ≥ 80% | ✅ | Phase 4.2：全局异常处理（test_error_handlers.py，9 用例，P4-U9.1-P4-U9.3） |
 | `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（13 用例，含 P4-U12.4 JSON 格式集成校验） |
-| `services/auth_service.py` (refresh) | ≥ 80% | ✅ | Phase 4.2：Refresh Token 机制（20 用例） |
-| `core/exceptions.py` (E5006-E5009) | ≥ 80% | ✅ | Phase 4.2：新增 4 个异常类 |
-| `api/admin.py` (接口测试) | ≥ 90% | ✅ 100% | Phase 5：Admin 端点（27 用例，P5-A7.1-P5-A7.6，含权限矩阵参数化 9 用例） |
-| `services/admin_service.py` | ≥ 80% | ✅ 100% | Phase 5：Admin 业务逻辑（21 用例：统计 3 + KB 列表 8 + 文档列表 10） |
-| 前端 `components/layout/AdminLayout.vue` | ≥ 60% | ✅ 19 通过 | Phase 5：Admin 独立布局（19 用例：渲染结构/路由标题/导航项/返回按钮/slot；2026-06-11 更新：系统概览→系统统计、移除活跃统计导航项） |
-| `middleware/rate_limit.py` | ≥ 80% | ✅ | Phase 5：限流中间件（5 用例，P5-A8.1-P5-A8.5） |
-| `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，P5-U10.1-P5-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
-| `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；P5-U11.1-P5-U11.6） |
-| `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，P5-U11.10-P5-U11.15） |
-| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
-| `rag/vector_store.py` | ≥ 80% | ✅ | Phase 5：BaseVectorStore ABC + ChromaVectorStore 实现（9 用例，test_vector_store.py，覆盖 search/add/delete/工厂函数/线程池卸载） |
-| `rag/knowledge_pipeline.py` | ≥ 80% | ✅ | Phase 5：KnowledgePipeline 检索+上下文构建（7 用例，test_knowledge_pipeline.py，覆盖 execute/execute_casual/查询重写/双路检索/RRF/Rerank/句子匹配/Prompt 构建/细粒度 trace 断言） |
-| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock；Phase 5 委托 KnowledgePipeline 检索+构建） |
-| `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
-| `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
-| `ingest/tasks.py` | — | ✅ | Celery 入库任务（10 用例，5 个为常量成员检查；通过 `get_vector_store()` 工厂获取向量存储实例） |
-| 前端 `utils/sse.js` | ≥ 80% | ✅ | Phase 3：SSE 事件解析（21 用例，2026-06-03） |
-| 前端 `utils/markdown.js` | ≥ 80% | ✅ | Phase 3：Markdown 渲染（14 用例，2026-06-03） |
-| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例，2026-06-03（MessageItem +2 用例：未找到相关信息 sources panel 显示/隐藏，2026-06-10 已追踪） |
-| 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例，2026-06-03） |
-| 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
-| 前端 `api/admin.js` | ≥ 80% | ✅ 12 用例 | Phase 5：Admin API 参数透传（12 用例：getStats 3 + getKBs 3 + getDocs 3 + getTraceStats 3，2026-06-12 更新） |
-| 前端 `composables/useECharts.js` | ≥ 80% | ✅ 9 用例 | Phase 5：ECharts 组合式函数（init/setOption/notMerge/resize/dispose/getInstance + pendingOption 暂存 3 用例，2026-06-12） |
-| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 24 用例 | Phase 5：系统统计页（加载态/数据渲染/千分位/formatStorage/错误态/null 边界/ECharts 图表集成 6 用例，2026-06-12 更新：移除快捷入口 3 用例） |
-| 前端 `views/admin/KnowledgeList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：知识库管理页（列表加载/空状态/搜索防抖/筛选/分页/编辑弹窗/删除/错误处理/formatDateTime，2026-06-10） |
-| 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页（列表加载/搜索/筛选排序/分页/删除含 KB 确认/getStatusLabel/isTerminal/formatFileSize，2026-06-10） |
-| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户活跃统计页（描述/占位/7 维度卡片/预览表格/表头顺序，2026-06-12 更新：移除 detail-title 断言 1 用例） |
-| 前端组件 | ≥ 60% | ✅ 341 通过 | 2026-06-12 运行 `npm run test`：21 文件 341 用例全部通过（新增 useECharts 9 用例 + getTraceStats 3 用例；StatsPage +5 净增；ConversationList -1 移除 detail-title 断言） |
 | `models/trace.py` | ≥ 80% | ✅ | Phase 5：Trace ORM 模型（通过 service 测试覆盖） |
 | `services/trace_service.py` | ≥ 80% | ✅ 23 用例 | Phase 5：Trace Service（test_trace_service.py：record_trace 3 + TraceRecorder 7 + list_traces 5 + get_trace_detail 2 + get_trace_stats 6） |
 | `api/admin.py` (Trace 端点) | ≥ 90% | ✅ 17 用例 | Phase 5：Trace API（test_trace_api.py：列表 6 + 详情 2 + 权限 3 + 统计 6） |
@@ -1239,15 +1264,26 @@
 | `api/admin.py` (用户管理端点) | ≥ 90% | ✅ 100% | Phase 5：用户管理 API（21 用例，P5-A9.20-P5-A9.31，test_admin_user_api.py） |
 | `services/admin_service.py` (用户管理) | ≥ 80% | ✅ 100% | Phase 5：用户管理 Service（17 用例，P5-U15.1-P5-U15.12，test_admin_user_service.py） |
 | `services/admin_service.py` (统计增强) | ≥ 80% | ✅ 7 用例 | Phase 5：ECharts 统计增强（test_admin_api.py TestAdminStatsChartsAPI：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
-| 前端 `views/admin/TraceList.vue` | ≥ 60% | ✅ 23 用例 | Phase 5：Trace 列表页（7 用例，P5-C9.1-P5-C9.7） |
-| 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ✅ 25 用例 | Phase 5：Trace 详情页（5 用例，P5-C9.8-P5-C9.12） |
-| 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ✅ 15 用例 | Phase 5：用户列表页（7 用例，P5-C8.1-P5-C8.9） |
-| 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户详情页（5 用例，P5-C8.10-P5-C8.14） |
-| 前端 `components/charts/*.vue` | ≥ 60% | ✅ 21 用例 | Phase 5：ECharts 图表组件（7 用例，P5-C7.1-P5-C7.7） |
-| `core/uuid_helpers.py`（UUID↔ID 转换） | ≥ 80% | ✅ 36 用例 | Phase 5：UUID 外部 ID（test_uuid_helpers.py：validate 11 + resolve 8 + get_by 5 + model 8 + _get_not_found_exception 4；§7.10.1） |
-| Pydantic Schema UUID | ≥ 85% | ✅ 21 用例 | Phase 5：Schema 校验（test_uuid_schemas.py：KB 3 + Doc 5 + Conv 6 + Chat 5 + Trace 3；§7.10.3） |
-| API 层 UUID 路径参数 | ≥ 90% | ✅ 22 用例 | Phase 5：接口回归（test_uuid_api.py：KB 7 + Doc 4 + Conv 4 + Chat 4 + Selectable 1 + Trace 2；§7.10.4） |
-| 前端 UUID 适配 | ≥ 60% | ✅ 23 用例 | Phase 5：组件/路由/Store 适配（P5-C10.1-P5-C10.8，8 用例 23 断言，§7.10.5，UuidAdaptation.test.js） |
+| `rag/sentence_matcher.py` | ≥ 80% | ✅ 32 用例 | Phase 5.5：修辞角色过滤 + Evidence 定位（detect_sentence_role 12 + filter_chunk_sentences 6 + match_sentences 14） |
+| `rag/evidence_auditor.py` | ≥ 80% | ✅ 19 用例 | Phase 5.5：三层证据审计（引用存在性 5 + 来源一致性 5 + 句级证据 7 + 置信度 4 + 集成 4） |
+| 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例 |
+| 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例） |
+| 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
+| 前端 `api/admin.js` | ≥ 80% | ✅ 12 用例 | Phase 5：Admin API 参数透传（12 用例） |
+| 前端 `composables/useECharts.js` | ≥ 80% | ✅ 9 用例 | Phase 5：ECharts 组合式函数 |
+| 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 24 用例 | Phase 5：系统统计页 |
+| 前端 `views/admin/KnowledgeList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：知识库管理页 |
+| 前端 `views/admin/DocumentList.vue` | ≥ 60% | ✅ 17 用例 | Phase 5：文档管理页 |
+| 前端 `views/admin/ConversationList.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户活跃统计页 |
+| 前端 `views/admin/TraceList.vue` | ≥ 60% | ✅ 23 用例 | Phase 5：Trace 列表页 |
+| 前端 `views/admin/TraceDetail.vue` | ≥ 60% | ✅ 25 用例 | Phase 5：Trace 详情页 |
+| 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ✅ 15 用例 | Phase 5：用户列表页 |
+| 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户详情页 |
+| 前端 `components/charts/*.vue` | ≥ 60% | ✅ 21 用例 | Phase 5：ECharts 图表组件 |
+| `core/uuid_helpers.py`（UUID↔ID 转换） | ≥ 80% | ✅ 36 用例 | Phase 5：UUID 外部 ID |
+| Pydantic Schema UUID | ≥ 85% | ✅ 21 用例 | Phase 5：Schema 校验 |
+| API 层 UUID 路径参数 | ≥ 90% | ✅ 22 用例 | Phase 5：接口回归 |
+| 前端 UUID 适配 | ≥ 60% | ✅ 23 用例 | Phase 5：组件/路由/Store 适配 |
 
 ---
 
