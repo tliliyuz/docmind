@@ -1,5 +1,4 @@
 """文档业务逻辑 — 上传/批量上传/列表/详情/分块/删除/重新处理"""
-import asyncio
 import logging
 import uuid as uuid_lib
 from pathlib import Path
@@ -11,18 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.core.chroma_client import get_collection
+from app.core.chroma_client import get_vector_store
 from app.core.exceptions import (
     DocumentNameExistsException,
     DocumentNotFoundException,
     DocumentProcessingError,
     ForceOverrideConflictException,
-    PermissionDeniedException,
     ReprocessFailedException,
     StorageErrorException,
     UnsupportedFileFormatException,
     FileSizeExceededException,
 )
+from app.core.permissions import require_kb_owner, require_kb_readable, require_kb_writable
 from app.core.redis_client import get_redis
 from app.core.storage import local_storage
 from app.rag.bm25 import invalidate_bm25_cache_async
@@ -83,6 +82,8 @@ async def _check_kb_ownership(
 
     owner_only=True 时仅 owner 可操作（admin 也不允许），用于上传/reprocess 等写操作
     allow_public_read=True 时，public KB 允许任意登录用户读取（仅限 list/get 等只读操作）
+
+    实际权限逻辑委托给 core/permissions.py 共享函数。
     """
     kb = await check_kb_active(db, kb_id)
 
@@ -91,11 +92,9 @@ async def _check_kb_ownership(
         return
 
     if owner_only:
-        if kb.user_id != user_id:
-            raise PermissionDeniedException()
+        require_kb_owner(kb, user_id)
     else:
-        if kb.user_id != user_id and role != "admin":
-            raise PermissionDeniedException()
+        require_kb_writable(kb, user_id, role)
 
 
 def _build_document_response(doc: Document) -> DocumentResponse:
@@ -145,12 +144,12 @@ async def upload_document(
                 if kb is not None:
                     kb.chunk_count = max(0, kb.chunk_count - old_chunk_count)
 
-            # 清理旧向量（ChromaDB，同步 IO 包装到线程避免阻塞事件循环）
+            # 清理旧向量（通过 VectorStore 抽象，内部已处理异步线程卸载）
             try:
-                collection = get_collection()
-                await asyncio.to_thread(collection.delete, where={"doc_id": doc.id})
+                store = get_vector_store()
+                await store.delete(where={"doc_id": doc.id})
             except Exception:
-                logger.warning("ChromaDB 清理 doc=%d 向量失败，跳过", doc.id)
+                logger.warning("向量存储清理 doc=%d 失败，跳过", doc.id)
 
             # 重置文档状态
             doc.status = DocumentStatus.UPLOADED
@@ -451,11 +450,11 @@ async def reprocess_document(
         )
 
     # 清理 ChromaDB 旧向量（新文档分块数可能少于旧文档，残留向量需清除）
-    # 同步 IO 包装到线程避免阻塞事件循环
+    # 清理旧向量（通过 VectorStore 抽象，内部已处理异步线程卸载）
     try:
-        collection = get_collection()
-        await asyncio.to_thread(collection.delete, where={"doc_id": doc_id})
-        logger.info("文档 %d reprocess 前 ChromaDB 旧向量已清理", doc_id)
+        store = get_vector_store()
+        await store.delete(where={"doc_id": doc_id})
+        logger.info("文档 %d reprocess 前向量存储旧向量已清理", doc_id)
     except Exception:
         logger.exception("文档 %d reprocess 前 ChromaDB 旧向量清理失败", doc_id)
 

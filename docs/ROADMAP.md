@@ -42,7 +42,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 前端环境搭建 | npm 依赖与 Vite 配置 |
 | ✅ | Git 初始化 | .gitignore + 分支策略 |
 | ✅ | MySQL 表建好 | 6 张表 SQLAlchemy 模型 + Alembic 迁移 |
-| ✅ | ChromaDB 连接 | collection 创建与管理 |
+| ✅ | ChromaDB 连接 | collection 创建与管理（已被 ADR-018 BaseVectorStore 抽象层覆盖） |
 | ✅ | JWT 认证 | 注册/登录接口 + 中间件 |
 | ✅ | 前端登录页 | LoginPage.vue + 路由骨架 |
 | ✅ | 前端布局框架 | AppLayout + Sidebar 空壳 |
@@ -73,7 +73,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
 | ✅ | 知识库 CRUD 接口 | POST/GET/PUT/DELETE `/api/knowledge-bases`，名称用户级唯一 `(user_id, name)`，DELETE 当前阶段仅标记 `status=deleting` + 返回 202（Celery 异步物理删除后续实现） | KB 级异步批量清理 |
-| ✅ | 文档状态枚举 | `DocumentStatus(str, Enum)` — 10 状态 + `TERMINAL_STATUSES` + `is_terminal()`，ORM/Schema/API 统一使用 | 约束一 |
+| ✅ | 文档状态枚举 | `DocumentStatus(str, Enum)` — 10 状态 + `TERMINAL_STATUSES` + `is_terminal()`，ORM/Schema/API 统一使用；前端 `TERMINAL_STATUSES` 去重修复 | 约束一 |
 | ✅ | 文档上传 API | POST `/documents`（multipart + force 参数），唯一性检查 `(kb_id, filename)` | 约束二、约束四 |
 | ✅ | 批量上传 API | POST `/documents/batch-upload`（多文件，部分成功返回） | 决策 #13 |
 | ✅ | 重新处理 API | POST `/documents/{id}/reprocess`（仅 `partial_failed`/`failed` 允许） | 决策 #12 |
@@ -89,7 +89,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 文档解析 | PyPDF2 + python-docx，部分容错（<20% warning / 20-50% partial / >50% failed） | 决策 #8 |
 | ✅ | 智能分块 | `RecursiveCharacterTextSplitter`（800-1200 chars，分隔符优先级 `\n\n`→`\n`→`。！？`），字符估算 token | 决策 #1、#2 |
 | ✅ | Embedding 向量化 | DashScope text-embedding-v3，batch_size=20，max_retries=5 指数退避，批次级 checkpoint + token 回写 | 决策 #7 |
-| ✅ | ChromaDB 批量写入 | batch_size=100，禁止单条循环；失败时 `collection.delete(where={doc_id})` 全清 + 标记 FAILED | 决策 #3 |
+| ✅ | ChromaDB 批量写入 | batch_size=100，禁止单条循环；失败时 `vector_store.delete(where={doc_id})` 全清 + 标记 FAILED | 决策 #3 |
 | ✅ | chunk_count 事务更新 | 全部 batch 成功后一次性事务更新 `documents.chunk_count` + `kb.chunk_count`，token_count 回写覆盖估算值 | 决策 #4 |
 | ✅ | 阶段化状态机 | `uploaded → parsing → chunking → embedding → vector_storing → completed`，每阶段更新 `current_stage` + `last_success_batch` | 决策 #9 |
 
@@ -164,7 +164,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Pydantic Schema 更新 | `KnowledgeBaseCreate` 新增 `visibility` 可选字段（默认 `private`）；`KnowledgeBaseUpdate` 新增 `visibility` 可选字段；`KnowledgeBaseResponse` 新增 `visibility` 字段；新增 `PublicKnowledgeBaseResponse`（含 `username`）和 `PublicKnowledgeBaseListResponse` |
 | ✅ | KB Service 权限重构 | `get_kb()` 增加 visibility 判断：public KB 允许非 owner 读取；`list_kbs()` 仅返回用户自己的 KB（不变）；新增 `list_public_kbs()` 返回所有 public+active KB（JOIN users 含 username） |
 | ✅ | API 端点更新 | `POST /api/knowledge-bases` 支持 visibility 参数；`GET /api/knowledge-bases/{id}` public KB 对非 owner 放行；`PUT /api/knowledge-bases/{id}` owner + admin 可修改含 visibility；新增 `GET /api/knowledge-bases/public` 端点 |
-| ✅ | 文档接口权限更新 | `_check_kb_ownership` 新增 `owner_only` 参数：上传/reprocess 仅 owner；查看/分块/删除 owner + admin；`TestDocumentPermissionMatrix` 18 用例覆盖全部权限组合 |
+| ✅ | 文档接口权限更新 | `require_kb_owner` / `require_kb_writable` 替代旧 `_check_kb_ownership`（委托 `permissions.py` 共享函数）：上传/reprocess 仅 owner；查看/分块/删除 owner + admin；`TestDocumentPermissionMatrix` 18 用例覆盖全部权限组合 |
 
 ### 4.3 [前端] 前端实现
 
@@ -204,24 +204,26 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 ### 5.1 [后端] RAG 检索管线
 
+> KnowledgePipeline（`app/rag/knowledge_pipeline.py`）封装了检索+上下文构建管线：查询重写→双路检索→RRF→Rerank→句子匹配→Prompt 构建。
+
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
-| ✅ | 向量检索器 | ChromaDB `collection.query()` 语义检索，`where={"kb_id": kb_id}` 过滤，返回 top_k=10 | 决策 #15、#21 |
+| ✅ | 向量检索器 | `BaseVectorStore.search()` 语义检索，`where={"kb_id": kb_id}` 过滤，返回 top_k=10 | 决策 #15、#21 |
 | ✅ | BM25 关键词检索器 | `rank-bm25` (BM25Okapi) + `jieba.lcut` 分词，每个 KB 独立索引 | 决策 #16 |
 | ✅ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建 | 决策 #16 |
 | ✅ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
 | ✅ | NoopReranker | 占位实现：保持 RRF 融合排序（相关性降序），截取 top_k=5 | 决策 #18 |
 | ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时跳过当前 chunk 尝试下一个），保持 RRF 相关性排序（相关性降序） | 决策 #19 |
 | ✅ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅 `deep_thinking=true` 时传 `reasoning_effort="high"`，解析 `content` + `reasoning_content` | 决策 #20 |
-| ✅ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index`，显式 `int()` 转换保障 | 决策 #21 |
+| ✅ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index`，显式 `int()` 转换保障（由 BaseVectorStore 层处理） | 决策 #21 |
 
 ### 5.2 [后端] Chat API + SSE + 会话生命周期
 
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
 | ✅ | ChatRequest Schema | Pydantic model：`conversation_id: int\|None`、`kb_id: int`、`question: str`（≤2000字符）、`deep_thinking: bool=False` | — |
-| ✅ | Chat Service 核心流程 | `chat_service.chat()` — 检索 → RRF → Rerank → Prompt → LLM SSE 流式，阶段化错误处理（检索失败 E4003 / LLM失败 E4002） | — |
-| ✅ | 问答检索权限 | `POST /api/chat` 校验 kb_id：private KB 仅 owner + admin 可检索，public KB 所有用户可检索 | — |
+| ✅ | Chat Service 核心流程 | `chat_service.chat()` — 委托 KnowledgePipeline 检索+构建，LLM SSE 流式，阶段化错误处理（检索失败 E4003 / LLM失败 E4002） | — |
+| ✅ | 问答检索权限 | `POST /api/chat` 校验 kb_id：使用 `require_kb_readable`（权限集中化，private KB 仅 owner + admin 可检索，public KB 所有用户可检索） | — |
 | ✅ | Chat Router 注册 | `main.py` 注册 `chat_router`（`prefix="/api"`） | — |
 | ✅ | SSE 流式输出 | 手动 `StreamingResponse`（不用 sse-starlette），事件类型：meta → thinking → message → sources → finish → error，15s 心跳注释帧 | 决策 #22 |
 | ✅ | 会话自动创建 | `conversation_id=null` 时自动创建会话（`kb_id` 记录问答目标 KB），不注入历史消息（`history=[]`），数据结构兼容 Phase 4 | 决策 #23 |
@@ -293,13 +295,13 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | # | 决策 | 文档位置 |
 |:---|:---|:---|
-| 15 | 向量检索：ChromaDB `query()` + `where={"kb_id": kb_id}` metadata 过滤，top_k=10 | RAG_PIPELINE.md §2.1 |
+| 15 | 向量检索：`BaseVectorStore.search()` + `where={"kb_id": kb_id}` metadata 过滤，top_k=10 | RAG_PIPELINE.md §2.1 |
 | 16 | BM25 索引生命周期：终态后 Celery 触发重建 + Redis 缓存 `tokenized_corpus` + 查询时懒加载 BM25Okapi 实例化 | RAG_PIPELINE.md §2.2, ARCHITECTURE.md §6.2 |
 | 17 | RRF 融合：k=60，单路为空时仅返回另一路 | ARCHITECTURE.md §6.3 |
 | 18 | NoopReranker：保持 RRF 融合排序（相关性降序），截取 top_k=5 | ARCHITECTURE.md §7.3 |
 | 19 | Prompt 预算：软上限 + 相关性优先填充（保持 RRF 排序），超预算时跳过当前 chunk；chunking 阶段固定 chunk_size 不二次裁剪 | RAG_PIPELINE.md §3 |
 | 20 | LLM：DeepSeek API（OpenAI 兼容），流式 `chat/completions`，通过 `extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅开启 thinking 时传 `reasoning_effort="high"` 控制强度。**注意**：DeepSeek 默认 thinking=enabled，关闭时须显式传 disabled 且不传 reasoning_effort | RAG_PIPELINE.md §5 |
-| 21 | ChromaDB metadata 类型一致：保持 int 类型，入库/查询两端统一 | ARCHITECTURE.md §7.1 |
+| 21 | ChromaDB metadata 类型一致：保持 int 类型，入库/查询两端统一（由 BaseVectorStore 层处理） | ARCHITECTURE.md §7.1 |
 | 22 | SSE：手动 `StreamingResponse`，6 事件类型 + 15s 心跳注释帧 `: ping\n\n` | RAG_PIPELINE.md §5, API.md §6 |
 | 23 | 会话：Phase 3 自动创建（conversation_id=null），不注入历史（history=[]），数据结构兼容 Phase 4 | ARCHITECTURE.md §5, RAG_PIPELINE.md §1 |
 | 24 | 标题：截取用户问题前 12 字，首轮 `event: finish` 返回 | ARCHITECTURE.md §5 |
@@ -393,13 +395,13 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
 | ✅ | `intent.py` 实现 | LLM 分类器（3 分类：KNOWLEDGE/CASUAL/META）+ Prompt + 降级回退 `_is_casual_chat()` |
-| ✅ | `chat_service.py` 集成 | `_validate_and_prepare()` 中插入分类→路由逻辑；META 直接返回固定响应；CASUAL 跳过检索 |
+| ✅ | `chat_service.py` 集成 | `_validate_and_prepare()` 中插入分类→路由逻辑；META 直接返回固定响应；CASUAL 委托 `KnowledgePipeline.execute_casual()` 跳过检索 |
 | ✅ | 移除 `_is_casual_chat()` 主逻辑 | 降级为 fallback 保留，分类正常时不再作为主分类逻辑 |
 | ✅ | 后端定位逻辑（v1 — LLM 引用定位） | `_locate_preview()` / `_fallback_preview()` 实现；`_build_sources()` 新增 `preview_text` / `preview_range` 字段 |
 | ✅ | 前端预览渲染 | `MessageItem.vue` 被引段落高亮渲染（`<mark>` 标签包裹 `preview_range` 范围） |
 | ✅ | Evidence Highlight 重构（v2 — 句级 BM25 定位） | 定位前移到检索时：新建 `sentence_matcher.py`，删除旧 5 个函数，净代码 -150 行 |
 | ✅ | `_is_meta_question()` regex | META 意图规则分类（「你能做什么」「支持什么」等模式） |
-| ✅ | CASUAL regex 迁入 intent.py | `_CASUAL_PATTERNS` + `_is_casual_chat()` 从 `chat_service.py` 搬到 `intent.py` |
+| ✅ | CASUAL regex 迁入 intent.py | `_CASUAL_PATTERNS` + `_is_casual_chat()` 从 `chat_service.py` 搬到 `intent.py`；`CASUAL_SYSTEM_PROMPT` 从 `chat_service.py` 迁入 `knowledge_pipeline.py` |
 | ✅ | `classify_intent()` 重构 | 规则优先 → `_llm_classify()` 兜底（`deepseek-v4-flash`） |
 | ✅ | `config.py` 新增 `LLM_FLASH_MODEL` | 默认 `deepseek-v4-flash`，同 base_url/api_key |
 | ✅ | `llm.py` 新增 `model` 参数 | `chat_completion()` 支持指定模型，默认改为 `settings.LLM_FLASH_MODEL`（非流式场景统一用 Flash） |
@@ -409,7 +411,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | `bm25.py` async Redis | `self._redis.get()` → `await self._async_redis.get()`，修复事件循环阻塞 |
 | ✅ | `bm25.py` 进程内缓存 | `dict[kb_id] → (BM25Okapi, doc_ids, contents, expire_at)`，TTL=60s |
 | ✅ | `bm25.py` async `invalidate_bm25_cache()` | 清除 Redis + 进程内缓存，提供同步/异步两个版本 |
-| ✅ | 调用方适配 | `chat_service.py` async 初始化 / `document_service.py` await 调用 / `tasks.py` 保持同步 |
+| ✅ | 调用方适配 | `chat_service.py` → 委托 `knowledge_pipeline.py`；`document_service.py` await 调用 / `tasks.py` 保持同步 |
 | ✅ | Windows 兼容性优化 | `redis.asyncio` Windows 超时问题改用 `ThreadedRedisClient` 包装 |
 
 **预期效果**：
@@ -436,7 +438,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | AdminStatsPage 对接 | 统计卡片真实数据 + 存储量格式化 |
 | ✅ | Admin 独立布局 | `AdminLayout.vue` — 独立侧边栏 + 主内容区；Admin 路由嵌套 |
 | ✅ | Sidebar 重构 | 移除 admin 导航区，用户菜单新增「管理后台」选项（仅 isAdmin 可见） |
-| ✅ | KnowledgeDetail 权限扩展 | `isOwner \|\| isAdmin` 判断；admin 可查看文档列表 |
+| ✅ | KnowledgeDetail 权限扩展 | `isOwner \|\| isAdmin` 判断（使用 `permissions.py` 共享权限函数 `require_kb_readable`）；admin 可查看文档列表 |
 | ✅ | Admin 删除违规内容 | 详情页内 admin 可删除文档（复用已有 DELETE 接口） |
 
 ### 7.3 [基础设施] 基础设施
@@ -459,7 +461,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 |:---|:---|:---|
 | ✅ | Trace 模型 + Alembic 迁移 | `traces` 表含 trace_id / user_id / conversation_id / kb_id / question / status / intent_type / intent_method / response_mode / total_duration_ms / 各阶段 JSON / error_message / created_at。6 个索引 |
 | ✅ | `trace.record()` 上下文管理器 | TraceRecorder 数据收集器：各阶段 record_* + finish 写入，写入失败不阻塞主流程 |
-| ✅ | `chat_service.py` 各阶段埋点 | 复用已有 `time.perf_counter()` 计时点，整合为 TraceRecorder 结构化写入 |
+| ✅ | `chat_service.py` 各阶段埋点 | 检索阶段埋点已移至 `knowledge_pipeline.py`；复用已有 `time.perf_counter()` 计时点，整合为 TraceRecorder 结构化写入 |
 | ✅ | `core/llm.py` 流式调用埋点 | 记录 `ttft_ms` + `total_ms` + `model` + `finish_reason` |
 | ✅ | Trace API（列表 + 详情） | GET `/api/admin/traces`（分页+筛选）+ GET `/api/admin/traces/{trace_id}` |
 | ✅ | 统计增强接口 | GET `/api/admin/stats/traces`（days/group_by 参数，返回 trend/latency/tokens 等） |
@@ -489,7 +491,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 用户管理 API | GET `/api/admin/users`（分页+筛选：role/status/search）+ GET `/api/admin/users/{user_id}`（含统计） |
 | ✅ | 用户操作 API | PUT `.../status`（禁用/启用）+ POST `.../reset-password`（重置密码） |
 | ✅ | 用户统计聚合 | 从 traces 表聚合 total_input_tokens / total_output_tokens / last_active_at |
-| ✅ | 权限控制 | admin 专属，非 admin 返回 403（E5005）；禁用用户三端拦截（E5010） |
+| ✅ | 权限控制 | admin 专属，非 admin 返回 403（E5005）；禁用用户三端拦截（E5010）；KB 权限通过 `permissions.py` 共享函数统一执行 |
 | ✅ | AdminUserList.vue | 用户列表：搜索 + 角色/状态筛选 + 表格 + 分页 + 操作菜单 |
 | ✅ | AdminUserDetail.vue | 用户详情：信息卡片 + 统计卡片 + 快捷操作（禁用/重置密码） |
 | ✅ | `api/admin.js` 新增函数 | getAdminUsers / getAdminUserDetail / changeUserStatus / resetUserPassword |
@@ -511,7 +513,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | Chat API 适配 | `kb_id: int` → `kb_uuid: str`，SSE meta 输出 UUID |
 | ✅ | Trace 响应清理 | 移除自增 `id` 字段（保留 `trace_id` UUID） |
 | ✅ | KB 选择器适配 | 返回 `uuid` 替代 `id` |
-| ✅ | ChromaDB metadata 兼容 | `kb_id` / `doc_id` 仍为 int，仅在 API 边界转换 |
+| ✅ | ChromaDB metadata 兼容 | `kb_id` / `doc_id` 仍为 int，仅在 API 边界转换，`get_vector_store()` 内部处理 |
 | ✅ | 前端 API 接口适配 | `api/*.js` 参数 `kb_id` → `kb_uuid`，`conversation_id` → UUID 字符串 |
 | ✅ | 前端路由参数适配 | `/knowledge-bases/:id` → `/:uuid`，`?conversation_id=` 改为 UUID |
 | ✅ | Pinia Store 适配 | id 相关字段改为 uuid |
@@ -527,7 +529,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | sources Evidence 预览测试 | 单元测试 | Evidence 定位集成 3 + 降级 3 + 短 chunk 2 + 格式 3 + 边界 5 + Schema 5 = 21 用例（`test_sources_preview.py`）+ 句级定位 14 用例（`test_sentence_matcher.py`）= 35 用例，全部通过；前端零改动 |
 | ✅ | Admin 接口测试 | 接口+单元 | Service 层 21 用例（`test_admin_service.py`）+ API 层 27 用例（`test_admin_api.py`，含权限矩阵参数化），全部通过 |
 | ✅ | 限流测试 | 接口+单元 | 限流中间件 22 用例（`test_rate_limit.py`）：IP 提取 4 + 路由规则 6 + 阈值获取 3 + A8.1-A8.5 集成测试 5 + OPTIONS/health/WebSocket/Lua 参数 4，全部通过 |
-| ✅ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4，独立于 Trace）。chat_service 全链路集成埋点测试 5 用例（§6.14.4，U13.10-U13.14）— 验证 KNOWLEDGE/CASUAL/META/错误/retrieve 细粒度各路径 Trace 数据收集正确性。原检索/LLM 耗时埋点（U12.1-U12.3）已合并入 Trace 测试（§6.14，✅） |
+| ✅ | 性能埋点验证 | 单元测试 | 日志格式校验 1 用例（U12.4，独立于 Trace）。chat_service 全链路集成埋点测试 5 用例（§6.14.4，U13.10-U13.14）— 验证 KNOWLEDGE/CASUAL/META/错误/retrieve 细粒度各路径 Trace 数据收集正确性。细粒度检索阶段断言（vector/bm25/fusion/match_sentence 各自 duration_ms）已移至 `test_knowledge_pipeline.py`。原检索/LLM 耗时埋点（U12.1-U12.3）已合并入 Trace 测试（§6.14，✅） |
 | ✅ | Trace 接口测试 | 接口+单元 | Service 层 23 用例（`test_trace_service.py`）+ API 层 17 用例（`test_trace_api.py`）= 40 用例，全部通过。覆盖 U13.1-U13.5, A9.1-A9.15 |
 | ✅ | Trace 前端组件测试 | 前端组件 | TraceList 23 用例（C9.1-C9.7）+ TraceDetail 25 用例（C9.8-C9.12）= 48 用例，全部通过。覆盖渲染/空状态/搜索防抖/筛选/分页/行跳转/剪贴板复制/阶段卡片/JSON 展开折叠/返回导航 |
 | ✅ | ECharts 图表组件测试 | 前端组件 | TrendChart + LatencyChart + TokenChart = 21 用例（C7.4-C7.7），全部通过。含空数据边界（ResizeObserver mock + ECharts mock） |
@@ -551,7 +553,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 意图分类/响应模式饼图 | v2 | ECharts v1 先做趋势/延迟/Token 三个核心图表 |
 | 用户审计日志 | v2 | `user_operations` 表 + 操作日志 API，v1 先做 CRUD + 角色管理 |
 | User/Message/Chunk UUID 化 | 不做 | User 为 Admin 内部管理 + JWT 保护，暴露风险低；Message 仅通过 SSE 传输 + 高频写入，UUID 开销不值得；Chunk 为内部结构，不暴露给 API |
-| ChromaDB metadata 改用 UUID | 不做 | 向量库中 `kb_id`/`doc_id` 保持 int 类型，UUID 仅在 API 边界转换，避免影响检索性能和现有数据迁移成本 |
+| 向量存储 metadata 改用 UUID | 不做 | 向量库中 `kb_id`/`doc_id` 保持 int 类型，UUID 仅在 API 边界转换，避免影响检索性能和现有数据迁移成本 |
 
 ---
 

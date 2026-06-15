@@ -106,10 +106,10 @@ docmind/
 │   │   ├── services/                  # 业务逻辑层
 │   │   │   ├── __init__.py
 │   │   │   ├── auth_service.py        # 注册/登录/refresh token 逻辑
-│   │   │   ├── knowledge_base_service.py  # 知识库 CRUD + 删除
+│   │   │   ├── knowledge_base_service.py  # 知识库 CRUD + 删除（共享权限函数 require_kb_*）
 │   │   │   ├── document_service.py    # 文档上传/列表/详情/删除/reprocess
 │   │   │   ├── conversation_service.py # 会话 CRUD + 标题生成
-│   │   │   ├── chat_service.py        # 问答核心流程（检索→RRF→Rerank→LLM SSE）
+│   │   │   ├── chat_service.py        # 问答核心流程（委托 KnowledgePipeline 检索+构建，LLM SSE 输出）
 │   │   │   ├── admin_service.py       # Admin 统计/知识库/文档/用户管理
 │   │   │   └── trace_service.py       # 链路追踪查询/详情
 │   │   │
@@ -119,10 +119,12 @@ docmind/
 │   │   │   ├── parser.py              # 文档解析器（PDF/DOCX/MD/TXT）
 │   │   │   ├── chunker.py             # 文本分块策略（512 token / 50 重叠）
 │   │   │   ├── embedder.py            # Embedding 封装（DashScope text-embedding-v3）
-│   │   │   ├── retriever.py           # 向量检索器（ChromaDB）
+│   │   │   ├── vector_store.py        # 向量存储抽象层（BaseVectorStore ABC + ChromaVectorStore，ADR-018）
+│   │   │   ├── retriever.py           # 向量检索器（依赖 BaseVectorStore 抽象，ADR-018）
 │   │   │   ├── bm25.py                # BM25 关键词检索 + Redis 缓存
 │   │   │   ├── fusion.py              # RRF 多路融合算法
 │   │   │   ├── reranker.py            # 重排序（当前 NoopReranker 占位）
+│   │   │   ├── knowledge_pipeline.py  # 知识管线：查询重写→双路检索→RRF→Rerank→句子匹配→Prompt 构建
 │   │   │   ├── prompt_builder.py      # Prompt 模板组装（System/History/Retrieval/Question）
 │   │   │   ├── intent.py              # 意图识别（Meta/Chitchat/RAG 三路分发）
 │   │   │   ├── query_rewriter.py      # 多轮对话问题重写
@@ -138,7 +140,8 @@ docmind/
 │   │   ├── core/                      # 基础设施
 │   │   │   ├── __init__.py
 │   │   │   ├── database.py            # 数据库连接 & async session
-│   │   │   ├── chroma_client.py       # ChromaDB 连接（单 collection docmind）
+│   │   │   ├── chroma_client.py       # ChromaDB 连接 + get_vector_store() 工厂函数
+│   │   │   ├── permissions.py         # KB 访问权限共享函数（require_kb_readable/writable/owner）
 │   │   │   ├── redis_client.py        # Redis 客户端（懒加载单例，Win/Linux 双模式）
 │   │   │   ├── security.py            # JWT & 密码哈希
 │   │   │   ├── sse.py                 # SSE 发送工具
@@ -684,3 +687,4 @@ docker stats
 - [开发排期](ROADMAP.md)
 - [测试策略](tests/TESTING.md)
 - [UI 设计规范](../frontend/docs/UIDESIGN.md)
+- [ADR-018：向量存储抽象层](decisions/ADR-018-向量存储抽象层.md)

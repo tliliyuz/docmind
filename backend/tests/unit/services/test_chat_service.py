@@ -29,6 +29,7 @@ from app.core.exceptions import (
     RetrievalServiceException,
 )
 from app.rag.intent import Intent, IntentResult
+from app.rag.knowledge_pipeline import KnowledgePipelineResult
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 
 # 测试用 UUID 常量（chat_service.chat() 要求 UUID 字符串）
@@ -195,12 +196,27 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
                 patch("app.services.chat_service.Message",
                       side_effect=[mock_user_msg, mock_assistant_msg]))
 
-        mocks['vec'] = stack.enter_context(patch("app.services.chat_service._vector_retriever"))
-        mocks['bm25'] = stack.enter_context(patch("app.services.chat_service._bm25_retriever"))
-        mocks['rrf'] = stack.enter_context(
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output))
-        mocks['reranker'] = stack.enter_context(patch("app.services.chat_service._reranker"))
-        mocks['prompt'] = stack.enter_context(patch("app.services.chat_service.build_prompt"))
+        # Mock _pipeline（KnowledgePipeline 单例，替代原来的独立检索组件 mock）
+        mock_pipeline = MagicMock()
+        # 构造 KnowledgePipelineResult
+        _pipeline_result = KnowledgePipelineResult(
+            reranked_output=retrieval_output,
+            prompt_result=MagicMock(
+                system_prompt="系统提示",
+                user_prompt="用户提示",
+                used_chunks=retrieval_output.results,
+                total_context_tokens=500,
+                chunks_count=len(retrieval_output.results),
+                history_messages=[],
+            ),
+            doc_map={1: "测试文档.pdf"},
+        )
+        mock_pipeline.execute_knowledge = AsyncMock(return_value=_pipeline_result)
+        mock_pipeline.execute_casual = AsyncMock(return_value=_pipeline_result)
+        mocks['pipeline'] = stack.enter_context(
+            patch("app.services.chat_service._pipeline", mock_pipeline))
+        mocks['pipeline_result'] = _pipeline_result
+
         mocks['llm'] = stack.enter_context(patch("app.services.chat_service.stream_chat_completion"))
         mocks['tokens'] = stack.enter_context(
             patch("app.services.chat_service.estimate_tokens", return_value=token_estimate))
@@ -226,18 +242,7 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
             metadata={"model": "deepseek-v4-flash", "confidence": None},
         )
 
-        # 默认行为配置
-        mocks['vec'].search = AsyncMock(return_value=retrieval_output)
-        mocks['bm25'].search = AsyncMock(return_value=retrieval_output)
-        mocks['reranker'].rerank = AsyncMock(return_value=retrieval_output)
-        mocks['prompt'].return_value = MagicMock(
-            system_prompt="系统提示",
-            user_prompt="用户提示",
-            used_chunks=retrieval_output.results,  # 与 LLM Prompt 中 [来源N] 对应
-            total_context_tokens=500,
-            chunks_count=len(retrieval_output.results),
-            history_messages=[],  # Phase 4：历史消息（Mock 场景下为空）
-        )
+        # LLM 默认行为配置
         mocks['llm'].return_value = _async_gen(llm_chunks)
 
         # Mock TraceRecorder，避免真实的 db.add 调用
@@ -419,8 +424,8 @@ class TestChatRetrievalFailure:
         conv.message_count = 0
 
         with _mock_chat_pipeline(db, conv) as mocks:
-            mocks['vec'].search = AsyncMock(
-                side_effect=Exception("ChromaDB 连接失败")
+            mocks['pipeline'].execute_knowledge = AsyncMock(
+                side_effect=RetrievalServiceException(detail="检索链路异常")
             )
 
             with pytest.raises(RetrievalServiceException) as exc_info:
@@ -430,7 +435,7 @@ class TestChatRetrievalFailure:
                     question="测试问题", deep_thinking=False,
                 )
             assert exc_info.value.error_code == "E4003"
-            assert "ChromaDB" in str(exc_info.value.error_detail)
+            assert "检索链路异常" in str(exc_info.value.error_detail)
 
 
 class TestChatLLMFailure:
@@ -486,7 +491,13 @@ class TestChatKBEmpty:
 
         kb, _, _ = _mock_db_with_conversation(db, conv, doc_count=0)
 
-        with patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g), \
+        mock_pipeline = MagicMock()
+        mock_pipeline.execute_knowledge = AsyncMock(
+            side_effect=KnowledgeBaseEmptyException(1)
+        )
+
+        with patch("app.services.chat_service._pipeline", mock_pipeline), \
+             patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g), \
              patch("app.services.chat_service.classify_intent", new_callable=AsyncMock,
                    return_value=IntentResult(
                        intent=Intent.KNOWLEDGE, method="llm_flash",

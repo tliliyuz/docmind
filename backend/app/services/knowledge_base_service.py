@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import (
     KnowledgeBaseNameExistsException,
     KnowledgeBaseNotFoundException,
-    PermissionDeniedException,
 )
+from app.core.permissions import require_kb_readable, require_kb_writable
 from app.ingest.tasks import delete_kb as delete_kb_task
 from app.models.chunk import Chunk
 from app.models.knowledge_base import KnowledgeBase
@@ -87,8 +87,7 @@ async def get_kb(
     if kb is None:
         raise KnowledgeBaseNotFoundException(kb_id)
     if user_id is not None:
-        if kb.visibility == "private" and kb.user_id != user_id and role != "admin":
-            raise PermissionDeniedException()
+        require_kb_readable(kb, user_id, role)
     if fill_chunk_count:
         real_counts = await _get_real_chunk_counts(db, [kb_id])
         kb.chunk_count = real_counts.get(kb_id, kb.chunk_count)
@@ -183,8 +182,7 @@ async def update_kb(
     """
     kb = await get_kb(db, kb_id)
 
-    if kb.user_id != user_id and role != "admin":
-        raise PermissionDeniedException()
+    require_kb_writable(kb, user_id, role)
 
     if data.name is not None:
         kb.name = data.name
@@ -212,8 +210,7 @@ async def delete_kb(
     """删除知识库（仅标记 status=deleting，不做物理删除）"""
     kb = await get_kb(db, kb_id)
 
-    if kb.user_id != user_id and role != "admin":
-        raise PermissionDeniedException()
+    require_kb_writable(kb, user_id, role)
 
     kb.status = "deleting"
     await db.flush()

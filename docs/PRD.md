@@ -92,6 +92,8 @@
 - 一个字段解决问题：`visibility: private | public`
 - admin 不是「只读管理」——admin 能看一切（含 private KB）、能删 KB/文档（违规清理）、能修正 KB 元数据（不当名称/离职员工 KB 转 public），但不能替别人上传文档
 
+**实现层**：权限规则由 `app/core/permissions.py` 的三个共享函数统一执行——`require_kb_readable`（visibility 优先）、`require_kb_writable`（ownership 基础）、`require_kb_owner`（owner-only 写操作）。所有 KB 接口和 service 层统一调用，禁止各模块分散实现权限检查。
+
 ### 5.2 所有权归属规则（ownership）
 
 | 场景 | 规则 |
@@ -110,6 +112,8 @@
 
 ### 5.4 CRUD 权限矩阵
 
+> **实现说明**：权限检查由 `app/core/permissions.py` 的共享函数统一执行（`require_kb_readable`/`require_kb_writable`/`require_kb_owner`），所有 KB 接口和 service 层均通过这三个函数校验，不自行实现权限逻辑。
+
 | 操作 | owner (private) | owner (public) | 其他用户 (private) | 其他用户 (public) | admin |
 |:---|:---|:---|:---|:---|:---|
 | 创建 KB | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -125,12 +129,14 @@
 
 ### 5.5 问答检索范围
 
+> **实现说明**：检索管线由 `app/rag/knowledge_pipeline.py`（KnowledgePipeline）实现，封装查询重写→双路检索→RRF→Rerank→句子匹配→Prompt 构建全流程。`chat_service.py` 委托 KnowledgePipeline 完成检索+上下文构建，自身专注于 LLM SSE 流式输出。
+
 | 用户角色 | `POST /api/chat` 可检索的 KB |
 |:---|:---|
 | user | 自己拥有的所有 KB + 所有 `visibility=public` 的 KB |
 | admin | 所有 KB |
 
-> **约束**：`POST /api/chat` 的 `kb_id` 参数必须指向用户有权检索的 KB（own KB 或 public KB）。对 private KB 且非 owner，返回 E5005「无权限执行此操作」。
+> **约束**：`POST /api/chat` 的 `kb_id` 参数必须指向用户有权检索的 KB（own KB 或 public KB），通过 `require_kb_readable()` 校验。对 private KB 且非 owner，返回 E5005「无权限执行此操作」。
 
 ### 5.6 暂时不做的
 

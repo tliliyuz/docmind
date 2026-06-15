@@ -62,7 +62,7 @@ class TestStageResume:
             with patch("app.ingest.tasks.acquire_idempotency_lock", return_value=True):
                 with patch("app.ingest.tasks.release_idempotency_lock"):
                     with patch("app.ingest.tasks.embed_chunks", AsyncMock(return_value=embed_result)):
-                        with patch("app.ingest.tasks.get_collection"):
+                        with patch("app.ingest.tasks.get_vector_store", return_value=AsyncMock()):
                             with patch("app.ingest.tasks.parse_document") as mock_parse:
                                 result = await _ingest_document_async(1)
                                 mock_parse.assert_not_called()
@@ -81,17 +81,17 @@ class TestStageResume:
         embed_result = make_mock_embed_result(5)
         db = setup_mock_db(doc, chunks)
 
-        mock_collection = MagicMock()
+        mock_store = AsyncMock()
 
         with patch("app.ingest.tasks.async_session", return_value=mock_async_session_ctx(db)):
             with patch("app.ingest.tasks.acquire_idempotency_lock", return_value=True):
                 with patch("app.ingest.tasks.release_idempotency_lock"):
                     with patch("app.ingest.tasks.embed_chunks", AsyncMock(return_value=embed_result)):
-                        with patch("app.ingest.tasks.get_collection", return_value=mock_collection):
+                        with patch("app.ingest.tasks.get_vector_store", return_value=mock_store):
                             result = await _ingest_document_async(1)
 
         # 验证 ChromaDB 清理被调用
-        mock_collection.delete.assert_called_with(where={"doc_id": 1})
+        mock_store.delete.assert_called_with(where={"doc_id": 1})
         assert result["status"] == "completed"
 
     @pytest.mark.asyncio
@@ -105,13 +105,13 @@ class TestStageResume:
         chunks = make_mock_chunks(5)
         db = setup_mock_db(doc, chunks)
 
-        mock_collection = MagicMock()
-        mock_collection.delete.side_effect = RuntimeError("ChromaDB connection failed")
+        mock_store = AsyncMock()
+        mock_store.delete.side_effect = RuntimeError("ChromaDB connection failed")
 
         with patch("app.ingest.tasks.async_session", return_value=mock_async_session_ctx(db)):
             with patch("app.ingest.tasks.acquire_idempotency_lock", return_value=True):
                 with patch("app.ingest.tasks.release_idempotency_lock"):
-                    with patch("app.ingest.tasks.get_collection", return_value=mock_collection):
+                    with patch("app.ingest.tasks.get_vector_store", return_value=mock_store):
                         result = await _ingest_document_async(1)
 
         assert result["status"] == "failed"
@@ -147,7 +147,7 @@ class TestLastSuccessBatchCheckpoint:
             with patch("app.ingest.tasks.acquire_idempotency_lock", return_value=True):
                 with patch("app.ingest.tasks.release_idempotency_lock"):
                     with patch("app.ingest.tasks.embed_chunks", AsyncMock(return_value=embed_result)):
-                        with patch("app.ingest.tasks.get_collection"):
+                        with patch("app.ingest.tasks.get_vector_store", return_value=AsyncMock()):
                             with patch("app.ingest.tasks.settings") as mock_settings:
                                 mock_settings.EMBED_BATCH_SIZE = 2
                                 mock_settings.CHROMA_BATCH_SIZE = 20
@@ -174,7 +174,7 @@ class TestLastSuccessBatchCheckpoint:
                 with patch("app.ingest.tasks.release_idempotency_lock"):
                     mock_embed = AsyncMock(return_value=embed_result)
                     with patch("app.ingest.tasks.embed_chunks", mock_embed):
-                        with patch("app.ingest.tasks.get_collection"):
+                        with patch("app.ingest.tasks.get_vector_store", return_value=AsyncMock()):
                             result = await _ingest_document_async(1)
 
         assert result["status"] == "completed"

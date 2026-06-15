@@ -7,6 +7,8 @@
 - 会话标题 LLM 生成：finish 先返回截断标题，SSE 流结束后异步调用 LLM 更新
 - SSE 6 种事件类型 + 15s 心跳
 - deep_thinking → extra_body thinking 参数映射
+
+检索+上下文构建管线已解耦至 app.rag.knowledge_pipeline。
 """
 
 import logging
@@ -17,7 +19,7 @@ from typing import AsyncIterator
 from uuid import uuid4
 
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, exists, func, select
+from sqlalchemy import and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -25,14 +27,12 @@ from app.core.database import async_session
 from app.core.exceptions import (
     ConversationAccessDeniedException,
     ConversationNotFoundException,
-    KnowledgeBaseEmptyException,
     KnowledgeBaseNotFoundException,
     MetaQuestionException,
-    PermissionDeniedException,
     QuestionEmptyException,
-    RetrievalServiceException,
 )
 from app.core.llm import chat_completion, stream_chat_completion
+from app.core.permissions import require_kb_readable
 from app.core.redis_client import get_async_redis
 from app.core.sse import format_sse_event, stream_with_heartbeat
 from app.models.conversation import Conversation
@@ -42,21 +42,18 @@ from app.models.message import Message
 from app.models.user import User
 from app.rag.bm25 import BM25Retriever
 from app.rag.chunker import estimate_tokens
-from app.rag.fusion import rrf_fusion
-from app.rag.intent import Intent, IntentResult, classify_intent, _is_casual_chat
-from app.rag.prompt_builder import build_prompt, PromptBuildResult
-from app.rag.query_rewriter import _needs_rewrite, rewrite_query, RewriteResult
-from app.rag.reranker import NoopReranker
-from app.rag.retriever import RetrievalOutput, VectorRetriever
-from app.rag.sentence_matcher import match_sentences
+from app.rag.intent import Intent, classify_intent
+from app.rag.knowledge_pipeline import (
+    KnowledgePipeline,
+    KnowledgePipelineResult,
+    RETRIEVABLE_STATUSES,
+)
+from app.rag.prompt_builder import PromptBuildResult
+from app.rag.retriever import RetrievalOutput
 from app.rag.trace_recorder import TraceRecorder
 from app.schemas.chat import ChatSourceChunk, PreviewRange, SelectableKBItem, SelectableKBResponse
 
 logger = logging.getLogger(__name__)
-
-# 模块级单例：检索器和 Reranker（无状态，线程安全）
-_vector_retriever = VectorRetriever()
-_reranker = NoopReranker()
 
 # BM25 检索器懒加载单例（需要异步 Redis 客户端）
 _bm25_retriever: BM25Retriever | None = None
@@ -73,11 +70,9 @@ async def _get_bm25_retriever() -> BM25Retriever:
         )
     return _bm25_retriever
 
-# 可检索文档状态：文档已入库、分块已写入 ChromaDB、可用于检索
-RETRIEVABLE_STATUSES = ["completed", "success_with_warnings", "partial_failed"]
 
-# 闲谈模式 System Prompt（不注入文档上下文）
-CASUAL_SYSTEM_PROMPT = "你是 DocMind，一个企业知识库助手。请友好、简洁地回答用户的问题。"
+# 知识管线单例：封装检索+上下文构建全流程
+_pipeline = KnowledgePipeline(bm25_retriever_factory=_get_bm25_retriever)
 
 # LLM "未找到相关信息" 关键词：两级匹配策略
 # 1. 前缀匹配（前 35 字符）：LLM 首句声明"知识库中未找到"= 真阴性
@@ -625,7 +620,7 @@ async def _validate_and_prepare(
     kb_id: str,
     question: str,
     recorder: TraceRecorder | None = None,
-) -> tuple[Conversation, RetrievalOutput, PromptBuildResult, dict[int, str]]:
+) -> tuple[Conversation, bool, KnowledgePipelineResult]:
     """权限校验 + 会话准备 + 检索 + 文档名查询。
 
     所有校验在 SSE 连接建立前执行，失败直接抛 HTTP 异常。
@@ -635,7 +630,7 @@ async def _validate_and_prepare(
         kb_id: 知识库 UUID 字符串
 
     Returns:
-        (conv, is_first_turn, reranked_output, prompt_result, doc_map)
+        (conv, is_first_turn, pipeline_result: KnowledgePipelineResult)
     """
     from app.core.uuid_helpers import resolve_uuid_to_id
 
@@ -655,8 +650,7 @@ async def _validate_and_prepare(
     kb = await db.get(KnowledgeBase, real_kb_id)
     if kb is None or kb.status != "active":
         raise KnowledgeBaseNotFoundException(real_kb_id)
-    if kb.visibility == "private" and kb.user_id != user_id and role != "admin":
-        raise PermissionDeniedException()
+    require_kb_readable(kb, user_id, role)
 
     # 检查 KB 是否有可检索文档（含 partial_failed：部分分块可用）
 
@@ -717,142 +711,33 @@ async def _validate_and_prepare(
 
     skip_retrieval = (intent == Intent.CASUAL)
 
-    # 问题重写：仅 KNOWLEDGE 路径触发（对齐 ARCHITECTURE.md §5.1.5）
-    _original_question = question
-    t_rewrite_start = t_intent
-    t_rewrite = t_intent  # 默认值，未触发重写时复用
-    if not skip_retrieval and _needs_rewrite(question, history_messages):
-        rewrite_result = await rewrite_query(question, history_messages)
-        question = rewrite_result.rewritten
-        t_rewrite = time.perf_counter()
-        logger.info(
-            "QUERY_REWRITE original=%s rewritten=%s triggered=True",
-            _original_question[:100], question[:100],
-        )
-        # Trace: 记录问题重写阶段
-        if recorder:
-            recorder.record_rewrite(
-                original_question=_original_question,
-                rewritten_question=question,
-                duration_ms=(t_rewrite - t_rewrite_start) * 1000,
-                t_span_start=t_rewrite_start,
-                metadata=rewrite_result.metadata,
-            )
-    else:
-        logger.info(
-            "QUERY_REWRITE original=%s rewritten=(skipped) triggered=False",
-            _original_question[:100],
-        )
-        # Trace: 重写未触发，记录跳过
-        if recorder:
-            recorder.record_rewrite(
-                original_question=_original_question,
-                rewritten_question=None,
-                duration_ms=0,
-                t_span_start=t_rewrite_start,
-                metadata={"model": None, "input_tokens": 0, "output_tokens": 0},
-            )
-
+    # 检索+上下文构建管线（已解耦至 KnowledgePipeline）
     if skip_retrieval:
-        # CASUAL 路径：跳过检索，直接使用无上下文 Prompt（仍注入历史，对齐设计决策）
-        logger.info("检测到闲谈意图，跳过检索: %s", question[:30])
-        # Trace: CASUAL 路径设置响应模式
-        if recorder:
-            recorder.set_response_mode("CASUAL")
-        reranked_output = RetrievalOutput()
-        prompt_result = PromptBuildResult(
-            system_prompt=CASUAL_SYSTEM_PROMPT,
-            user_prompt=question,
-            used_chunks=[],
-            total_context_tokens=0,
-            chunks_count=0,
+        pipeline_result = await _pipeline.execute_casual(
+            question=question,
             history_messages=history_messages,
+            recorder=recorder,
         )
     else:
-        # KNOWLEDGE 路径：检查 KB 是否有可检索文档
-        doc_count_q = (
-            select(func.count())
-            .select_from(Document)
-            .where(
-                Document.kb_id == real_kb_id,
-                Document.status.in_(RETRIEVABLE_STATUSES),
-            )
+        pipeline_result = await _pipeline.execute_knowledge(
+            db=db,
+            question=question,
+            kb_id=real_kb_id,
+            history_messages=history_messages,
+            recorder=recorder,
         )
-        doc_count = (await db.execute(doc_count_q)).scalar()
-        if doc_count == 0:
-            raise KnowledgeBaseEmptyException(real_kb_id)
-
-        # 多路检索（失败包装为 E4003）
-        try:
-            t_retrieve_start = t_rewrite
-            vector_output = await _vector_retriever.search(question, real_kb_id)
-            t_vector = time.perf_counter()
-            bm25_retriever = await _get_bm25_retriever()
-            bm25_output = await bm25_retriever.search(question, real_kb_id)
-            t_bm25 = time.perf_counter()
-            fused_output = rrf_fusion(vector_output, bm25_output)
-            t_fusion = time.perf_counter()
-            reranked_output = await _reranker.rerank(question, fused_output)
-            t_rerank = time.perf_counter()
-            # 句级 Evidence 定位：在 Prompt 组装前，确保 used_chunks 携带 matched_sentence
-            reranked_output = match_sentences(reranked_output, question)
-            prompt_result = build_prompt(question, reranked_output, history_messages=history_messages)
-            t_retrieval_done = time.perf_counter()
-
-            # Trace: 记录检索阶段
-            if recorder:
-                recorder.record_retrieve(
-                    vector_ms=(t_vector - t_retrieve_start) * 1000,
-                    vector_count=len(vector_output.results),
-                    bm25_ms=(t_bm25 - t_vector) * 1000,
-                    bm25_stats=bm25_output.stats,
-                    fusion_ms=(t_fusion - t_bm25) * 1000,
-                    fusion_count=len(fused_output.results),
-                    fusion_method=fused_output.fusion_method,
-                    match_sentence_ms=(t_retrieval_done - t_rerank) * 1000,
-                    total_ms=(t_retrieval_done - t_retrieve_start) * 1000,
-                    t_span_start=t_retrieve_start,
-                )
-                recorder.record_rerank(
-                    input_count=len(fused_output.results),
-                    output_count=len(reranked_output.results),
-                    duration_ms=(t_rerank - t_fusion) * 1000,
-                    t_span_start=t_fusion,
-                )
-        except Exception as e:
-            logger.exception("检索链路异常")
-            raise RetrievalServiceException(detail=str(e))
-
-    # 查询涉及的文档名（用于 sources 事件）
-    doc_ids = list({c.doc_id for c in reranked_output.results})
-    doc_map: dict[int, str] = {}
-    if doc_ids:
-        doc_rows = await db.execute(
-            select(Document.id, Document.filename).where(Document.id.in_(doc_ids))
-        )
-        doc_map = {row.id: row.filename for row in doc_rows.all()}
 
     t_prep_end = time.perf_counter()
-    if skip_retrieval:
-        logger.info(
-            "PREP_PERF 权限+会话=%.3fs 意图=%.3fs 总计=%.3fs (CASUAL 跳过检索)",
-            t_db_done - t_prep,
-            t_intent - t_db_done,
-            t_prep_end - t_prep,
-        )
-    else:
-        logger.info(
-            "PREP_PERF 权限+会话=%.3fs 意图=%.3fs 重写=%.3fs 向量=%.3fs BM25=%.3fs 融合+Rerank=%.3fs 总计=%.3fs",
-            t_db_done - t_prep,
-            t_intent - t_db_done,
-            t_rewrite - t_intent,
-            t_vector - t_rewrite,
-            t_bm25 - t_vector,
-            t_retrieval_done - t_bm25,
-            t_prep_end - t_prep,
-        )
+    prep_phase = "CASUAL" if skip_retrieval else "KNOWLEDGE"
+    logger.info(
+        "PREP_PERF 权限+会话=%.3fs 意图=%.3fs 管线=%s 总计=%.3fs",
+        t_db_done - t_prep,
+        t_intent - t_db_done,
+        prep_phase,
+        t_prep_end - t_prep,
+    )
 
-    return conv, is_first_turn, reranked_output, prompt_result, doc_map
+    return conv, is_first_turn, pipeline_result
 
 
 async def chat(
@@ -886,7 +771,7 @@ async def chat(
     )
 
     try:
-        conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
+        conv, is_first_turn, pipeline_result = await _validate_and_prepare(
             db=db, user_id=user_id, role=role,
             conversation_id=conversation_id, kb_id=kb_id, question=question,
             recorder=recorder,
@@ -922,9 +807,9 @@ async def chat(
             question=question,
             deep_thinking=deep_thinking,
             is_first_turn=is_first_turn,
-            prompt_result=prompt_result,
-            reranked_output=reranked_output,
-            doc_map=doc_map,
+            prompt_result=pipeline_result.prompt_result,
+            reranked_output=pipeline_result.reranked_output,
+            doc_map=pipeline_result.doc_map,
             recorder=recorder,
         )),
         media_type="text/event-stream",

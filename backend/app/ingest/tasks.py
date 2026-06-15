@@ -19,7 +19,7 @@ from sqlalchemy import delete, func, select, update
 
 from app.config import settings
 from app.core.redis_client import get_redis
-from app.core.chroma_client import get_collection
+from app.core.chroma_client import get_vector_store
 from app.rag.bm25 import invalidate_bm25_cache, invalidate_bm25_cache_async
 from app.core.database import async_session
 from app.core.storage import local_storage
@@ -175,9 +175,9 @@ async def _ingest_document_async(doc_id: int) -> dict:
                         # 内存向量已丢失，必须重新 embedding；同时清理 ChromaDB 残留
                         resume_batch = 0
                         try:
-                            collection = get_collection()
-                            collection.delete(where={"doc_id": doc_id})
-                            logger.info("文档 %d 清理 ChromaDB 残留向量（vector_storing 恢复）", doc_id)
+                            store = get_vector_store()
+                            await store.delete(where={"doc_id": doc_id})
+                            logger.info("文档 %d 清理向量存储残留向量（vector_storing 恢复）", doc_id)
                         except Exception:
                             logger.exception("文档 %d ChromaDB 残留向量清理失败，标记 FAILED", doc_id)
                             doc.status = DocumentStatus.FAILED
@@ -367,7 +367,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
             doc.current_stage = "vector_storing"
             await db.commit()
 
-        collection = get_collection()
+        store = get_vector_store()
         chroma_batch_size = settings.CHROMA_BATCH_SIZE
 
         try:
@@ -394,14 +394,14 @@ async def _ingest_document_async(doc_id: int) -> dict:
                     for i in range(chroma_start, chroma_end)
                 ]
 
-                collection.add(
+                await store.add(
                     ids=ids_batch,
                     documents=docs_batch,
                     embeddings=embs_batch,
                     metadatas=metas_batch,
                 )
                 logger.info(
-                    "文档 %d ChromaDB 写入批次 %d/%d: %d 条",
+                    "文档 %d 向量存储写入批次 %d/%d: %d 条",
                     doc_id,
                     chroma_start // chroma_batch_size + 1,
                     (total_chunks + chroma_batch_size - 1) // chroma_batch_size,
@@ -409,9 +409,9 @@ async def _ingest_document_async(doc_id: int) -> dict:
                 )
 
         except Exception as e:
-            logger.exception("文档 %d ChromaDB 批量写入失败，清理已写入向量", doc_id)
+            logger.exception("文档 %d 向量存储批量写入失败，清理已写入向量", doc_id)
             try:
-                collection.delete(where={"doc_id": doc_id})
+                await store.delete(where={"doc_id": doc_id})
             except Exception:
                 logger.exception("文档 %d ChromaDB 清理也失败了，可能残留部分向量", doc_id)
 
@@ -530,14 +530,14 @@ async def _delete_document_async(doc_id: int) -> dict:
             kb_id = doc.kb_id
             deleted_chunk_count = doc.chunk_count or 0
 
-        # 3. 清理 ChromaDB 向量
+        # 3. 清理向量存储
         try:
-            collection = get_collection()
-            collection.delete(where={"doc_id": doc_id})
-            logger.info("文档 %d ChromaDB 向量已清理", doc_id)
+            store = get_vector_store()
+            await store.delete(where={"doc_id": doc_id})
+            logger.info("文档 %d 向量存储向量已清理", doc_id)
         except Exception as e:
-            logger.exception("文档 %d ChromaDB 向量清理失败", doc_id)
-            return {"status": "error", "doc_id": doc_id, "error": f"ChromaDB 清理失败: {e}"}
+            logger.exception("文档 %d 向量存储向量清理失败", doc_id)
+            return {"status": "error", "doc_id": doc_id, "error": f"向量存储清理失败: {e}"}
 
         # 4. 清理磁盘文件
         if file_path:
@@ -609,15 +609,15 @@ async def _delete_kb_async(kb_id: int) -> dict:
         doc_info = [(d.id, d.file_path) for d in docs]
         logger.info("知识库 %d 开始异步删除: %d 个文档", kb_id, len(doc_info))
 
-    # 2. 逐文档清理 ChromaDB 向量
-    collection = get_collection()
+    # 2. 逐文档清理向量存储
+    store = get_vector_store()
     for doc_id, _ in doc_info:
         try:
-            collection.delete(where={"doc_id": doc_id})
-            logger.info("知识库 %d 文档 %d ChromaDB 向量已清理", kb_id, doc_id)
+            await store.delete(where={"doc_id": doc_id})
+            logger.info("知识库 %d 文档 %d 向量存储向量已清理", kb_id, doc_id)
         except Exception as e:
-            logger.exception("知识库 %d 文档 %d ChromaDB 向量清理失败", kb_id, doc_id)
-            return {"status": "error", "kb_id": kb_id, "error": f"文档 {doc_id} ChromaDB 清理失败: {e}"}
+            logger.exception("知识库 %d 文档 %d 向量存储向量清理失败", kb_id, doc_id)
+            return {"status": "error", "kb_id": kb_id, "error": f"文档 {doc_id} 向量存储清理失败: {e}"}
 
     # 3. 逐文档清理磁盘文件
     for doc_id, file_path in doc_info:

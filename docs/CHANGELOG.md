@@ -6,6 +6,24 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [Unreleased] - 2026-06-15
+
+### Added
+- **BaseVectorStore 抽象基类 + ChromaVectorStore 实现**（A1+A3）：定义 `search`/`add`/`delete` 三个核心异步接口。新增 `get_vector_store()` 工厂函数。详见 [ADR-018](docs/decisions/ADR-018-向量存储抽象层.md)
+- **KnowledgePipeline 知识管线**（A2）：从 `chat_service.py` 解耦提取检索+上下文构建管线（查询重写→双路检索→RRF融合→Rerank→句子匹配→Prompt构建）
+- **共享权限检查函数**（A4）：`require_kb_readable` / `require_kb_writable` / `require_kb_owner`（`core/permissions.py`）
+
+### Changed
+- `VectorRetriever` 依赖 `BaseVectorStore` 抽象而非 ChromaDB `Collection`
+- KB 权限检查统一使用 `core/permissions.py` 共享函数
+- 前端 `TERMINAL_STATUSES` 消除 `DocumentList.vue` 值重复，新增 `TERMINAL_STATUSES_SET` 导出
+- `document_service.py` / `ingest/tasks.py` / `eval_retrieval.py` 使用 `get_vector_store()` 替代 `get_collection()`
+
+### Fixed
+- **KnowledgeDetail.vue 多文件上传未调用批量接口**（`frontend/src/views/KnowledgeDetail.vue:454-510`）：`uploadFiles()` 用 `for...of` 逐文件调用 `store.uploadDoc()` 单文件上传，未使用已定义的 `store.batchUploadDocs()`。修复：校验阶段将文件分为无冲突组（`validFiles`）和需覆盖组（`forceUploadFiles`）；无冲突文件收集到单个 `FormData`（字段名 `files`）一次调用批量接口；有同名冲突且用户确认覆盖的文件因批量接口不支持 `force` 参数仍走单文件覆盖；上传完成后统一刷新列表并启动轮询。根据批量返回的 `success`/`failed` 数组分别展示提示
+
+---
+
 ## [0.53] - 2026-06-15
 
 ### Fixed

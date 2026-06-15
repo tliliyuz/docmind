@@ -145,7 +145,7 @@ describe('LoginPage', () => {
 
 ### 5.2 评估流程
 
-> 实现脚本：`backend/tests/eval/eval_retrieval.py`。流程：遍历测试集 → 调用检索器（向量/BM25/RRF）→ 计算 Recall@5/MRR/Precision@5 → 输出对比报告。Phase 3 检索管线完成后执行。
+> 实现脚本：`backend/tests/eval/eval_retrieval.py`。流程：遍历测试集 → 调用检索器（向量/BM25/RRF，通过 `get_vector_store()` 工厂获取向量存储实例）→ 计算 Recall@5/MRR/Precision@5 → 输出对比报告。Phase 3 检索管线完成后执行。
 
 ---
 
@@ -459,7 +459,7 @@ python tests/regression/regression_multi_turn_test.py --kb-id 1 --base-url http:
 | Phase 5 | 压测 | 性能测试 | Locust 4 场景，P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** | 上线准入 |
 | Phase 5 | Admin 接口测试 | 接口测试 | Admin 端点权限校验 + 数据聚合正确性（6 用例，A7.1-A7.6） | 上线准入 |
 | Phase 5 | 限流测试 | 接口测试 | IP/用户级频率限制生效验证（5 用例，A8.1-A8.5，阈值来自压测结果） | 上线准入 |
-| Phase 5 | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 = 10 用例（U10.1-U10.10） | 上线准入 |
+| Phase 5 | 意图识别测试 | 单元测试 | 分类正确性 6 + 路由 2 + 降级 2 + META regex 2 + CASUAL regex 迁入验证 1 = 13 用例（U10.1-U10.13） | 上线准入 |
 | Phase 5 | sources 智能预览测试 | 单元+组件 | 定位正确性 3 + SSE 格式 2 + 前端渲染 1 = 6 用例（U11.1-U11.6） | 上线准入 |
 | Phase 5 | 性能埋点验证 | 单元测试 | 检索耗时 1 + LLM 耗时 1 + 日志格式校验 2 = 4 用例（U12.1-U12.4） | 上线准入 |
 | Phase 5 | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 | 上线准入 |

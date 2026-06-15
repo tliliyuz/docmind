@@ -7,9 +7,11 @@ import chromadb
 from chromadb.api import ClientAPI, Collection
 
 from app.config import settings
+from app.rag.vector_store import BaseVectorStore, ChromaVectorStore
 
 _client: ClientAPI | None = None
 _collection: Collection | None = None
+_vector_store: ChromaVectorStore | None = None
 
 
 def init_chroma() -> Collection:
@@ -30,7 +32,10 @@ def init_chroma() -> Collection:
 
 
 def get_collection() -> Collection:
-    """获取 docmind collection。未初始化时自动初始化。"""
+    """获取 docmind collection。未初始化时自动初始化。
+
+    新代码推荐使用 get_vector_store() 获取抽象接口。
+    """
     global _collection, _client
     if _collection is None:
         init_chroma()
@@ -43,3 +48,15 @@ def get_client() -> ClientAPI:
     if _client is None:
         init_chroma()
     return _client
+
+
+def get_vector_store() -> BaseVectorStore:
+    """获取向量存储抽象单例（推荐给新代码使用）。
+
+    返回 ChromaVectorStore 实例，封装 ChromaDB Collection 操作，
+    所有方法均为 async，通过 asyncio.to_thread() 卸载同步调用。
+    """
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = ChromaVectorStore(get_collection())
+    return _vector_store

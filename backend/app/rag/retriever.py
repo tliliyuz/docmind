@@ -1,7 +1,7 @@
-"""向量检索器 — ChromaDB 向量相似度检索
+"""向量检索器 — 向量相似度检索
 
 对齐 ARCHITECTURE.md §5.1 / ROADMAP.md Decision #15, #21：
-- 单 collection `docmind`，metadata `kb_id` 隔离
+- 通过 BaseVectorStore 抽象解耦 ChromaDB 依赖
 - cosine 相似度，top_k=10
 - metadata 保持 native int 类型
 """
@@ -9,11 +9,10 @@
 import logging
 from dataclasses import dataclass, field
 
-from chromadb.api import Collection
-
-from app.core.chroma_client import get_collection
+from app.core.chroma_client import get_vector_store
 from app.core.exceptions import RetrievalServiceException
 from app.rag.embedder import embed_chunks
+from app.rag.vector_store import BaseVectorStore
 
 from app.config import settings
 
@@ -47,13 +46,14 @@ class RetrievalOutput:
 
 
 class VectorRetriever:
-    """ChromaDB 向量检索器
+    """向量检索器
 
-    将用户问题向量化后，在 ChromaDB 中按 kb_id 过滤检索最相似的 chunks。
+    将用户问题向量化后，通过 BaseVectorStore 抽象按 kb_id 过滤检索最相似的 chunks。
+    不直接依赖 ChromaDB，可通过注入不同的 VectorStore 实现来切换向量数据库。
     """
 
-    def __init__(self, collection: Collection | None = None):
-        self._collection = collection or get_collection()
+    def __init__(self, vector_store: BaseVectorStore | None = None):
+        self._vector_store = vector_store or get_vector_store()
 
     async def search(
         self,
@@ -72,7 +72,7 @@ class VectorRetriever:
             RetrievalOutput: 包含标准化结果列表和总数
 
         Raises:
-            RuntimeError: Embedding API 调用失败
+            RetrievalServiceException: Embedding API 或向量存储调用失败
         """
         if not query or not query.strip():
             logger.warning("查询内容为空，跳过向量检索")
@@ -91,19 +91,19 @@ class VectorRetriever:
 
         query_vector = embed_result.embeddings[0]
 
-        # 2. ChromaDB 向量检索（where 过滤 kb_id，metadata 为 int 类型）
+        # 2. 向量检索（通过抽象接口，where 过滤 kb_id）
         try:
-            chroma_results = self._collection.query(
+            chroma_results = await self._vector_store.search(
                 query_embeddings=[query_vector],
                 n_results=top_k,
                 where={"kb_id": kb_id},
                 include=["documents", "distances", "metadatas"],
             )
         except Exception as e:
-            logger.exception("ChromaDB 向量检索异常: kb_id=%d", kb_id)
-            raise RetrievalServiceException(f"ChromaDB 查询失败: {e}") from e
+            logger.exception("向量检索异常: kb_id=%d", kb_id)
+            raise RetrievalServiceException(f"向量存储查询失败: {e}") from e
 
-        # 3. 解析 ChromaDB 返回结果
+        # 3. 解析向量存储返回结果
         return self._parse_results(chroma_results)
 
     def _parse_results(self, chroma_results: dict) -> RetrievalOutput:

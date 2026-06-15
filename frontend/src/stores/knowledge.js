@@ -24,9 +24,12 @@ export const TERMINAL_STATUSES = [
   'failed'
 ]
 
+/** 文档终态 Set — O(1) 查找优化，由 TERMINAL_STATUSES 派生，消除重复定义 */
+export const TERMINAL_STATUSES_SET = new Set(TERMINAL_STATUSES)
+
 /** 判断文档状态是否为终态 */
 export function isTerminal(status) {
-  return TERMINAL_STATUSES.includes(status)
+  return TERMINAL_STATUSES_SET.has(status)
 }
 
 /** 根据知识库名称匹配部门色 */

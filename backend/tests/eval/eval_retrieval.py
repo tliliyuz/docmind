@@ -29,7 +29,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from sqlalchemy import select
 
-from app.core.chroma_client import get_collection
+from app.core.chroma_client import get_vector_store
 from app.core.database import async_session
 from app.core.redis_client import get_async_redis
 from app.models.document import Document
@@ -98,7 +98,7 @@ class RetrievalEvaluator:
     @property
     def vector_retriever(self) -> VectorRetriever:
         if self._vector_retriever is None:
-            self._vector_retriever = VectorRetriever(get_collection())
+            self._vector_retriever = VectorRetriever(get_vector_store())
         return self._vector_retriever
 
     async def _ensure_bm25_retriever(self) -> BM25Retriever:

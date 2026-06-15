@@ -290,7 +290,7 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P3-U7.1 | 向量检索-基本 | `vector_retriever.search()` | 正常查询 | 返回 top_k=10 结果，含 doc_id + score + content | ✅ | 2026-05-28 | Mock ChromaDB collection |
+| P3-U7.1 | 向量检索-基本 | `vector_retriever.search()` | 正常查询 | 返回 top_k=10 结果，含 doc_id + score + content | ✅ | 2026-05-28 | Mock BaseVectorStore (AsyncMock) |
 | P3-U7.2 | 向量检索-kb_id 过滤 | `vector_retriever.search()` | 指定 kb_id | `where={"kb_id": kb_id}` 仅返回该 kb_id 结果 | ✅ | 2026-05-28 | metadata 保持 int 类型 |
 | P3-U7.3 | 向量检索-结果不足 top_k | `vector_retriever.search()` | kb 文档数 < top_k | 返回实际可用数量，不补空 | ✅ | 2026-05-28 | ChromaDB 自然返回实际数量 |
 | P3-U7.4 | 向量检索-空结果 | `vector_retriever.search()` | kb 无匹配文档 | 返回空列表，不抛异常 | ✅ | 2026-05-28 | 含空查询/空白查询/embedding 空结果 |
@@ -366,6 +366,8 @@
 | P3-U7.56 | Prompt-不超过模型上限 80% | `prompt_builder.build()` | 大量 chunks | 最终 prompt tokens ≤ 模型 context_window × 0.8 | ⬜ | — | — |
 
 ### 5.7 后端 — Chat Service 单元测试
+
+> **测试架构**：`chat_service` 委托 `KnowledgePipeline` 完成检索+上下文构建（`app/rag/knowledge_pipeline.py`），自身专注于 LLM SSE 流式输出。单元测试通过 Mock KnowledgePipeline 隔离检索管线，专注验证 SSE 流/消息保存/标题生成/错误处理/sources 引用过滤等行为。
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -832,12 +834,12 @@
 | P5-U10.5 | 意图-元问题（规则命中） | `intent` | question="你能做什么？" | Stage 1 META regex 命中 → 直接返回 `META`（<1ms） | ✅ | 2026-06-11 | test_classify_meta_capability |
 | P5-U10.6 | 意图-支持格式询问（规则命中） | `intent` | question="支持什么文件格式？" | Stage 1 META regex 命中 → 直接返回 `META`（<1ms） | ✅ | 2026-06-11 | test_classify_meta_format_support |
 | P5-U10.7 | 路由-META | `chat_service` | intent = META | 抛出 MetaQuestionException，携带 conv + is_first_turn | ✅ | 2026-06-11 | test_meta_routing_returns_fixed_response |
-| P5-U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（vec/bm25 未调用），使用 CASUAL_SYSTEM_PROMPT | ✅ | 2026-06-11 | test_casual_routing_skips_retrieval |
+| P5-U10.8 | 路由-CASUAL | `chat_service` | intent = CASUAL | 跳过检索（vec/bm25 未调用），使用 `CASUAL_SYSTEM_PROMPT`（现从 `knowledge_pipeline` 导入） | ✅ | 2026-06-11 | test_casual_routing_skips_retrieval |
 | P5-U10.9 | 降级-LLM 异常 | `intent` | LLM API 抛 Exception | 回退 `_is_casual_chat()` → CASUAL（"你好"命中）/ KNOWLEDGE（"报销"未命中） | ✅ | 2026-06-11 | test_fallback_on_llm_failure |
 | P5-U10.10 | 降级-无效标签 | `intent` | LLM 返回 "UNKNOWN" | 回退 `_is_casual_chat()` → CASUAL（"你好"命中正则） | ✅ | 2026-06-11 | test_fallback_on_invalid_label |
 | P5-U10.11 | META regex-能力询问 | `intent._is_meta_question()` | "你能做什么" | 返回 True | ✅ | 2026-06-11 | 新增，规则快速通道验证 |
 | P5-U10.12 | META regex-使用方法 | `intent._is_meta_question()` | "怎么使用" | 返回 True | ✅ | 2026-06-11 | — |
-| P5-U10.13 | CASUAL regex 迁入验证 | `intent._is_casual_chat()` | "你好"/"谢谢"/"再见" | 全部命中 CASUAL regex | ✅ | 2026-06-11 | 从 chat_service.py 迁入 |
+| P5-U10.13 | CASUAL regex 迁入验证 | `intent._is_casual_chat()` | "你好"/"谢谢"/"再见" | 全部命中 CASUAL regex | ✅ | 2026-06-11 | `_CASUAL_PATTERNS` + `_is_casual_chat()` 从 `chat_service.py` 迁入 `intent.py`；`CASUAL_SYSTEM_PROMPT` 迁入 `knowledge_pipeline.py` |
 
 ### 7.4 Sources Evidence 预览测试用例
 
@@ -910,8 +912,8 @@
 #### 7.6.4 后端 — chat_service 集成埋点测试
 
 > 测试文件：`tests/integration/test_chat_trace_integration.py`（5 用例，全部通过 ✅）。
-> **与已通过的 Trace 测试的关系**：§7.6.1-7.6.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入，各阶段 JSON 字段是否符合预期。
-> **测试策略**：使用真实 TraceRecorder 对象（而非 MagicMock），通过 Mock `record_trace()` 阻止真实 DB 写入，直接断言 recorder 内部属性（`_intent_data`/`_retrieve_data` 等），与 §7.6.1 Trace 模型测试互补。
+> **与已通过的 Trace 测试的关系**：§7.6.1-7.6.3 的 40 个用例（✅）测试的是 Trace 基础设施本身（TraceRecorder 上下文管理器、`trace_service.record_trace()`、Trace API/统计端点）。本节（U13.10-U13.14）是 **chat_service.chat() 全链路集成测试**，验证不同意图路由（KNOWLEDGE/CASUAL/META）和异常场景下 Trace 是否被正确写入。
+> **测试策略**：使用真实 TraceRecorder 对象（而非 MagicMock），通过 Mock `record_trace()` 阻止真实 DB 写入，直接断言 recorder 内部属性（`_intent_data`/`_retrieve_data` 等），与 §7.6.1 Trace 模型测试互补。**细粒度检索阶段断言**（vector/bm25/fusion/match_sentence 各自 duration_ms）已移至 `tests/unit/rag/test_knowledge_pipeline.py`，当前集成测试仅关注 intent/status 级别 Trace 正确性。
 > **与原性能埋点的关系**：原 P5-U12.1/P5-U12.2/P5-U12.3（散落 `logger.info` 计时日志）已合并入 Trace 体系（标记 ⏭️），由 Trace 结构化写 DB 替代。本节不再重复验证日志格式，仅关注 chat_service 全链路 Trace 写入的正确性。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
@@ -920,7 +922,7 @@
 | P5-U13.11 | 埋点-CASUAL 跳过检索 | `chat_service.chat()` | CASUAL 意图问答 | Trace 写入，retrieve/rerank 为 None（CASUAL 跳过检索） | ✅ | 2026-06-13 | recorder._retrieve_data/_rerank_data 保持 None |
 | P5-U13.12 | 埋点-META 不调 LLM | `chat_service.chat()` | META 意图问答 | Trace 写入，generate 为 None，token_usage 全为 0 | ✅ | 2026-06-13 | META 路径走 _generate_meta_response，不调 LLM |
 | P5-U13.13 | 埋点-错误状态 | `chat_service.chat()` | LLM 调用失败 | Trace 写入，status=error，error_message 非空 | ✅ | 2026-06-13 | recorder.record_error() 被调用；intent/retrieve 正常（在 LLM 之前完成） |
-| P5-U13.14 | 埋点-retrieve 细粒度 | `chat_service.chat()` | 正常检索 | retrieve JSON 含 vector/bm25/fusion/match_sentence 各自 duration_ms | ✅ | 2026-06-13 | BM25 stats 透传验证（redis_cache/tokenize_ms 等） |
+| P5-U13.14 | 埋点-retrieve 细粒度 | `chat_service.chat()` | 正常检索 | retrieve JSON 含 vector/bm25/fusion/match_sentence 各自 duration_ms | ✅ | 2026-06-13 | BM25 stats 透传验证（redis_cache/tokenize_ms 等）；**注意**：细粒度 retrieve 断言已移至 `test_knowledge_pipeline.py` |
 
 ### 7.7 ECharts 统计测试用例
 
@@ -1189,7 +1191,7 @@
 | `services/knowledge_base_service.py` | ≥ 80% | ✅ 33 用例 | `test_kb_service.py` 全覆盖：`_get_real_chunk_counts`(4) + `create_kb`(3) + `get_kb`(8) + `list_kbs`(3) + `list_public_kbs`(2) + `update_kb`(8) + `delete_kb`(3) + `check_kb_active`(2) |
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
 | `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`_validate_file`(7) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
-| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例） |
+| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例；适配 BaseVectorStore 抽象，AsyncMock 替代 ChromaDB Mock） |
 | `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2：BM25 检索 + 三级缓存（进程内→Redis→MySQL）+ async Redis（31 用例，含 7 个真实 jieba 集成测试 + 进程内缓存 + 异步缓存清除） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
 | `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例） |
@@ -1212,10 +1214,12 @@
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；P5-U11.1-P5-U11.6） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，P5-U11.10-P5-U11.15） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
-| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
+| `rag/vector_store.py` | ≥ 80% | ✅ | Phase 5：BaseVectorStore ABC + ChromaVectorStore 实现（9 用例，test_vector_store.py，覆盖 search/add/delete/工厂函数/线程池卸载） |
+| `rag/knowledge_pipeline.py` | ≥ 80% | ✅ | Phase 5：KnowledgePipeline 检索+上下文构建（7 用例，test_knowledge_pipeline.py，覆盖 execute/execute_casual/查询重写/双路检索/RRF/Rerank/句子匹配/Prompt 构建/细粒度 trace 断言） |
+| `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock；Phase 5 委托 KnowledgePipeline 检索+构建） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
 | `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
-| `ingest/tasks.py` | — | ✅ | Celery 入库存根测试（10 用例，5 个为常量成员检查） |
+| `ingest/tasks.py` | — | ✅ | Celery 入库任务（10 用例，5 个为常量成员检查；通过 `get_vector_store()` 工厂获取向量存储实例） |
 | 前端 `utils/sse.js` | ≥ 80% | ✅ | Phase 3：SSE 事件解析（21 用例，2026-06-03） |
 | 前端 `utils/markdown.js` | ≥ 80% | ✅ | Phase 3：Markdown 渲染（14 用例，2026-06-03） |
 | 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例，2026-06-03（MessageItem +2 用例：未找到相关信息 sources panel 显示/隐藏，2026-06-10 已追踪） |

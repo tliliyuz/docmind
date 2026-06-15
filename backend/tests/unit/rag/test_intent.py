@@ -14,6 +14,7 @@ import pytest
 
 from app.core.llm import LLMResult
 from app.rag.intent import Intent, IntentResult, classify_intent
+from app.rag.retriever import RetrievalOutput
 
 # 测试用 UUID 常量（chat_service.chat() 要求 UUID 字符串）
 _TEST_KB_UUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
@@ -205,7 +206,8 @@ async def test_casual_routing_skips_retrieval():
 
     验证 CASUAL 路径下不调用向量检索和 BM25 检索。
     """
-    from app.services.chat_service import _validate_and_prepare, CASUAL_SYSTEM_PROMPT
+    from app.services.chat_service import _validate_and_prepare
+    from app.rag.knowledge_pipeline import CASUAL_SYSTEM_PROMPT
 
     mock_conv = MagicMock()
     mock_conv.id = 1
@@ -249,8 +251,7 @@ async def test_casual_routing_skips_retrieval():
     with patch("app.services.chat_service.classify_intent", new_callable=AsyncMock) as mock_classify, \
          patch("app.services.chat_service.Conversation", return_value=mock_conv), \
          patch("app.services.chat_service.Message") as MockMessage, \
-         patch("app.services.chat_service._vector_retriever") as mock_vec, \
-         patch("app.services.chat_service._bm25_retriever") as mock_bm25, \
+         patch("app.services.chat_service._pipeline") as mock_pipeline, \
          patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
                side_effect=_mock_resolve_uuid):
 
@@ -260,17 +261,29 @@ async def test_casual_routing_skips_retrieval():
         )
         MockMessage.return_value = MagicMock(id=10, role="user", content="你好")
 
-        conv, is_first_turn, reranked_output, prompt_result, doc_map = await _validate_and_prepare(
+        # Mock _pipeline.execute_casual 返回 KnowledgePipelineResult
+        from app.rag.knowledge_pipeline import KnowledgePipelineResult
+        from app.rag.prompt_builder import PromptBuildResult
+        mock_pipeline.execute_casual = AsyncMock(return_value=KnowledgePipelineResult(
+            reranked_output=RetrievalOutput(),
+            prompt_result=PromptBuildResult(
+                system_prompt=CASUAL_SYSTEM_PROMPT,
+                user_prompt="你好",
+                used_chunks=[],
+                total_context_tokens=0,
+                chunks_count=0,
+                history_messages=[],
+            ),
+            doc_map={},
+        ))
+
+        conv, is_first_turn, pipeline_result = await _validate_and_prepare(
             db=mock_db, user_id=1, role="user",
             conversation_id=None, kb_id=_TEST_KB_UUID, question="你好",
         )
 
         # CASUAL 路径：prompt 使用 CASUAL_SYSTEM_PROMPT
-        assert prompt_result.system_prompt == CASUAL_SYSTEM_PROMPT
-        assert prompt_result.used_chunks == []
-        assert prompt_result.chunks_count == 0
-
-        # 检索器不应被调用
-        mock_vec.search.assert_not_called()
-        mock_bm25.search.assert_not_called()
+        assert pipeline_result.prompt_result.system_prompt == CASUAL_SYSTEM_PROMPT
+        assert pipeline_result.prompt_result.used_chunks == []
+        assert pipeline_result.prompt_result.chunks_count == 0
 

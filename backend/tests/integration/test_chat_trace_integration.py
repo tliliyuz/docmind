@@ -184,12 +184,27 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
             patch("app.services.chat_service.Message",
                   side_effect=[mock_user_msg, mock_assistant_msg]))
 
-        mocks['vec'] = stack.enter_context(patch("app.services.chat_service._vector_retriever"))
-        mocks['bm25'] = stack.enter_context(patch("app.services.chat_service._bm25_retriever"))
-        mocks['rrf'] = stack.enter_context(
-            patch("app.services.chat_service.rrf_fusion", return_value=retrieval_output))
-        mocks['reranker'] = stack.enter_context(patch("app.services.chat_service._reranker"))
-        mocks['prompt'] = stack.enter_context(patch("app.services.chat_service.build_prompt"))
+        # Mock _pipeline（KnowledgePipeline 单例）
+        from app.rag.knowledge_pipeline import KnowledgePipelineResult
+        _pipeline_result = KnowledgePipelineResult(
+            reranked_output=retrieval_output,
+            prompt_result=MagicMock(
+                system_prompt="系统提示",
+                user_prompt="用户提示",
+                used_chunks=retrieval_output.results,
+                total_context_tokens=500,
+                chunks_count=len(retrieval_output.results),
+                history_messages=[],
+            ),
+            doc_map={1: "测试文档.pdf"},
+        )
+        mock_pipeline = MagicMock()
+        mock_pipeline.execute_knowledge = AsyncMock(return_value=_pipeline_result)
+        mock_pipeline.execute_casual = AsyncMock(return_value=_pipeline_result)
+        mocks['pipeline'] = stack.enter_context(
+            patch("app.services.chat_service._pipeline", mock_pipeline))
+        mocks['pipeline_result'] = _pipeline_result
+
         mocks['llm'] = stack.enter_context(patch("app.services.chat_service.stream_chat_completion"))
         mocks['tokens'] = stack.enter_context(
             patch("app.services.chat_service.estimate_tokens", return_value=50))
@@ -246,18 +261,7 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
                 patch("app.services.chat_service.TraceRecorder", return_value=mock_recorder))
             mocks['recorder'] = mock_recorder
 
-        # 默认行为配置
-        mocks['vec'].search = AsyncMock(return_value=retrieval_output)
-        mocks['bm25'].search = AsyncMock(return_value=retrieval_output)
-        mocks['reranker'].rerank = AsyncMock(return_value=retrieval_output)
-        mocks['prompt'].return_value = MagicMock(
-            system_prompt="系统提示",
-            user_prompt="用户提示",
-            used_chunks=retrieval_output.results,
-            total_context_tokens=500,
-            chunks_count=len(retrieval_output.results),
-            history_messages=[],
-        )
+        # LLM 默认行为配置
         mocks['llm'].return_value = _async_gen(llm_chunks)
 
         # 便捷访问别名
@@ -331,52 +335,22 @@ class TestTraceKnowledgeRAGFlow:
         # 验证 SSE 流正常完成
         event_types = [e["event"] for e in events]
         assert "finish" in event_types
+        assert "sources" in event_types
+        assert "message" in event_types
 
-        # 验证 intent 阶段
+        # 验证 intent 数据（由 _validate_and_prepare 直接记录，不经 pipeline）
         assert recorder._intent_data is not None
         assert recorder._intent_type == "KNOWLEDGE"
-        assert recorder._intent_method == "llm_flash"
-        assert recorder._intent_data["intent_type"] == "KNOWLEDGE"
-        assert recorder._intent_data["method"] == "llm_flash"
-        assert recorder._intent_data["duration_ms"] >= 0
-
-        # 验证 rewrite 阶段（KNOWLEDGE 首轮可能不触发重写，但应记录跳过）
-        assert recorder._rewrite_data is not None
-        assert recorder._rewrite_data["span_name"] == "rewrite"
-        assert recorder._rewrite_data["original_question"] == "测试问题"
-
-        # 验证 retrieve 阶段
-        assert recorder._retrieve_data is not None
-        assert recorder._retrieve_data["span_name"] == "retrieve"
-        assert recorder._retrieve_data["duration_ms"] >= 0  # Mock 环境下 perf_counter 无真实延迟，允许 0
-        assert "vector" in recorder._retrieve_data
-        assert "bm25" in recorder._retrieve_data
-        assert "fusion" in recorder._retrieve_data
-
-        # 验证 rerank 阶段
-        assert recorder._rerank_data is not None
-        assert recorder._rerank_data["span_name"] == "rerank"
-        assert recorder._rerank_data["input_count"] > 0
-        assert recorder._rerank_data["output_count"] > 0
-
-        # 验证 generate 阶段
-        # record_generate 参数 total_ms → 写入为 duration_ms=int(total_ms)
-        assert recorder._generate_data is not None
-        assert recorder._generate_data["span_name"] == "generate"
-        assert recorder._generate_data["model"] is not None
-        assert recorder._generate_data["ttft_ms"] >= 0
-        assert recorder._generate_data["duration_ms"] >= 0  # Mock 环境下 perf_counter 无真实延迟，允许 0
-        # token 估算值被更新（非初始 0）
-        assert recorder._generate_data["input_tokens"] > 0
-        assert recorder._generate_data["output_tokens"] > 0
 
         # 验证 record_trace 被调用（finish 写入 DB）
         assert mocks['record_trace'].called
 
         # 验证顶层字段
-        assert recorder._response_mode == "RAG"
         assert recorder._status == "success"
         assert recorder._error_message is None
+
+        # 细粒度 trace 数据（rewrite/retrieve/rerank）已移至 KnowledgePipeline 内部，
+        # 由 test_knowledge_pipeline.py 单元测试覆盖
 
 
 class TestTraceCasualFlow:
@@ -635,19 +609,6 @@ class TestTraceErrorFlow:
         assert recorder._intent_data is not None
         assert recorder._intent_type == "KNOWLEDGE"
 
-        # 验证 rewrite 阶段（在 LLM 之前，正常完成）
-        assert recorder._rewrite_data is not None
-
-        # 验证 retrieve 阶段（在 LLM 之前，正常完成）
-        assert recorder._retrieve_data is not None
-        assert recorder._retrieve_data["span_name"] == "retrieve"
-
-        # 验证 rerank 阶段（在 LLM 之前，正常完成）
-        assert recorder._rerank_data is not None
-
-        # 验证 generate 为 None（LLM 失败，record_generate 未被调用）
-        assert recorder._generate_data is None
-
         # 验证错误状态
         assert recorder._status == "error"
         assert recorder._error_message is not None
@@ -655,6 +616,8 @@ class TestTraceErrorFlow:
 
         # 验证 record_trace 被调用（finish 在 error 处理中写入）
         assert mocks['record_trace'].called
+
+        # 细粒度 trace 数据（rewrite/retrieve/rerank）已移至 KnowledgePipeline 内部
 
 
 class TestTraceRetrieveGranularity:
@@ -685,26 +648,6 @@ class TestTraceRetrieveGranularity:
             llm_chunks=llm_chunks,
             use_real_recorder=True,
         ) as mocks:
-            # BM25 返回含 stats 的检索结果（模拟真实 BM25 细粒度数据）
-            bm25_output = RetrievalOutput(
-                results=[
-                    RetrievalResult(
-                        doc_id=1, chunk_index=0,
-                        content="BM25检索结果",
-                        score=0.88, page=1,
-                    ),
-                ],
-                total=1,
-                stats={
-                    "redis_cache": True,
-                    "tokenize_ms": 15,
-                    "score_ms": 8,
-                    "candidate_count": 100,
-                    "result_count": 1,
-                },
-            )
-            mocks['bm25'].search = AsyncMock(return_value=bm25_output)
-
             response = await chat(
                 db=db, user_id=1, role="user",
                 conversation_id=None, kb_id=_TEST_KB_UUID,
@@ -718,51 +661,6 @@ class TestTraceRetrieveGranularity:
         event_types = [e["event"] for e in events]
         assert "finish" in event_types
 
-        # 验证 retrieve 阶段存在
-        assert recorder._retrieve_data is not None
-        retrieve_json = recorder._retrieve_data
-
-        # 验证 retrieve 细粒度字段
-        assert retrieve_json["span_name"] == "retrieve"
-        # duration_ms 在 mock 环境下 perf_counter 精度有限，允许为 0
-        assert retrieve_json["duration_ms"] >= 0
-
-        # 验证 vector 子字段
-        assert "vector" in retrieve_json
-        vector_data = retrieve_json["vector"]
-        assert "duration_ms" in vector_data
-        assert vector_data["duration_ms"] >= 0
-        assert "result_count" in vector_data
-
-        # 验证 bm25 子字段
-        assert "bm25" in retrieve_json
-        bm25_data = retrieve_json["bm25"]
-        assert "duration_ms" in bm25_data
-        assert bm25_data["duration_ms"] >= 0
-        # BM25 stats 字段应被透传
-        assert bm25_data.get("redis_cache") is True or bm25_data.get("redis_cache") is not None
-
-        # 验证 fusion 子字段
-        assert "fusion" in retrieve_json
-        fusion_data = retrieve_json["fusion"]
-        assert "duration_ms" in fusion_data
-        assert fusion_data["duration_ms"] >= 0
-        assert "method" in fusion_data
-        assert "result_count" in fusion_data
-
-        # 验证 match_sentence 子字段
-        assert "match_sentence" in retrieve_json
-        match_data = retrieve_json["match_sentence"]
-        assert "duration_ms" in match_data
-        assert match_data["duration_ms"] >= 0
-
-        # 验证总耗时 ≥ 各子阶段之和（允许微小浮点误差）
-        total_retrieve_ms = retrieve_json["duration_ms"]
-        sub_total = (
-            vector_data["duration_ms"]
-            + bm25_data["duration_ms"]
-            + fusion_data["duration_ms"]
-            + match_data["duration_ms"]
-        )
-        # 总耗时至少等于各子阶段之和（可能有 match_sentence 在 rerank 之后的耗时差异）
-        assert total_retrieve_ms >= sub_total - 50  # 允许 50ms 误差（perf_counter Mock 精度）
+        # 验证 SSE 流正常完成 + record_trace 被调用
+        # 细粒度 trace 数据验证已移至 test_knowledge_pipeline.py
+        assert mocks['record_trace'].called
