@@ -1,5 +1,6 @@
 """文档业务逻辑 — 上传/批量上传/列表/详情/分块/删除/重新处理"""
 import logging
+import uuid as uuid_lib
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,7 @@ async def upload_document(
     # 非复用场景：创建新文档记录
     if doc is None:
         doc = Document(
+            uuid=str(uuid_lib.uuid4()),
             kb_id=kb_id,
             filename=filename,
             file_type=ext,

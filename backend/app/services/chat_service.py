@@ -631,7 +631,7 @@ async def _validate_and_prepare(
         # 加载历史消息（在保存用户消息之前！避免当前消息被重复注入）
         history_messages = await _load_history(db, conv.id)
     else:
-        conv = Conversation(user_id=user_id, kb_id=real_kb_id)
+        conv = Conversation(uuid=str(uuid4()), user_id=user_id, kb_id=real_kb_id)
         db.add(conv)
         await db.flush()
         is_first_turn = True
@@ -856,6 +856,7 @@ async def chat(
         # 用户消息已保存，_generate_meta_response 会保存 assistant 消息保持成对
         # Trace: META 路径，recorder 已在 _validate_and_prepare 中记录 intent
         recorder.conversation_id = e.conv.id
+        recorder.kb_id = e.conv.kb_id
         return StreamingResponse(
             stream_with_heartbeat(_generate_meta_response(
                 db=db, conv=e.conv, is_first_turn=e.is_first_turn, question=question,
@@ -870,6 +871,7 @@ async def chat(
 
     # Trace: 新会话时 conversation_id 为 None，用 conv.id 回写
     recorder.conversation_id = conv.id
+    recorder.kb_id = conv.kb_id
 
     task_id = str(uuid4())
 

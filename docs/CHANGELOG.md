@@ -6,12 +6,23 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [0.49] - 2026-06-15
+
+### Fixed
+- **知识库创建 500 错误 — UUID 列 server_default 在 aiomysql 下未回填**（`backend/app/services/knowledge_base_service.py`）：`KnowledgeBase` 模型的 `uuid` 列使用 MySQL `UUID()` 作为 `server_default`，但 aiomysql 驱动在 `db.refresh()` 后无法正确返回服务端生成值，导致 `kb.uuid` 为 `None`，`KnowledgeBaseResponse.model_validate(kb)` 时 Pydantic 校验失败（`uuid` 字段期望 `str`，收到 `None`）。修复：在 Python 端通过 `uuid.uuid4()` 显式生成 UUID 传给 `KnowledgeBase()` 构造函数，不依赖数据库默认值。同步修复 `conversation_service.py`、`chat_service.py`、`document_service.py` 中相同模式的创建点
+
+### Added
+- **知识库名称后端兜底校验**（`backend/app/schemas/knowledge_base.py`）：`KnowledgeBaseCreate` 和 `KnowledgeBaseUpdate` 新增 `@field_validator("name")`，纯数字/纯空格名称在 Pydantic 层返回 422
+- **用户注册纯数字用户名校验**（`backend/app/schemas/auth.py` + `frontend/src/views/LoginPage.vue`）：`RegisterRequest` 新增 `@field_validator("username")`，前端 `handleSubmit()` 新增 `^\d+$` 检查，拒绝纯数字/纯空格用户名
+
 ## [0.48] - 2026-06-15
 
 ### Fixed
 - **UUID 校验正则仅支持 v4 导致所有 API 返回 404**（`backend/app/core/uuid_helpers.py`）：MySQL `UUID()` 生成 UUID v1（第三段版本号 `1`），旧正则 `4[0-9a-f]{3}` 仅接受 v4（版本号 `4`），导致 `validate_uuid_format()` 对数据库实际存储的 UUID 一律返回 `False`，`resolve_uuid_to_id()` 直接抛 NotFoundException 而不查数据库。修复：正则改为 `[0-9a-f]{4}` + `uuid.UUID()` 构造函数双重校验，支持 RFC 4122 全版本（v1/v3/v4/v5）
 - **KnowledgeDetail 文档表格 `row-key` 遗漏**（`frontend/src/views/KnowledgeDetail.vue`）：UUID 重构时 `row-key="id"` 未改为 `row-key="uuid"`，导致 el-table 行 key 解析为 `undefined`
 - **侧边栏点击会话后页面卡死在 Chat 原始页**（`frontend/src/views/ChatPage.vue`）：`watch(conversation_id)` 缺少 try-catch 错误处理，当 `loadConversation()` API 调用失败时异常静默吞掉，页面停留在 WelcomeScreen 无任何提示。补齐错误处理：失败时弹提示 + 清除无效 URL 参数 + 降级为新对话
+- **Trace 记录 `kb_id` 始终为 NULL 导致管理后台知识库列显示 `--`**（`backend/app/services/chat_service.py`）：`TraceRecorder` 初始化时 `kb_id=None`，`_validate_and_prepare` 内部将 UUID 解析为整数 ID 后未回写 `recorder.kb_id`（`conversation_id` 有回写但 `kb_id` 遗漏），导致 traces 表 `kb_id` 永远为 NULL，`list_traces` / `get_trace_detail` 的 LEFT JOIN knowledge_bases 无法匹配。修复：在正常路径和 MetaQuestionException 路径各补一行 `recorder.kb_id = conv.kb_id`。注意：历史 trace 数据 `kb_id` 为 NULL 无法追溯，仅影响修复后新产生的记录
+- **KnowledgeDetail 文档名点击无响应**（`frontend/src/views/KnowledgeDetail.vue`）：`.doc-filename` 设了 `cursor: pointer` + hover 变色暗示可点击，但 `toggleRowExpand` 函数体为空（仅注释"预留"），点击文件名无任何反馈。修复：文件名加条件 class `clickable`（仅终态且有分块时生效）+ `@click.stop` 触发 `openChunksDialog`；`toggleRowExpand` 补全逻辑同步打开分块预览弹窗；非终态/无分块的文档不再显示手型光标
 
 ## [0.47] - 2026-06-15
 

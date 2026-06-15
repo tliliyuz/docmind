@@ -199,7 +199,7 @@ class TestGetRealChunkCounts:
 class TestCreateKB:
     @pytest.mark.asyncio
     async def test_创建成功(self, mock_db):
-        """正常创建知识库，返回 KnowledgeBaseResponse"""
+        """正常创建知识库，返回 KnowledgeBaseResponse（UUID 由 Python 端生成）"""
         mock_db.flush = AsyncMock()
 
         result = await create_kb(
@@ -212,7 +212,9 @@ class TestCreateKB:
         assert result.description == "描述"
         assert result.visibility == "private"
         assert result.user_id == 1
-        assert result.uuid == "kb-uuid-1"  # db.refresh mock 回填
+        # UUID 由 Python 端 uuid4() 生成，应为 36 字符标准格式
+        assert len(result.uuid) == 36
+        assert result.uuid.count("-") == 4
         mock_db.add.assert_called_once()
         mock_db.flush.assert_called_once()
         mock_db.refresh.assert_called_once()

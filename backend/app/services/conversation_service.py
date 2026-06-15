@@ -1,5 +1,7 @@
 """会话业务逻辑 — CRUD + 权限校验，对齐 API.md §5"""
 
+import uuid as uuid_lib
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -79,6 +81,7 @@ async def create_conversation(
     kb_id = await resolve_uuid_to_id(db, KnowledgeBase, data.kb_uuid)
 
     conv = Conversation(
+        uuid=str(uuid_lib.uuid4()),
         user_id=user_id,
         kb_id=kb_id,
         title=data.title or "新对话",

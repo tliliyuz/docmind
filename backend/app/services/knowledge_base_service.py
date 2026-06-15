@@ -1,5 +1,7 @@
 """知识库业务逻辑 — 创建/查询/更新/删除"""
 
+import uuid as uuid_lib
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +49,7 @@ async def create_kb(
 ) -> KnowledgeBaseResponse:
     """创建知识库，同名冲突时抛出 KnowledgeBaseNameExistsException"""
     kb = KnowledgeBase(
+        uuid=str(uuid_lib.uuid4()),
         user_id=user_id,
         name=data.name,
         description=data.description,

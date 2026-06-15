@@ -164,7 +164,13 @@
       >
         <el-table-column prop="filename" label="文件名" min-width="200">
           <template #default="{ row }">
-            <span class="doc-filename">{{ row.filename }}</span>
+            <span
+              class="doc-filename"
+              :class="{ clickable: isTerminal(row.status) && row.chunk_count > 0 }"
+              @click.stop="isTerminal(row.status) && row.chunk_count > 0 && openChunksDialog(row)"
+            >
+              {{ row.filename }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column prop="file_type" label="类型" width="80" align="center">
@@ -645,9 +651,11 @@ function goToChat() {
   router.push(`/chat?kb_id=${kbId.value}`)
 }
 
-// ==================== 行展开（预留） ====================
+// ==================== 行展开 ====================
 function toggleRowExpand(row) {
-  // 预留：后续可在此展开文档详情
+  if (isTerminal(row.status) && row.chunk_count > 0) {
+    openChunksDialog(row)
+  }
 }
 
 // ==================== 状态标签工具函数 ====================
@@ -984,10 +992,13 @@ onUnmounted(() => {
 .doc-filename {
   color: var(--dm-text-primary);
   font-weight: var(--dm-weight-medium);
+}
+
+.doc-filename.clickable {
   cursor: pointer;
 }
 
-.doc-filename:hover {
+.doc-filename.clickable:hover {
   color: var(--dm-primary);
 }
 

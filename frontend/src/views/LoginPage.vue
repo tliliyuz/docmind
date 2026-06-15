@@ -106,6 +106,10 @@ async function handleSubmit() {
     errorMsg.value = '用户名至少 2 个字符'
     return
   }
+  if (/^\d+$/.test(name)) {
+    errorMsg.value = '用户名不能为纯数字，请包含文字或字母'
+    return
+  }
   if (password.value.length < 6) {
     errorMsg.value = '密码至少 6 个字符'
     return

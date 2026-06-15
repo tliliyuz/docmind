@@ -1,13 +1,25 @@
 """认证相关请求/响应模型"""
 
+import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=2, max_length=64)
     password: str = Field(..., min_length=6, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username_not_numeric(cls, v: str) -> str:
+        """拒绝纯数字/纯空格用户名"""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("用户名不能为空")
+        if re.match(r"^\d+$", stripped):
+            raise ValueError("用户名不能为纯数字，请包含文字或字母")
+        return v
 
 
 class LoginRequest(BaseModel):

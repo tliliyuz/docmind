@@ -446,7 +446,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | `rate_limit_middleware.py` 中间件 | 固定窗口计数器 + Redis 原子操作（`INCR` + `EXPIRE`），纯 ASGI 中间件，Lua 脚本原子性，降级放行策略 |
 | ✅ | 限流配置项 | `config.py` 新增 6 个限流配置字段（`RATE_LIMIT_ENABLED` + 4 接口组阈值 + `RATE_LIMIT_WINDOW_SECONDS`） |
 | ✅ | 限流中间件注册 | `main.py` 注册 `RateLimitMiddleware`（放在 `RequestIDMiddleware` 之后） |
-| ⬜ | README.md 部署章节 | 项目简介 + 快速开始（Docker Compose）+ 文档索引 |
+| ✅ | README.md 部署章节 | 项目简介 + 快速开始（Docker Compose）+ 文档索引 |
 | ✅ | Dockerfile × 2 | `Dockerfile.backend`（FastAPI + Celery Worker）+ `Dockerfile.frontend`（Nginx + 静态资源） |
 | ✅ | docker-compose.yml | 5 服务编排（MySQL + Redis + Backend + Celery + Nginx）+ ChromaDB 挂卷 |
 | ✅ | nginx.conf | 反向代理 + SSE buffering 关闭 + 静态资源 SPA fallback + client_max_body_size 50m |
