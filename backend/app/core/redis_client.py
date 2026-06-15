@@ -106,8 +106,8 @@ class ThreadedRedisClient:
         return await asyncio.to_thread(self._sync.ping)
 
     async def close(self) -> None:
-        """关闭（同步客户端不需要显式关闭）"""
-        pass
+        """关闭同步客户端连接"""
+        await asyncio.to_thread(self._sync.close)
 
 
 async def get_async_redis():

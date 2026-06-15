@@ -41,8 +41,8 @@ from app.schemas.document import (
     DocumentResponse,
     DocumentUploadResponse,
 )
-from app.ingest.tasks import delete_document as _delete_doc_task
-from app.ingest.tasks import ingest_document as _ingest_doc_task
+from app.ingest.tasks import delete_document as delete_doc_task
+from app.ingest.tasks import ingest_document as ingest_doc_task
 from app.services.knowledge_base_service import check_kb_active
 
 logger = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ async def upload_document(
             existing.status = DocumentStatus.DELETING
             await db.flush()
             await db.commit()  # 必须在 delay 前提交，否则 Worker 看不到 DELETING 状态
-            _delete_doc_task.delay(existing.id)
+            delete_doc_task.delay(existing.id)
 
     # 非复用场景：创建新文档记录
     if doc is None:
@@ -211,7 +211,7 @@ async def upload_document(
         raise StorageErrorException(f"文件保存失败：{filename}")
 
     # 分发 Celery 入库任务
-    _ingest_doc_task.delay(doc.id)
+    ingest_doc_task.delay(doc.id)
 
     # 获取 KB uuid 用于响应（关系未预加载，直接查 KB）
     kb = await db.get(KnowledgeBase, kb_id)
@@ -428,7 +428,7 @@ async def delete_document(
     await db.refresh(doc)
 
     # 分发 Celery 异步删除任务
-    _delete_doc_task.delay(doc.id)
+    delete_doc_task.delay(doc.id)
 
     return DocumentDeleteResponse(doc_uuid=doc.uuid, status=doc.status)
 
@@ -471,6 +471,6 @@ async def reprocess_document(
     await db.refresh(doc)
 
     # 分发 Celery 入库任务（重新处理）
-    _ingest_doc_task.delay(doc.id)
+    ingest_doc_task.delay(doc.id)
 
     return DocumentReprocessResponse(doc_uuid=doc.uuid, status=doc.status)

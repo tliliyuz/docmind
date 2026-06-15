@@ -17,10 +17,10 @@ from app.rag.query_rewriter import (
     rewrite_query,
     RewriteResult,
     AMBIGUOUS_SIGNALS,
-    MIN_REWRITE_LENGTH,
     REWRITE_SYSTEM_PROMPT,
     REWRITE_USER_TEMPLATE,
 )
+from app.config import settings
 
 
 # ===== 辅助 fixture =====
@@ -432,10 +432,10 @@ class TestRewriteConstants:
             assert len(signal) >= 1
 
     def test_最小有效改写长度(self):
-        """验证最小有效改写长度为 2"""
-        assert MIN_REWRITE_LENGTH == 2
+        """验证最小有效改写长度配置值"""
+        assert settings.REWRITE_MIN_LENGTH == 2
         # 单字符不采用（边界值验证）
-        assert 1 < MIN_REWRITE_LENGTH
+        assert 1 < settings.REWRITE_MIN_LENGTH
 
     def test_rewrite_prompt_含输出约束(self):
         """验证 System Prompt 包含输出格式约束"""

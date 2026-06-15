@@ -32,7 +32,7 @@ BM25_CACHE_KEY_PREFIX = "bm25_tokens"
 
 # 进程内缓存：{kb_id: (bm25, doc_ids, contents, expire_at)}
 _local_cache: dict[int, tuple[BM25Okapi | None, list, list, float]] = {}
-_LOCAL_TTL = 60  # 进程内缓存 TTL（秒）
+_LOCAL_TTL = settings.BM25_LOCAL_CACHE_TTL  # 进程内缓存 TTL（秒）
 
 
 def _build_cache_key(kb_id: int) -> str:

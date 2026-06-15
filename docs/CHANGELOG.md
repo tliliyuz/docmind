@@ -18,6 +18,14 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - KB 权限检查统一使用 `core/permissions.py` 共享函数
 - 前端 `TERMINAL_STATUSES` 消除 `DocumentList.vue` 值重复，新增 `TERMINAL_STATUSES_SET` 导出
 - `document_service.py` / `ingest/tasks.py` / `eval_retrieval.py` 使用 `get_vector_store()` 替代 `get_collection()`
+- Celery task 别名统一：`_delete_doc_task` → `delete_doc_task`、`_ingest_doc_task` → `ingest_doc_task`，对齐 `knowledge_base_service.py` 中 `delete_kb_task` 命名风格（B9）
+- `_load_doc()` 返回值从 `Document | None` 改为 `_LoadDocResult` 数据类，区分 NOT_FOUND/DELETING/OK 三种状态，消除 8 处冗余 `db.get()` 调用（B8）
+- RAG 硬编码参数移入 `config.py`：`EMBED_TIMEOUT`/`INTENT_MAX_TOKENS`/`REWRITE_MIN_LENGTH`/`REWRITE_HISTORY_MESSAGES`/`BM25_LOCAL_CACHE_TTL`（B7）
+
+### Fixed
+- `ThreadedRedisClient.close()` 从 `pass` 改为调用 `asyncio.to_thread(self._sync.close)`，避免资源泄漏（B2）
+- `_delete_kb_async` 添加幂等锁（`acquire_idempotency_lock_async` + `release` in `finally`），对齐 `_delete_document_async` 并发安全模式（B3）
+- `requirements.txt` 移除未使用的 `sse-starlette==2.1.*` 依赖（B5）
 
 ### Fixed
 - **KnowledgeDetail.vue 多文件上传未调用批量接口**（`frontend/src/views/KnowledgeDetail.vue:454-510`）：`uploadFiles()` 用 `for...of` 逐文件调用 `store.uploadDoc()` 单文件上传，未使用已定义的 `store.batchUploadDocs()`。修复：校验阶段将文件分为无冲突组（`validFiles`）和需覆盖组（`forceUploadFiles`）；无冲突文件收集到单个 `FormData`（字段名 `files`）一次调用批量接口；有同名冲突且用户确认覆盖的文件因批量接口不支持 `force` 参数仍走单文件覆盖；上传完成后统一刷新列表并启动轮询。根据批量返回的 `success`/`failed` 数组分别展示提示

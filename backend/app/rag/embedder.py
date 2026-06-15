@@ -58,7 +58,7 @@ async def _call_embed_api(texts: list[str], text_type: str = "document") -> Embe
     last_error = None
     for attempt in range(settings.EMBED_MAX_RETRIES):
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(settings.EMBED_TIMEOUT)) as client:
                 response = await client.post(url, json=payload, headers=headers)
 
                 if response.status_code == 200:

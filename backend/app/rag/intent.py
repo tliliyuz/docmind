@@ -139,7 +139,7 @@ async def _llm_classify(question: str) -> IntentResult:
                 {"role": "user", "content": INTENT_USER_TEMPLATE.format(question=question)},
             ],
             deep_thinking=False,
-            max_tokens=10,
+            max_tokens=settings.INTENT_MAX_TOKENS,
             model=llm_model,
         )
         label = result.content.strip().upper()

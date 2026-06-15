@@ -13,6 +13,7 @@
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
@@ -70,19 +71,35 @@ def ingest_document(self, doc_id: int) -> dict:
     return _get_worker_loop().run_until_complete(_ingest_document_async(doc_id))
 
 
-async def _load_doc(db, doc_id: int) -> Document | None:
+class _LoadDocStatus:
+    """_load_doc 返回状态常量"""
+    OK = "ok"
+    NOT_FOUND = "not_found"
+    DELETING = "deleting"
+
+
+@dataclass
+class _LoadDocResult:
+    """_load_doc 返回值：区分文档不存在、已标记删除、正常加载三种情况"""
+    doc: Document | None
+    status: str  # _LoadDocStatus
+
+
+async def _load_doc(db, doc_id: int) -> _LoadDocResult:
     """加载文档记录并检查 DELETING 状态。
 
-    返回 None 表示已标记删除或不存在，调用方需区分两种情况。
-    返回 Document 对象表示可继续处理。
+    Returns:
+        _LoadDocResult: status 为 OK/NOT_FOUND/DELETING，
+                        status=OK 时 doc 一定非 None，
+                        status≠OK 时 doc 一定为 None。
     """
     doc = await db.get(Document, doc_id)
     if doc is None:
-        return None
+        return _LoadDocResult(doc=None, status=_LoadDocStatus.NOT_FOUND)
     if doc.status == DocumentStatus.DELETING:
-        logger.info(f"文档 {doc_id} 已被标记删除，中止流水线")
-        return None
-    return doc
+        logger.info("文档 %d 已被标记删除，中止流水线", doc_id)
+        return _LoadDocResult(doc=None, status=_LoadDocStatus.DELETING)
+    return _LoadDocResult(doc=doc, status=_LoadDocStatus.OK)
 
 
 async def _load_chunk_rows(db, doc_id: int) -> list[dict[str, Any]]:
@@ -119,13 +136,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
     try:
         # 2. 加载文档 + 阶段检测
         async with async_session() as db:
-            doc = await _load_doc(db, doc_id)
-            if doc is None:
-                doc_check = await db.get(Document, doc_id)
-                if doc_check is None:
-                    logger.error(f"文档 {doc_id} 不存在，跳过入库")
-                    return {"status": "not_found", "doc_id": doc_id}
-                return {"status": "deleting", "doc_id": doc_id}
+            result = await _load_doc(db, doc_id)
+            if result.doc is None:
+                return {"status": result.status, "doc_id": doc_id}
+            doc = result.doc
 
             file_path = doc.file_path
             file_type = doc.file_type
@@ -153,12 +167,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
             )
 
             async with async_session() as db:
-                doc = await _load_doc(db, doc_id)
-                if doc is None:
-                    doc_check = await db.get(Document, doc_id)
-                    if doc_check is None:
-                        return {"status": "not_found", "doc_id": doc_id}
-                    return {"status": "deleting", "doc_id": doc_id}
+                result = await _load_doc(db, doc_id)
+                if result.doc is None:
+                    return {"status": result.status, "doc_id": doc_id}
+                doc = result.doc
 
                 chunk_rows = await _load_chunk_rows(db, doc_id)
                 if not chunk_rows:
@@ -189,9 +201,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
         if resume_stage is None or resume_stage not in RESUMABLE_STAGES:
             # 完整流水线路径：解析 → 分块 → 写入 MySQL
             async with async_session() as db:
-                doc = await _load_doc(db, doc_id)
-                if doc is None:
-                    return {"status": "not_found", "doc_id": doc_id}
+                result = await _load_doc(db, doc_id)
+                if result.doc is None:
+                    return {"status": result.status, "doc_id": doc_id}
+                doc = result.doc
                 doc.status = DocumentStatus.PARSING
                 doc.current_stage = "parsing"
                 await db.commit()
@@ -206,9 +219,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
 
             # 3b. 空文档检测 + 容错判定
             async with async_session() as db:
-                doc = await _load_doc(db, doc_id)
-                if doc is None:
-                    return {"status": "not_found", "doc_id": doc_id}
+                result = await _load_doc(db, doc_id)
+                if result.doc is None:
+                    return {"status": result.status, "doc_id": doc_id}
+                doc = result.doc
 
                 if parse_result.total_pages == 0 or not parse_result.full_text.strip():
                     doc.status = DocumentStatus.FAILED
@@ -248,9 +262,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
 
             # 3d. 写入 chunks（先清理旧数据，幂等去重）
             async with async_session() as db:
-                doc = await _load_doc(db, doc_id)
-                if doc is None:
-                    return {"status": "not_found", "doc_id": doc_id}
+                result = await _load_doc(db, doc_id)
+                if result.doc is None:
+                    return {"status": result.status, "doc_id": doc_id}
+                doc = result.doc
 
                 if chunking_result.total_chunks == 0:
                     doc.status = DocumentStatus.FAILED
@@ -288,9 +303,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
 
         # 4a. 从 DB 重载 chunks（获取真实 DB id，用于 token 回写）、更新状态
         async with async_session() as db:
-            doc = await _load_doc(db, doc_id)
-            if doc is None:
-                return {"status": "not_found", "doc_id": doc_id}
+            result = await _load_doc(db, doc_id)
+            if result.doc is None:
+                return {"status": result.status, "doc_id": doc_id}
+            doc = result.doc
 
             doc.status = DocumentStatus.EMBEDDING
             doc.current_stage = "embedding"
@@ -360,9 +376,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
         # ============================
 
         async with async_session() as db:
-            doc = await _load_doc(db, doc_id)
-            if doc is None:
-                return {"status": "not_found", "doc_id": doc_id}
+            result = await _load_doc(db, doc_id)
+            if result.doc is None:
+                return {"status": result.status, "doc_id": doc_id}
+            doc = result.doc
             doc.status = DocumentStatus.VECTOR_STORING
             doc.current_stage = "vector_storing"
             await db.commit()
@@ -429,9 +446,10 @@ async def _ingest_document_async(doc_id: int) -> dict:
         # ============================
 
         async with async_session() as db:
-            doc = await _load_doc(db, doc_id)
-            if doc is None:
-                return {"status": "not_found", "doc_id": doc_id}
+            result = await _load_doc(db, doc_id)
+            if result.doc is None:
+                return {"status": result.status, "doc_id": doc_id}
+            doc = result.doc
 
             kb = await db.get(KnowledgeBase, kb_id)
             if kb is None:
@@ -588,71 +606,80 @@ def delete_document(self, doc_id: int) -> dict:
 async def _delete_kb_async(kb_id: int) -> dict:
     """知识库异步删除实现：遍历文档清理 ChromaDB + 磁盘 → 物理 DELETE KB（FK CASCADE 清文档/chunks）"""
 
-    # 1. 加载 KB 并校验状态
-    async with async_session() as db:
-        kb = await db.get(KnowledgeBase, kb_id)
-        if kb is None:
-            logger.warning("知识库 %d 不存在，跳过删除", kb_id)
-            return {"status": "not_found", "kb_id": kb_id}
+    # 1. 获取幂等锁（异步上下文使用异步 Redis，避免阻塞事件循环）
+    if not await acquire_idempotency_lock_async(kb_id, "delete_kb"):
+        logger.warning("知识库 %d 删除幂等锁已被占用，拒绝重复入队", kb_id)
+        return {"status": "locked", "kb_id": kb_id}
 
-        if kb.status != "deleting":
-            logger.warning(
-                "知识库 %d 状态为 %s（非 deleting），跳过删除", kb_id, kb.status,
-            )
-            return {"status": "skipped", "kb_id": kb_id, "reason": f"状态为 {kb.status}"}
+    try:
+        # 2. 加载 KB 并校验状态
+        async with async_session() as db:
+            kb = await db.get(KnowledgeBase, kb_id)
+            if kb is None:
+                logger.warning("知识库 %d 不存在，跳过删除", kb_id)
+                return {"status": "not_found", "kb_id": kb_id}
 
-        # 加载 KB 下所有文档信息
-        result = await db.execute(
-            select(Document).where(Document.kb_id == kb_id)
-        )
-        docs = result.scalars().all()
-        doc_info = [(d.id, d.file_path) for d in docs]
-        logger.info("知识库 %d 开始异步删除: %d 个文档", kb_id, len(doc_info))
-
-    # 2. 逐文档清理向量存储
-    store = get_vector_store()
-    for doc_id, _ in doc_info:
-        try:
-            await store.delete(where={"doc_id": doc_id})
-            logger.info("知识库 %d 文档 %d 向量存储向量已清理", kb_id, doc_id)
-        except Exception as e:
-            logger.exception("知识库 %d 文档 %d 向量存储向量清理失败", kb_id, doc_id)
-            return {"status": "error", "kb_id": kb_id, "error": f"文档 {doc_id} 向量存储清理失败: {e}"}
-
-    # 3. 逐文档清理磁盘文件
-    for doc_id, file_path in doc_info:
-        if file_path:
-            try:
-                await local_storage.delete(file_path)
-                logger.info("知识库 %d 文档 %d 磁盘文件已删除", kb_id, doc_id)
-            except Exception as e:
-                logger.warning("知识库 %d 文档 %d 磁盘文件删除失败（非致命）: %s", kb_id, doc_id, e)
-
-    # 3.5 批量备份孤儿会话的 kb_id / kb_name（在物理删除 KB 之前）
-    async with async_session() as db:
-        kb = await db.get(KnowledgeBase, kb_id)
-        if kb is not None:
-            await db.execute(
-                update(Conversation)
-                .where(Conversation.kb_id == kb_id)
-                .values(
-                    original_kb_id=kb_id,
-                    original_kb_name=kb.name,
-                    original_kb_uuid=kb.uuid,
+            if kb.status != "deleting":
+                logger.warning(
+                    "知识库 %d 状态为 %s（非 deleting），跳过删除", kb_id, kb.status,
                 )
+                return {"status": "skipped", "kb_id": kb_id, "reason": f"状态为 {kb.status}"}
+
+            # 加载 KB 下所有文档信息
+            result = await db.execute(
+                select(Document).where(Document.kb_id == kb_id)
             )
-            await db.commit()
-            logger.info("知识库 %d 关联会话已批量备份 original_kb_id/original_kb_uuid", kb_id)
+            docs = result.scalars().all()
+            doc_info = [(d.id, d.file_path) for d in docs]
+            logger.info("知识库 %d 开始异步删除: %d 个文档", kb_id, len(doc_info))
 
-    # 4. 物理删除 KB（FK CASCADE 自动清理 documents + chunks，conversations.kb_id SET NULL）
-    async with async_session() as db:
-        kb = await db.get(KnowledgeBase, kb_id)
-        if kb is not None:
-            await db.delete(kb)
-            await db.commit()
-            logger.info("知识库 %d MySQL 记录已物理删除", kb_id)
+        # 3. 逐文档清理向量存储
+        store = get_vector_store()
+        for doc_id, _ in doc_info:
+            try:
+                await store.delete(where={"doc_id": doc_id})
+                logger.info("知识库 %d 文档 %d 向量存储向量已清理", kb_id, doc_id)
+            except Exception as e:
+                logger.exception("知识库 %d 文档 %d 向量存储向量清理失败", kb_id, doc_id)
+                return {"status": "error", "kb_id": kb_id, "error": f"文档 {doc_id} 向量存储清理失败: {e}"}
 
-    return {"status": "completed", "kb_id": kb_id, "doc_count": len(doc_info)}
+        # 4. 逐文档清理磁盘文件
+        for doc_id, file_path in doc_info:
+            if file_path:
+                try:
+                    await local_storage.delete(file_path)
+                    logger.info("知识库 %d 文档 %d 磁盘文件已删除", kb_id, doc_id)
+                except Exception as e:
+                    logger.warning("知识库 %d 文档 %d 磁盘文件删除失败（非致命）: %s", kb_id, doc_id, e)
+
+        # 5. 批量备份孤儿会话的 kb_id / kb_name（在物理删除 KB 之前）
+        async with async_session() as db:
+            kb = await db.get(KnowledgeBase, kb_id)
+            if kb is not None:
+                await db.execute(
+                    update(Conversation)
+                    .where(Conversation.kb_id == kb_id)
+                    .values(
+                        original_kb_id=kb_id,
+                        original_kb_name=kb.name,
+                        original_kb_uuid=kb.uuid,
+                    )
+                )
+                await db.commit()
+                logger.info("知识库 %d 关联会话已批量备份 original_kb_id/original_kb_uuid", kb_id)
+
+        # 6. 物理删除 KB（FK CASCADE 自动清理 documents + chunks，conversations.kb_id SET NULL）
+        async with async_session() as db:
+            kb = await db.get(KnowledgeBase, kb_id)
+            if kb is not None:
+                await db.delete(kb)
+                await db.commit()
+                logger.info("知识库 %d MySQL 记录已物理删除", kb_id)
+
+        return {"status": "completed", "kb_id": kb_id, "doc_count": len(doc_info)}
+
+    finally:
+        await release_idempotency_lock_async(kb_id, "delete_kb")
 
 
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=600, autoretry_for=(Exception,), retry_backoff=True)

@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     BM25_TOP_K: int = 10
     BM25_MIN_SCORE: float = -5.0
     BM25_CACHE_TTL: int = 300
+    BM25_LOCAL_CACHE_TTL: int = 60  # 进程内 BM25 缓存 TTL（秒）
 
     # ── RRF ──
     RRF_K: int = 60
@@ -98,9 +99,17 @@ class Settings(BaseSettings):
     PROMPT_MAX_CHUNKS: int = 5
     PROMPT_MAX_CONTEXT_TOKENS: int = 3000
 
+    # ── Query Rewrite ──
+    REWRITE_MIN_LENGTH: int = 2        # Rewrite 结果最短有效长度
+    REWRITE_HISTORY_MESSAGES: int = 4  # Rewrite 使用的最近历史消息数
+
+    # ── Intent ──
+    INTENT_MAX_TOKENS: int = 10  # 意图分类 LLM max_tokens
+
     # ── Embedding ──
     EMBED_MAX_RETRIES: int = 5
     EMBED_BASE_DELAY: int = 1
+    EMBED_TIMEOUT: int = 60  # DashScope API 请求超时（秒）
 
     # ── Idempotency ──
     IDEMPOTENCY_LOCK_TTL: int = 600

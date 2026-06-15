@@ -404,7 +404,7 @@ class TestDeleteDocument:
         mock_db.flush = AsyncMock()
         mock_db.commit = AsyncMock()
 
-        with patch("app.services.document_service._delete_doc_task") as mock_task:
+        with patch("app.services.document_service.delete_doc_task") as mock_task:
             with patch("app.services.document_service.invalidate_bm25_cache_async", new_callable=AsyncMock):
                 result = await delete_document(mock_db, doc_id=5, kb_id=1, user_id=1, role="user")
 
@@ -463,7 +463,7 @@ class TestReprocessDocument:
         mock_db.flush = AsyncMock()
         mock_db.commit = AsyncMock()
 
-        with patch("app.services.document_service._ingest_doc_task") as mock_task:
+        with patch("app.services.document_service.ingest_doc_task") as mock_task:
             with patch("app.services.document_service.invalidate_bm25_cache_async", new_callable=AsyncMock):
                 result = await reprocess_document(mock_db, doc_id=5, kb_id=1, user_id=1, role="user")
 

@@ -28,9 +28,6 @@ AMBIGUOUS_SIGNALS = [
     "上面", "前面说的", "刚才",
 ]
 
-# Rewrite 有效结果最小长度
-MIN_REWRITE_LENGTH = 2
-
 REWRITE_SYSTEM_PROMPT = """你是一个查询改写助手。根据对话历史，将用户的最新问题改写为一个完整、独立、可直接用于检索的问题。
 
 规则：
@@ -100,7 +97,8 @@ async def rewrite_query(
         RewriteResult。LLM 调用失败时降级返回原始 question。
     """
     # 仅取最近 2 轮（4 条消息）作为改写上下文
-    recent = history[-4:] if len(history) > 4 else history
+    max_history = settings.REWRITE_HISTORY_MESSAGES
+    recent = history[-max_history:] if len(history) > max_history else history
 
     # 格式化历史为纯文本
     history_text = "\n".join(
@@ -120,7 +118,7 @@ async def rewrite_query(
             deep_thinking=False,  # 改写不需要深度思考
         )
         rewritten = result.content.strip().strip(_QUOTE_CHARS)
-        if rewritten and len(rewritten) >= MIN_REWRITE_LENGTH:
+        if rewritten and len(rewritten) >= settings.REWRITE_MIN_LENGTH:
             logger.info("Query Rewrite 成功: %s → %s", question[:50], rewritten[:80])
         else:
             logger.warning("Query Rewrite 输出异常（空或过短），降级使用原始 query")
