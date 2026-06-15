@@ -59,9 +59,9 @@ class TestValidateUuidFormat:
         """空字符串 → False"""
         assert validate_uuid_format("") is False
 
-    def test_invalid_uuid_v1(self):
-        """UUID v1（第三段为 1 而非 4）→ False"""
-        assert validate_uuid_format("6ba7b810-9dad-11d1-80b4-00c04fd430c8") is False
+    def test_valid_uuid_v1(self):
+        """UUID v1（MySQL UUID() 生成）→ True（对齐 uuid_helpers 支持 RFC 4122 v1/v3/v4/v5）"""
+        assert validate_uuid_format("6ba7b810-9dad-11d1-80b4-00c04fd430c8") is True
 
     def test_invalid_no_hyphens(self):
         """无连字符的 32 位 hex → False"""
@@ -71,10 +71,9 @@ class TestValidateUuidFormat:
         """过短字符串 → False"""
         assert validate_uuid_format("550e8400-e29b") is False
 
-    def test_invalid_variant_field(self):
-        """variant 字段非 8/9/a/b → False（UUID v4 要求第三段首字符为 4，第四段首字符为 8/9/a/b）"""
-        # 第四段首字符为 'c'（不在 [89ab] 中）
-        assert validate_uuid_format("550e8400-e29b-41d4-c716-446655440000") is False
+    def test_valid_non_rfc4122_variant(self):
+        """variant 字段首字符为 'c'（RFC 4122 Microsoft 向后兼容变体）→ True"""
+        assert validate_uuid_format("550e8400-e29b-41d4-c716-446655440000") is True
 
     def test_valid_edge_case_variant_a(self):
         """variant 字段首字符为 'a' → True"""

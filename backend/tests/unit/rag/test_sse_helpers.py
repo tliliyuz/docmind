@@ -181,6 +181,62 @@ class TestStreamWithHeartbeat:
             f"快速事件流不应包含心跳帧，实际收到 {len(heartbeat_events)} 个"
         )
 
+    @pytest.mark.asyncio
+    async def test_客户端断开_pending任务被取消(self):
+        """U7.83 — 客户端断开（task cancel）时 pending fetch 任务应被取消，不泄漏"""
+
+        async def slow_gen():
+            yield format_sse_event("meta", {"conversation_id": 1})
+            await asyncio.sleep(30)  # 模拟长时间等待 LLM 下一个 chunk
+            yield format_sse_event("message", {"delta": "不应到达"})
+
+        collected = []
+        stream = stream_with_heartbeat(slow_gen(), interval=5)
+
+        async def consume():
+            async for event in stream:
+                collected.append(event)
+
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0.05)  # 让消费协程启动并收到 meta
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # meta 事件应在取消前已被 yield
+        assert any("event: meta" in e for e in collected)
+
+    @pytest.mark.asyncio
+    async def test_客户端断开_底层生成器被清理(self):
+        """U7.83 — CancelledError 传播后底层 async generator 应被关闭（finally 清理生效）"""
+        generator_closed = False
+
+        async def slow_gen():
+            nonlocal generator_closed
+            try:
+                yield format_sse_event("meta", {"conversation_id": 1})
+                await asyncio.sleep(30)
+                yield format_sse_event("message", {"delta": "不应到达"})
+            finally:
+                generator_closed = True
+
+        stream = stream_with_heartbeat(slow_gen(), interval=5)
+
+        async def consume():
+            async for _ in stream:
+                pass
+
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # stream_with_heartbeat finally 块取消 pending 后，底层生成器应被关闭
+        assert generator_closed
+
 
 class TestBuildSources:
     """测试 sources 事件数据结构（使用生产函数 _build_sources 避免逻辑重复）"""

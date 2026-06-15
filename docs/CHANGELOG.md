@@ -6,6 +6,23 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [0.51] - 2026-06-15
+
+### Fixed
+- **test_uuid_helpers.py 2 个遗留失败用例断言与实现不一致**（`backend/tests/unit/core/test_uuid_helpers.py`）：`validate_uuid_format()` 已在 v0.48 放宽为支持 RFC 4122 v1/v3/v4/v5（对齐 MySQL `UUID()` 生成 v1），但测试仍按仅 v4 断言。修复：`test_invalid_uuid_v1` → `test_valid_uuid_v1`（v1 合法），`test_invalid_variant_field` → `test_valid_non_rfc4122_variant`（variant `c` 属 RFC 4122 Microsoft 向后兼容变体，合法）
+
+### Added
+- **P2-C2.4 KnowledgeList 删除确认测试**（`frontend/tests/KnowledgeList.test.js`，3 用例）：确认删除调 `store.deleteKb` 并显示成功提示 / 用户取消不调 API / 删除失败显示错误提示。直接调 `vm.confirmDelete()` + mock `ElMessageBox.confirm`，绕过 el-dropdown 交互。补齐 `ElLoading.service` mock 避免 DOM 副作用
+- **P3-U7.83 SSE 客户端断开测试**（`backend/tests/unit/rag/test_sse_helpers.py`，2 用例）：`asyncio.create_task` + `task.cancel()` 模拟客户端断连，验证 `stream_with_heartbeat` 的 `finally` 块正确取消 pending fetch 任务（无泄漏）+ 底层 async generator `finally` 清理生效（`generator_closed=True`）
+
+### Changed
+- **TEST_CASES.md**：P2-C2.4 / P3-U7.83 状态 ⬜ → ✅，`test_uuid_helpers.py` 用例数 30 → 36，`test_sse_helpers.py` 用例数 17 → 20
+
+## [0.50] - 2026-06-15
+
+### Changed
+- **公开知识库详情页开放文档列表只读查看**（`backend/app/services/document_service.py` + `frontend/src/views/KnowledgeDetail.vue`）：公开 KB 的非 owner 用户现可查看文档列表（文件名/类型/大小/状态/分块数/上传时间），支持筛选/排序/分页。上传区、操作列（删除/重新处理/查看分块）和分块预览弹窗对非 owner 隐藏。后端 `_check_kb_ownership()` 新增 `allow_public_read` 参数，`list_documents` 对 public KB 开放任意登录用户只读访问。PRD.md §5.4 权限矩阵「查看文档/分块」拆分为「查看文档列表」+「查看文档分块」两行
+
 ## [0.49] - 2026-06-15
 
 ### Fixed

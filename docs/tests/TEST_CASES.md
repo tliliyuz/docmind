@@ -199,7 +199,7 @@
 | P2-C2.1 | KnowledgeList 渲染 | `KnowledgeList` | 网格布局 | KB 卡片网格渲染 | ✅ | 2026-05-22 | 含搜索框、新建按钮、卡片名称/描述/文档数/分块数、部门图标、无描述占位 |
 | P2-C2.2 | KnowledgeList 空状态 | `KnowledgeList` | 无 KB | 显示空状态提示 | ✅ | 2026-05-22 | 显示「暂无知识库」 |
 | P2-C2.3 | KnowledgeList 新建弹窗 | `KnowledgeList` | 点击新建 | 弹窗显示 | ✅ | 2026-05-22 | 含按钮点击 + 新建卡片点击两个入口 |
-| P2-C2.4 | KnowledgeList 删除确认 | `KnowledgeList` | — | 二次确认弹窗 | ⬜ | — | 涉及 el-dropdown 展开 + ElMessageBox.confirm，stub 环境下难以模拟完整流程 |
+| P2-C2.4 | KnowledgeList 删除确认 | `KnowledgeList` | — | 二次确认弹窗 | ✅ | 2026-06-15 | 3 用例：确认删除调 store.deleteKb / 取消不调 API / 失败显示错误提示；直接调 vm.confirmDelete + mock ElMessageBox |
 | P2-C2.5 | DocumentList 渲染 | `KnowledgeDetail` | 表格 | 文档表格含状态标签 | ✅ | 2026-05-22 | 有文档时表格渲染 + 空状态隐藏 |
 | P2-C2.6 | DocumentList 上传拖拽 | `KnowledgeDetail` | 上传区域 | 上传区域渲染 | ✅ | 2026-05-22 | 上传区域文案 + 格式提示渲染；实际拖拽/文件选择需 e2e 测试 |
 | P2-C2.7 | DocumentList 状态轮询 | `KnowledgeDetail` | 生命周期 | 组件挂载获取数据、卸载清除轮询 | ✅ | 2026-05-22 | 验证 fetchKbDetail/fetchDocList 调用 + clearAllPolling 调用 |
@@ -402,7 +402,7 @@
 | P3-U7.80 | SSE-事件序列 | `sse_helpers` | 正常问答 | meta → (thinking)×N → message×N → sources → finish | ✅ | 2026-06-02 | — |
 | P3-U7.81 | SSE-心跳帧 | `sse_helpers` | 无数据 15s | 发送 `: ping\n\n` 注释帧，浏览器忽略但保持连接 | ✅ | 2026-06-02 | — |
 | P3-U7.82 | SSE-中途错误 | `sse_helpers` | LLM 中途失败 | meta → (message)×N → error → 连接关闭 | ✅ | 2026-06-02 | 异常向上传播验证 |
-| P3-U7.83 | SSE-客户端断开 | `sse_helpers` | 用户关闭页面 | `asyncio.CancelledError` 被捕获，LLM 流被中断 | ⬜ | — | 需真实 SSE 连接，Phase 4 手动测试 |
+| P3-U7.83 | SSE-客户端断开 | `sse_helpers` | 用户关闭页面 | `asyncio.CancelledError` 被捕获，LLM 流被中断 | ✅ | 2026-06-15 | 2 用例：task cancel 验证 pending 任务清理 + 底层 generator finally 关闭验证 |
 | P3-U7.84 | SSE-Content-Type | `StreamingResponse` | 正常 | `text/event-stream` + `Cache-Control: no-cache` + `Connection: keep-alive` | ✅ | 2026-06-02 | 通过 API 集成测试覆盖 |
 | P3-U7.85 | SSE-sources 事件数据 | `chat_service._build_sources()`（导入生产函数，非复制） | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ✅ | 2026-06-03 | P2 重构：消除逻辑复制，改为 import 真实函数 |
 | P3-U7.86 | SSE-finish 事件数据 | `sse_helpers._build_finish()` | 正常 | message_id + title（首轮）+ token_usage{prompt,completion,total} | ✅ | 2026-06-02 | — |
@@ -1045,7 +1045,7 @@
 
 ### 7.10 外部资源 UUID 化测试用例
 
-> 测试文件：后端 `tests/unit/core/test_uuid_helpers.py`（30 用例）+ `tests/unit/schemas/test_uuid_schemas.py`（21 用例）+ `tests/unit/api/test_uuid_api.py`（22 用例）。覆盖转换工具/Schema/API 三层。前端测试（§7.10.5）待前端适配后补充。
+> 测试文件：后端 `tests/unit/core/test_uuid_helpers.py`（36 用例）+ `tests/unit/schemas/test_uuid_schemas.py`（21 用例）+ `tests/unit/api/test_uuid_api.py`（22 用例）。覆盖转换工具/Schema/API 三层。前端测试（§7.10.5）待前端适配后补充。
 
 #### 7.10.1 后端 — UUID↔ID 转换工具测试
 
@@ -1195,7 +1195,7 @@
 | `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例） |
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例，P3-U7.54） |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
-| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
+| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
 | `services/conversation_service.py` | ≥ 80% | ✅ 通过 API 测试 | Phase 4.1：会话 CRUD（5 个端点，20 用例，2026-06-05） |
 | `api/conversation.py` | ≥ 90% | ✅ 100% | Phase 4.1：会话 API（20 用例，2026-06-05） |
 | `services/chat_service.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py，2026-06-05） |
@@ -1211,7 +1211,7 @@
 | `rag/intent.py` | ≥ 80% | ✅ | Phase 5 + P0-1：意图分类器（13 用例，P5-U10.1-P5-U10.13；规则快速通道 + Flash 模型兜底 + _is_casual_chat 迁入） |
 | `services/chat_service.py` (sources 预览) | ≥ 80% | ✅ 100% | Phase 5.5：Evidence Highlight 重构（21 用例 test_sources_preview.py + 4 用例 test_sse_helpers.py；P5-U11.1-P5-U11.6） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 100% | Phase 5.5：句级 Evidence 定位（14 用例，P5-U11.10-P5-U11.15） |
-| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（17 用例） |
+| `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
 | `services/chat_service.py` | ≥ 80% | ✅ | Phase 3：问答核心流程（19 用例，P2 重构提取 `_mock_chat_pipeline` 共享工具消除 ~120 行重复 mock） |
 | `api/chat.py` (接口测试) | ≥ 90% | ✅ | Phase 3：POST /api/chat SSE 接口（12 用例） |
 | `schemas/chat.py` | ≥ 85% | ✅ | Phase 3：ChatRequest Schema 校验（6 用例） |
@@ -1240,7 +1240,7 @@
 | 前端 `views/admin/AdminUserList.vue` | ≥ 60% | ✅ 15 用例 | Phase 5：用户列表页（7 用例，P5-C8.1-P5-C8.9） |
 | 前端 `views/admin/AdminUserDetail.vue` | ≥ 60% | ✅ 16 用例 | Phase 5：用户详情页（5 用例，P5-C8.10-P5-C8.14） |
 | 前端 `components/charts/*.vue` | ≥ 60% | ✅ 21 用例 | Phase 5：ECharts 图表组件（7 用例，P5-C7.1-P5-C7.7） |
-| `core/uuid_helpers.py`（UUID↔ID 转换） | ≥ 80% | ✅ 30 用例 | Phase 5：UUID 外部 ID（test_uuid_helpers.py：validate 11 + resolve 8 + get_by 5 + model 6；§7.10.1） |
+| `core/uuid_helpers.py`（UUID↔ID 转换） | ≥ 80% | ✅ 36 用例 | Phase 5：UUID 外部 ID（test_uuid_helpers.py：validate 11 + resolve 8 + get_by 5 + model 8 + _get_not_found_exception 4；§7.10.1） |
 | Pydantic Schema UUID | ≥ 85% | ✅ 21 用例 | Phase 5：Schema 校验（test_uuid_schemas.py：KB 3 + Doc 5 + Conv 6 + Chat 5 + Trace 3；§7.10.3） |
 | API 层 UUID 路径参数 | ≥ 90% | ✅ 22 用例 | Phase 5：接口回归（test_uuid_api.py：KB 7 + Doc 4 + Conv 4 + Chat 4 + Selectable 1 + Trace 2；§7.10.4） |
 | 前端 UUID 适配 | ≥ 60% | ✅ 23 用例 | Phase 5：组件/路由/Store 适配（P5-C10.1-P5-C10.8，8 用例 23 断言，§7.10.5，UuidAdaptation.test.js） |

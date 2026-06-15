@@ -580,7 +580,7 @@ PUT /api/auth/password { old_password, new_password }
 > **权限**：KB 所有者、admin 或 public KB 的任意登录用户。**Phase 2.3.3 页面**。
 > **对应后端**：`GET /api/knowledge-bases/{id}` + 文档接口族（`/api/knowledge-bases/{kb_id}/documents/**`）
 >
-> **非 owner 访问 public KB**：仅可查看 KB 基本信息 + 统计。文档上传区、文档表格（含筛选/分页）、编辑/删除按钮对非 owner 隐藏。用户可从该页面点击「开始问答」跳转到 `/chat?kb_id=xxx` 使用该 KB 进行问答。
+> **非 owner 访问 public KB**：可查看 KB 基本信息 + 统计 + 文档列表（只读，含筛选/排序/分页）。文档上传区、操作列（删除/重新处理/查看分块）、编辑/删除按钮对非 owner 隐藏。用户可从该页面点击「开始问答」跳转到 `/chat?kb_id=xxx` 使用该 KB 进行问答。
 
 ### 5.5.1 页面布局
 
@@ -615,8 +615,8 @@ PUT /api/auth/password { old_password, new_password }
 GET /api/knowledge-bases/{id} → 显示 KB 信息 + 统计
     ↓
 判断是否 owner：
-  ├─ 是 owner → GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表
-  └─ 非 owner（访问 public KB）→ 跳过文档列表，仅显示 KB 基本信息 + 「开始问答」入口
+  ├─ 是 owner/admin → GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表（含管理操作）
+  └─ 非 owner（访问 public KB）→ GET /api/knowledge-bases/{kb_id}/documents → 显示文档列表（只读，无操作列）
 ```
 
 ---

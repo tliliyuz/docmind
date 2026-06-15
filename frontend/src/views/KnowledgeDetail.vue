@@ -93,8 +93,8 @@
       </div>
     </div>
 
-    <!-- 文档表格区域（owner 或 admin 可见；admin 可查看/删除，不可上传） -->
-    <div class="doc-table-section" v-if="canManage">
+    <!-- 文档表格区域（owner/admin 可管理；公开 KB 查看者只读） -->
+    <div class="doc-table-section" v-if="canManage || isPublicViewer">
       <div class="doc-table-toolbar">
         <h2 class="section-title">文档列表</h2>
         <div class="doc-table-filters">
@@ -150,7 +150,7 @@
       <div v-if="!store.docLoading && store.docList.length === 0" class="empty-state">
         <i class="fas fa-folder-open empty-icon"></i>
         <div class="empty-title">暂无文档</div>
-        <div class="empty-desc">上传第一个文档开始构建知识库</div>
+        <div class="empty-desc">{{ isPublicViewer ? '该知识库暂无文档' : '上传第一个文档开始构建知识库' }}</div>
       </div>
 
       <!-- 文档表格 -->
@@ -166,8 +166,8 @@
           <template #default="{ row }">
             <span
               class="doc-filename"
-              :class="{ clickable: isTerminal(row.status) && row.chunk_count > 0 }"
-              @click.stop="isTerminal(row.status) && row.chunk_count > 0 && openChunksDialog(row)"
+              :class="{ clickable: canManage && isTerminal(row.status) && row.chunk_count > 0 }"
+              @click.stop="canManage && isTerminal(row.status) && row.chunk_count > 0 && openChunksDialog(row)"
             >
               {{ row.filename }}
             </span>
@@ -201,7 +201,7 @@
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" align="center" fixed="right">
+        <el-table-column v-if="canManage" label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <button
@@ -366,6 +366,11 @@ const canManage = computed(() => {
   return isOwner.value || authStore.isAdmin
 })
 
+/** 公开 KB 的只读查看者（非 owner 且非 admin，仅可查看文档列表） */
+const isPublicViewer = computed(() => {
+  return !canManage.value && store.currentKb?.visibility === 'public'
+})
+
 // ==================== 页面加载 ====================
 const pageLoading = ref(false)
 
@@ -373,15 +378,17 @@ async function loadPage() {
   pageLoading.value = true
   try {
     await store.fetchKbDetail(kbId.value)
-    // owner 或 admin 加载文档列表；非 owner 访问公开 KB 时无文档查看权限（PRD §5.4）
-    if (canManage.value) {
+    // owner/admin 加载文档列表（含管理操作）；公开 KB 查看者只读文档列表
+    if (canManage.value || isPublicViewer.value) {
       await reloadDocList()
-      // 对非终态文档启动轮询
-      store.docList.forEach(doc => {
-        if (!isTerminal(doc.status)) {
-          store.startPolling(kbId.value, doc.uuid)
-        }
-      })
+      // 仅 owner/admin 对非终态文档启动状态轮询
+      if (canManage.value) {
+        store.docList.forEach(doc => {
+          if (!isTerminal(doc.status)) {
+            store.startPolling(kbId.value, doc.uuid)
+          }
+        })
+      }
     }
   } catch {
     ElMessage.error('知识库不存在或无权访问')
@@ -653,7 +660,7 @@ function goToChat() {
 
 // ==================== 行展开 ====================
 function toggleRowExpand(row) {
-  if (isTerminal(row.status) && row.chunk_count > 0) {
+  if (canManage.value && isTerminal(row.status) && row.chunk_count > 0) {
     openChunksDialog(row)
   }
 }

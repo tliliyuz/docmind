@@ -76,12 +76,19 @@ async def _check_kb_ownership(
     db: AsyncSession, kb_id: int, user_id: int, role: str,
     *,
     owner_only: bool = False,
+    allow_public_read: bool = False,
 ) -> None:
     """校验知识库存在且 active，且当前用户有操作权限
 
     owner_only=True 时仅 owner 可操作（admin 也不允许），用于上传/reprocess 等写操作
+    allow_public_read=True 时，public KB 允许任意登录用户读取（仅限 list/get 等只读操作）
     """
     kb = await check_kb_active(db, kb_id)
+
+    # 公开 KB 只读访问：任意登录用户可通过
+    if allow_public_read and kb.visibility == "public":
+        return
+
     if owner_only:
         if kb.user_id != user_id:
             raise PermissionDeniedException()
@@ -273,8 +280,11 @@ async def list_documents(
     page: int = 1,
     page_size: int = 20,
 ) -> DocumentListResponse:
-    """获取知识库下的文档列表（筛选 + 排序 + 分页）"""
-    await _check_kb_ownership(db, kb_id, user_id, role)
+    """获取知识库下的文档列表（筛选 + 排序 + 分页）
+
+    public KB 允许任意登录用户查看文档列表（只读），对齐 PRD.md §5.4
+    """
+    await _check_kb_ownership(db, kb_id, user_id, role, allow_public_read=True)
 
     # 排序字段白名单校验
     if sort_by not in SORT_ALLOWED_FIELDS:
