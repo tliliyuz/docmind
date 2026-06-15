@@ -337,7 +337,7 @@ async def get_document(
     role: str,
 ) -> DocumentResponse:
     """获取单个文档详情"""
-    await _check_kb_ownership(db, kb_id, user_id, role)
+    await _check_kb_ownership(db, kb_id, user_id, role, allow_public_read=True)
 
     doc = await _get_doc_in_kb(db, kb_id, doc_id)
     return _build_document_response(doc)
@@ -369,7 +369,7 @@ async def get_document_chunks(
     page_size: int = 20,
 ) -> DocumentChunkListResponse:
     """查看文档的分块列表（分页），生产环境默认截断 content 至 200 字符"""
-    await _check_kb_ownership(db, kb_id, user_id, role)
+    await _check_kb_ownership(db, kb_id, user_id, role, allow_public_read=True)
     doc = await _get_doc_in_kb(db, kb_id, doc_id)
 
     # 总数

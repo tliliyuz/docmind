@@ -50,7 +50,7 @@ from app.rag.reranker import NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
 from app.rag.sentence_matcher import match_sentences
 from app.rag.trace_recorder import TraceRecorder
-from app.schemas.chat import ChatSourceChunk, PreviewRange
+from app.schemas.chat import ChatSourceChunk, PreviewRange, SelectableKBItem, SelectableKBResponse
 
 logger = logging.getLogger(__name__)
 
@@ -898,7 +898,7 @@ async def chat(
 
 async def get_selectable_kbs(
     db: AsyncSession, user_id: int
-) -> dict:
+) -> SelectableKBResponse:
     """获取当前用户可用于问答的知识库列表，按所有权分组。
 
     对齐 API.md §3 GET /api/knowledge-bases/selectable：
@@ -907,9 +907,6 @@ async def get_selectable_kbs(
 
     仅返回至少有一篇可检索文档（completed / success_with_warnings / partial_failed）的 KB，
     避免前端展示空 KB 导致用户选中后收到 E4001。
-
-    Returns:
-        {"mine": [...], "public": [...]}
     """
     # 子查询：KB 下是否有可检索文档
     has_retrievable = exists().where(
@@ -945,24 +942,24 @@ async def get_selectable_kbs(
     )
     public_rows = (await db.execute(public_q)).all()
 
-    return {
-        "mine": [
-            {
-                "uuid": kb.uuid,
-                "name": kb.name,
-                "visibility": kb.visibility,
-                "doc_count": kb.doc_count,
-            }
+    return SelectableKBResponse(
+        mine=[
+            SelectableKBItem(
+                uuid=kb.uuid,
+                name=kb.name,
+                visibility=kb.visibility,
+                doc_count=kb.doc_count,
+            )
             for kb in mine_rows
         ],
-        "public": [
-            {
-                "uuid": kb.uuid,
-                "name": kb.name,
-                "visibility": kb.visibility,
-                "doc_count": kb.doc_count,
-                "username": username,
-            }
+        public=[
+            SelectableKBItem(
+                uuid=kb.uuid,
+                name=kb.name,
+                visibility=kb.visibility,
+                doc_count=kb.doc_count,
+                username=username,
+            )
             for kb, username in public_rows
         ],
-    }
+    )

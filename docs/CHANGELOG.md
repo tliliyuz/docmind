@@ -10,13 +10,23 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ### Fixed
 - **test_uuid_helpers.py 2 个遗留失败用例断言与实现不一致**（`backend/tests/unit/core/test_uuid_helpers.py`）：`validate_uuid_format()` 已在 v0.48 放宽为支持 RFC 4122 v1/v3/v4/v5（对齐 MySQL `UUID()` 生成 v1），但测试仍按仅 v4 断言。修复：`test_invalid_uuid_v1` → `test_valid_uuid_v1`（v1 合法），`test_invalid_variant_field` → `test_valid_non_rfc4122_variant`（variant `c` 属 RFC 4122 Microsoft 向后兼容变体，合法）
+- **Admin 路由守卫安全漏洞**（`frontend/src/router/index.js:114`）：Vue Router 4 子路由不继承父路由 `meta`，`to.meta.requiresAdmin` 读取叶子路由 meta（undefined），导致非管理员可访问全部 Admin 页面。修复：改用 `to.matched.some(record => record.meta.requiresAdmin)` 遍历所有匹配路由记录
+- **JWT refresh_token payload 异常导致 500 而非 401**（`backend/app/services/auth_service.py:114`）：`int(payload["sub"])` 在 `try/except JWTError` 块外，当 JWT 签名有效但缺少 `sub` 字段或格式错误时抛出未捕获 `KeyError`/`ValueError`，经全局异常处理器返回 500/E9001。修复：将 `int(payload["sub"])` 移入 try 块，新增 `except (KeyError, ValueError, TypeError)` 抛出 `InvalidRefreshTokenException`
+- **公开 KB 文档详情/分块接口拒绝非 owner 访问**（`backend/app/services/document_service.py:340, 372`）：`get_document()` 和 `get_document_chunks()` 调用 `_check_kb_ownership()` 时缺少 `allow_public_read=True`，与 v0.50 引入的 public KB 只读开放语义矛盾。修复：两处均添加 `allow_public_read=True`
+- **`get_selectable_kbs()` 返回裸 dict**（`backend/app/services/chat_service.py:899-968`）：函数签名 `-> dict` 手动构建原生字典返回，`schemas/chat.py` 已定义 `SelectableKBResponse`/`SelectableKBItem` 但从未使用（违反 CLAUDE.md Pydantic schema 约定）。修复：返回类型改为 `SelectableKBResponse`，构造 Pydantic 模型实例返回
+- **ChatPage 孤儿 KB 横幅 + Sidebar 孤儿图标硬编码颜色**（`frontend/src/views/ChatPage.vue:324-365` + `frontend/src/components/layout/Sidebar.vue:933-937`）：7+2 个色值硬编码无法支持暗色模式。修复：在 `global.css` 新增 `--dm-orphan-bg/border/accent/text/hover-bg/hover-accent/lock` 七个 Design Token，两文件全部引用 `var(--dm-orphan-*)`
+- **知识库详情页文档列表整行可点击触发分块预览**（`frontend/src/views/KnowledgeDetail.vue:162`）：`el-table` 绑定 `@row-click="toggleRowExpand"` 导致点击行内任意列（状态、大小、上传时间等）均触发分块预览弹窗，交互不符合预期。修复：移除 `@row-click` 事件及 `toggleRowExpand` 函数；文件名前增加文件类型图标（pdf/docx/md/txt 各有对应 icon），图标与文件名作为唯一可点击区域触发 `openChunksDialog`；补充 `.doc-filename-icon` 样式，可点击状态为主题色、不可点击时为灰色
 
 ### Added
 - **P2-C2.4 KnowledgeList 删除确认测试**（`frontend/tests/KnowledgeList.test.js`，3 用例）：确认删除调 `store.deleteKb` 并显示成功提示 / 用户取消不调 API / 删除失败显示错误提示。直接调 `vm.confirmDelete()` + mock `ElMessageBox.confirm`，绕过 el-dropdown 交互。补齐 `ElLoading.service` mock 避免 DOM 副作用
 - **P3-U7.83 SSE 客户端断开测试**（`backend/tests/unit/rag/test_sse_helpers.py`，2 用例）：`asyncio.create_task` + `task.cancel()` 模拟客户端断连，验证 `stream_with_heartbeat` 的 `finally` 块正确取消 pending fetch 任务（无泄漏）+ 底层 async generator `finally` 清理生效（`generator_closed=True`）
 
+### Removed
+- **ConversationList.vue 死代码**（`frontend/src/views/admin/ConversationList.vue` + `frontend/tests/ConversationList.test.js`）：216 行纯模板+样式的占位页面，无 `<script setup>` 块，无会话列表逻辑，无 API 调用，无路由引用；配套测试文件一并删除（4 用例→3 用例原占位页面测试已无意义）
+
 ### Changed
 - **TEST_CASES.md**：P2-C2.4 / P3-U7.83 状态 ⬜ → ✅，`test_uuid_helpers.py` 用例数 30 → 36，`test_sse_helpers.py` 用例数 17 → 20
+- **DEVELOPMENT.md §2 项目结构树同步更新**：补充后端缺失文件（`_types.py`/`refresh_token.py`/`trace.py`/`bm25.py`/`fusion.py`/`query_rewriter.py`/`sentence_matcher.py`/`trace_recorder.py`/`llm.py`/`uuid_helpers.py`/`logging_config.py`/`admin_service.py`/`trace_service.py` 等）、前端缺失文件（6 个 views、AdminLayout/Sidebar、Charts 组件、composables/constants 等）、全部测试文件列表、Docker 部署文件
 
 ## [0.50] - 2026-06-15
 

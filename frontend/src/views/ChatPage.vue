@@ -321,8 +321,8 @@ function handleQuickQuestion(question) {
 .orphan-banner {
   flex-shrink: 0;
   padding: var(--dm-space-3) var(--dm-space-6);
-  background: #FFF8E1;
-  border-bottom: 1px solid #FFE082;
+  background: var(--dm-orphan-bg);
+  border-bottom: 1px solid var(--dm-orphan-border);
   display: flex;
   align-items: center;
   gap: var(--dm-space-3);
@@ -330,7 +330,7 @@ function handleQuickQuestion(question) {
 }
 
 .orphan-banner-icon {
-  color: #F57F17;
+  color: var(--dm-orphan-accent);
   font-size: var(--dm-text-sm);
   flex-shrink: 0;
 }
@@ -338,17 +338,17 @@ function handleQuickQuestion(question) {
 .orphan-banner-text {
   flex: 1;
   font-size: var(--dm-text-xs);
-  color: #5D4037;
+  color: var(--dm-orphan-text);
   line-height: 1.5;
 }
 
 .orphan-banner-btn {
   flex-shrink: 0;
   padding: 6px 14px;
-  border: 1px solid #F57F17;
+  border: 1px solid var(--dm-orphan-accent);
   border-radius: var(--dm-radius-sm);
   background: transparent;
-  color: #F57F17;
+  color: var(--dm-orphan-accent);
   font-size: var(--dm-text-xs);
   font-weight: var(--dm-weight-medium);
   cursor: pointer;
@@ -360,8 +360,8 @@ function handleQuickQuestion(question) {
 }
 
 .orphan-banner-btn:hover {
-  background: #FFF3E0;
-  border-color: #E65100;
-  color: #E65100;
+  background: var(--dm-orphan-hover-bg);
+  border-color: var(--dm-orphan-hover-accent);
+  color: var(--dm-orphan-hover-accent);
 }
 </style>

@@ -108,10 +108,11 @@ async def refresh(db: AsyncSession, refresh_token_str: str) -> TokenResponse:
     # 1. 解码 JWT
     try:
         payload = decode_refresh_token(refresh_token_str)
+        user_id = int(payload["sub"])
     except JWTError:
         raise InvalidRefreshTokenException("refresh_token 解码失败或已过期")
-
-    user_id = int(payload["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise InvalidRefreshTokenException("refresh_token 载荷字段缺失或格式错误")
 
     # 2. SHA-256 哈希 → 查表
     token_hash = hash_token(refresh_token_str)

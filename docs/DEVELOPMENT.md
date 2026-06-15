@@ -32,6 +32,8 @@
 
 ## 2. 项目结构
 
+> 最后更新：2026-06-15（同步自实际文件清单）
+
 ```
 docmind/
 ├── CLAUDE.md                          # Claude Code 项目指引
@@ -71,21 +73,24 @@ docmind/
 │   │   │
 │   │   ├── api/                       # API 路由层
 │   │   │   ├── __init__.py
-│   │   │   ├── auth.py                # 认证接口（注册/登录）
-│   │   │   ├── knowledge_base.py      # 知识库 CRUD
+│   │   │   ├── auth.py                # 认证接口（注册/登录/refresh）
+│   │   │   ├── knowledge_base.py      # 知识库 CRUD + 选择器
 │   │   │   ├── document.py            # 文档上传 & 管理
 │   │   │   ├── conversation.py        # 会话管理
-│   │   │   ├── chat.py                # 问答接口（SSE，占位）
-│   │   │   └── admin.py               # 管理后台
+│   │   │   ├── chat.py                # 问答接口（SSE 流式输出）
+│   │   │   └── admin.py               # 管理后台（统计/知识库/文档/链路/用户）
 │   │   │
 │   │   ├── models/                    # SQLAlchemy ORM 模型
 │   │   │   ├── __init__.py            # 导出全部模型 + DocumentStatus
+│   │   │   ├── _types.py              # UTCDateTime TypeDecorator（UTC 时区处理）
 │   │   │   ├── user.py                # 用户表
 │   │   │   ├── knowledge_base.py      # 知识库表
 │   │   │   ├── document.py            # 文档表
 │   │   │   ├── chunk.py               # 分块表
 │   │   │   ├── conversation.py        # 会话表
 │   │   │   ├── message.py             # 消息表
+│   │   │   ├── refresh_token.py       # Refresh Token 表
+│   │   │   ├── trace.py               # 链路追踪表
 │   │   │   └── enums.py               # DocumentStatus 枚举定义
 │   │   │
 │   │   ├── schemas/                   # Pydantic 请求/响应模型
@@ -94,29 +99,39 @@ docmind/
 │   │   │   ├── knowledge_base.py      # KnowledgeBaseCreate / KnowledgeBaseResponse
 │   │   │   ├── document.py            # DocumentUploadResponse / DocumentListResponse 等
 │   │   │   ├── conversation.py        # ConversationCreate / ConversationResponse
-│   │   │   └── chat.py                # ChatRequest / ChatSSEEvent
+│   │   │   ├── chat.py                # ChatRequest / ChatSSEEvent / SelectableKB*
+│   │   │   ├── admin.py               # Admin 统计/列表/用户管理 Schema
+│   │   │   └── trace.py               # Trace 查询响应 Schema
 │   │   │
 │   │   ├── services/                  # 业务逻辑层
 │   │   │   ├── __init__.py
-│   │   │   ├── auth_service.py        # 注册/登录逻辑
+│   │   │   ├── auth_service.py        # 注册/登录/refresh token 逻辑
 │   │   │   ├── knowledge_base_service.py  # 知识库 CRUD + 删除
-│   │   │   ├── document_service.py    # 文档上传/列表/删除/reprocess
-│   │   │   ├── conversation_service.py # 会话管理
-│   │   │   └── chat_service.py        # 问答核心流程（占位）
+│   │   │   ├── document_service.py    # 文档上传/列表/详情/删除/reprocess
+│   │   │   ├── conversation_service.py # 会话 CRUD + 标题生成
+│   │   │   ├── chat_service.py        # 问答核心流程（检索→RRF→Rerank→LLM SSE）
+│   │   │   ├── admin_service.py       # Admin 统计/知识库/文档/用户管理
+│   │   │   └── trace_service.py       # 链路追踪查询/详情
 │   │   │
 │   │   ├── rag/                       # RAG 核心模块
 │   │   │   ├── __init__.py
+│   │   │   ├── _types.py              # RAG 管线共享类型（Source, IntentResult 等）
 │   │   │   ├── parser.py              # 文档解析器（PDF/DOCX/MD/TXT）
-│   │   │   ├── chunker.py             # 文本分块策略（RecursiveCharacterTextSplitter）
+│   │   │   ├── chunker.py             # 文本分块策略（512 token / 50 重叠）
 │   │   │   ├── embedder.py            # Embedding 封装（DashScope text-embedding-v3）
-│   │   │   ├── retriever.py           # 检索器（向量 + BM25，占位 Phase 3）
+│   │   │   ├── retriever.py           # 向量检索器（ChromaDB）
+│   │   │   ├── bm25.py                # BM25 关键词检索 + Redis 缓存
+│   │   │   ├── fusion.py              # RRF 多路融合算法
 │   │   │   ├── reranker.py            # 重排序（当前 NoopReranker 占位）
-│   │   │   ├── prompt_builder.py      # Prompt 模板（占位）
-│   │   │   └── intent.py              # 意图识别 + 问题重写（占位 Phase 4/5）
+│   │   │   ├── prompt_builder.py      # Prompt 模板组装（System/History/Retrieval/Question）
+│   │   │   ├── intent.py              # 意图识别（Meta/Chitchat/RAG 三路分发）
+│   │   │   ├── query_rewriter.py      # 多轮对话问题重写
+│   │   │   ├── sentence_matcher.py    # Evidence Highlight 句子匹配
+│   │   │   └── trace_recorder.py      # RAG 链路追踪记录器
 │   │   │
 │   │   ├── ingest/                    # 入库任务模块
 │   │   │   ├── __init__.py
-│   │   │   ├── celery_app.py          # Celery 配置
+│   │   │   ├── celery_app.py          # Celery 配置（DB/Redis 集成）
 │   │   │   ├── lock.py                # Celery 幂等锁（Redis SET NX, ingest/delete 共享互斥）
 │   │   │   └── tasks.py               # 入库/删除/KB删除 Celery 任务
 │   │   │
@@ -124,15 +139,20 @@ docmind/
 │   │   │   ├── __init__.py
 │   │   │   ├── database.py            # 数据库连接 & async session
 │   │   │   ├── chroma_client.py       # ChromaDB 连接（单 collection docmind）
-│   │   │   ├── redis_client.py        # Redis 客户端（懒加载单例）
+│   │   │   ├── redis_client.py        # Redis 客户端（懒加载单例，Win/Linux 双模式）
 │   │   │   ├── security.py            # JWT & 密码哈希
 │   │   │   ├── sse.py                 # SSE 发送工具
 │   │   │   ├── storage.py             # 文件存储抽象（当前本地，后续 OSS）
-│   │   │   └── exceptions.py          # 自定义异常（AppException 基类）
+│   │   │   ├── exceptions.py          # 自定义异常（AppException 基类 + 全局处理器）
+│   │   │   ├── llm.py                 # LLM 调用封装（DashScope/OpenAI 兼容）
+│   │   │   ├── logging_config.py      # 日志配置
+│   │   │   └── uuid_helpers.py        # UUID 工具函数
 │   │   │
 │   │   └── middleware/
 │   │       ├── __init__.py
-│   │       └── auth_middleware.py      # JWT 验证中间件
+│   │       ├── auth_middleware.py      # JWT 验证中间件
+│   │       ├── rate_limit_middleware.py # 限流中间件
+│   │       └── request_id_middleware.py # 请求 ID 追踪中间件
 │   │
 │   ├── tests/                         # 后端测试（pytest + httpx）
 │   │   ├── __init__.py
@@ -143,11 +163,21 @@ docmind/
 │   │   │   ├── __init__.py
 │   │   │   ├── conftest.py            # 自动添加 pytest.mark.unit
 │   │   │   ├── api/                   # API 层测试（10 文件）
-│   │   │   ├── core/                  # 核心模块测试（9 文件）
+│   │   │   │   ├── test_auth_api.py
+│   │   │   │   ├── test_kb_api.py
+│   │   │   │   ├── test_document_api.py
+│   │   │   │   ├── test_conversation_api.py
+│   │   │   │   ├── test_chat_api.py
+│   │   │   │   ├── test_admin_api.py
+│   │   │   │   ├── test_admin_user_api.py
+│   │   │   │   ├── test_trace_api.py
+│   │   │   │   ├── test_kb_selectable_api.py
+│   │   │   │   └── test_uuid_api.py
+│   │   │   ├── core/                  # 核心模块测试（10 文件）
 │   │   │   ├── ingest/                # 入库流水线测试（2 文件）
-│   │   │   ├── rag/                   # RAG 管线测试（15 文件）
+│   │   │   ├── rag/                   # RAG 管线测试（16 文件）
 │   │   │   ├── schemas/               # Pydantic Schema 测试（3 文件）
-│   │   │   └── services/             # Service 层测试（9 文件）
+│   │   │   └── services/             # Service 层测试（10 文件）
 │   │   │
 │   │   ├── integration/               # 集成测试（自动标记 @integration）
 │   │   │   ├── __init__.py
@@ -193,34 +223,57 @@ docmind/
 │   │   ├── views/                     # 页面
 │   │   │   ├── ChatPage.vue           # 问答页（核心）
 │   │   │   ├── LoginPage.vue          # 登录页
+│   │   │   ├── KnowledgeList.vue      # 我的知识库列表
+│   │   │   ├── KnowledgeDetail.vue    # 知识库详情（文档列表+上传）
+│   │   │   ├── PublicKnowledgeList.vue # 公开知识库广场
 │   │   │   └── admin/
+│   │   │       ├── StatsPage.vue      # 系统统计（ECharts 可视化）
 │   │   │       ├── KnowledgeList.vue  # 知识库管理
-│   │   │       └── DocumentList.vue   # 文档管理
+│   │   │       ├── DocumentList.vue   # 文档管理
+│   │   │       ├── TraceList.vue      # 链路追踪列表
+│   │   │       ├── TraceDetail.vue    # 单次链路详情
+│   │   │       ├── AdminUserList.vue  # 用户管理
+│   │   │       ├── AdminUserDetail.vue # 用户详情
+│   │   │       └── ConversationList.vue # 会话管理（占位）
 │   │   │
 │   │   ├── components/
 │   │   │   ├── chat/
 │   │   │   │   ├── ChatInput.vue      # 输入框 + 发送 + 停止
 │   │   │   │   ├── MessageList.vue    # 消息列表容器
-│   │   │   │   ├── MessageItem.vue    # 单条消息气泡
+│   │   │   │   ├── MessageItem.vue    # 单条消息气泡（含 Evidence Highlight）
 │   │   │   │   └── WelcomeScreen.vue  # 空状态欢迎页
-│   │   │   └── layout/
-│   │   │       ├── AppLayout.vue      # 布局容器（Sidebar + 主内容）
-│   │   │       └── Sidebar.vue        # 侧边栏（会话列表 + 管理导航）
+│   │   │   ├── layout/
+│   │   │   │   ├── AppLayout.vue      # 布局容器（Sidebar + 主内容）
+│   │   │   │   ├── Sidebar.vue        # 侧边栏（会话列表 + 管理导航）
+│   │   │   │   └── AdminLayout.vue    # Admin 布局（侧边导航 + 内容区）
+│   │   │   └── charts/
+│   │   │       ├── LatencyChart.vue   # 延迟分布图
+│   │   │       ├── TokenChart.vue     # Token 消耗图
+│   │   │       └── TrendChart.vue     # 请求趋势图
 │   │   │
 │   │   ├── stores/                    # Pinia 状态管理
 │   │   │   ├── auth.js                # 认证状态（token/用户/login/logout）
 │   │   │   ├── chat.js                # 聊天状态（messages/streaming/send/abort）
+│   │   │   ├── conversation.js        # 会话列表状态
 │   │   │   └── knowledge.js           # 知识库状态（kbList/currentKb/docList）
 │   │   │
 │   │   ├── api/                       # HTTP 请求封装
 │   │   │   ├── index.js               # Axios 实例 + 拦截器
-│   │   │   ├── auth.js                # register / login
+│   │   │   ├── auth.js                # register / login / refresh
 │   │   │   ├── knowledge.js           # 知识库/文档相关 API
 │   │   │   ├── conversation.js        # 会话相关 API
-│   │   │   └── chat.js                # 问答 SSE 请求
+│   │   │   ├── chat.js                # 问答 SSE 请求 + KB 选择器
+│   │   │   ├── admin.js               # Admin 统计/管理 API
+│   │   │   └── trace.js               # 链路追踪 API
 │   │   │
 │   │   ├── router/
-│   │   │   └── index.js               # Vue Router + 路由守卫
+│   │   │   └── index.js               # Vue Router + 路由守卫（认证/Admin）
+│   │   │
+│   │   ├── composables/
+│   │   │   └── useECharts.js          # ECharts 动态加载 composable
+│   │   │
+│   │   ├── constants/
+│   │   │   └── charts.js              # ECharts 图表颜色常量
 │   │   │
 │   │   ├── styles/
 │   │   │   └── global.css             # 全局样式（Design Token --dm-* 变量）
@@ -231,10 +284,38 @@ docmind/
 │   │
 │   └── tests/                         # 前端测试（vitest + @vue/test-utils）
 │       ├── setup.js                   # 全局 Mock & 配置
-│       ├── LoginPage.test.js          # 登录页组件测试（12 用例）
-│       ├── AppLayout.test.js          # 布局组件测试（14 用例）
-│       ├── KnowledgeList.test.js      # 知识库列表页组件测试（11 用例）
-│       └── KnowledgeDetail.test.js    # 知识库详情页组件测试（12 用例）
+│       ├── LoginPage.test.js
+│       ├── ChatPage.test.js
+│       ├── ChatInput.test.js
+│       ├── MessageList.test.js
+│       ├── MessageItem.test.js
+│       ├── WelcomeScreen.test.js
+│       ├── markdown.test.js
+│       ├── sse.test.js
+│       ├── AppLayout.test.js
+│       ├── AdminLayout.test.js
+│       ├── Sidebar.test.js
+│       ├── KnowledgeList.test.js
+│       ├── KnowledgeDetail.test.js
+│       ├── PublicKnowledgeList.test.js
+│       ├── KnowledgeListAdmin.test.js
+│       ├── DocumentListAdmin.test.js
+│       ├── StatsPage.test.js
+│       ├── TraceList.test.js
+│       ├── TraceDetail.test.js
+│       ├── AdminUserList.test.js
+│       ├── AdminUserDetail.test.js
+│       ├── admin.test.js
+│       ├── ConversationList.test.js
+│       ├── Charts.test.js
+│       ├── useECharts.test.js
+│       ├── tokenRefresh.test.js
+│       └── UuidAdaptation.test.js
+│
+├── Dockerfile.backend
+├── Dockerfile.frontend
+├── docker-compose.yml
+└── nginx.conf
 ```
 
 ---

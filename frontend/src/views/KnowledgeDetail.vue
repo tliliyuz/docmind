@@ -159,7 +159,6 @@
         :data="store.docList"
         v-loading="store.docLoading"
         style="width: 100%"
-        @row-click="toggleRowExpand"
         row-key="uuid"
       >
         <el-table-column prop="filename" label="文件名" min-width="200">
@@ -169,6 +168,13 @@
               :class="{ clickable: canManage && isTerminal(row.status) && row.chunk_count > 0 }"
               @click.stop="canManage && isTerminal(row.status) && row.chunk_count > 0 && openChunksDialog(row)"
             >
+              <i
+                v-if="canManage && isTerminal(row.status) && row.chunk_count > 0"
+                class="fas doc-filename-icon"
+                :class="getFileTypeIcon(row.file_type)"
+                @click.stop="openChunksDialog(row)"
+              ></i>
+              <i v-else class="fas doc-filename-icon" :class="getFileTypeIcon(row.file_type)"></i>
               {{ row.filename }}
             </span>
           </template>
@@ -658,11 +664,16 @@ function goToChat() {
   router.push(`/chat?kb_id=${kbId.value}`)
 }
 
-// ==================== 行展开 ====================
-function toggleRowExpand(row) {
-  if (canManage.value && isTerminal(row.status) && row.chunk_count > 0) {
-    openChunksDialog(row)
+// ==================== 文件类型图标 ====================
+function getFileTypeIcon(fileType) {
+  const iconMap = {
+    pdf: 'fa-file-pdf',
+    docx: 'fa-file-word',
+    doc: 'fa-file-word',
+    md: 'fa-file-alt',
+    txt: 'fa-file-alt',
   }
+  return iconMap[fileType?.toLowerCase()] || 'fa-file'
 }
 
 // ==================== 状态标签工具函数 ====================
@@ -997,8 +1008,21 @@ onUnmounted(() => {
 
 /* ===== 表格内样式 ===== */
 .doc-filename {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--dm-text-primary);
   font-weight: var(--dm-weight-medium);
+}
+
+.doc-filename-icon {
+  color: var(--dm-text-tertiary);
+  font-size: 0.9em;
+  flex-shrink: 0;
+}
+
+.doc-filename.clickable .doc-filename-icon {
+  color: var(--dm-primary);
 }
 
 .doc-filename.clickable {

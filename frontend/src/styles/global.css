@@ -18,6 +18,15 @@
     --dm-danger-light: #FEF2F2;
     --dm-info-light: #EFF6FF;
 
+    /* ===== 孤儿会话警告横幅（会话关联 KB 被删除时显示） ===== */
+    --dm-orphan-bg: #FFF8E1;
+    --dm-orphan-border: #FFE082;
+    --dm-orphan-accent: #F57F17;
+    --dm-orphan-text: #5D4037;
+    --dm-orphan-hover-bg: #FFF3E0;
+    --dm-orphan-hover-accent: #E65100;
+    --dm-orphan-lock: #6A1B9A;
+
     /* ===== 部门图标色 ===== */
     --dm-hr-color: #DC2626;
     --dm-hr-bg: #FEF2F2;

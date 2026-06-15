@@ -111,7 +111,9 @@ router.beforeEach((to, from, next) => {
   }
 
   // 需要管理员权限 → 非 admin 用户重定向
-  if (to.meta.requiresAdmin && !authStore.isAdmin) {
+  // 使用 to.matched 遍历所有匹配路由记录，因为 Vue Router 4 子路由不继承父路由 meta
+  const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin)
+  if (requiresAdmin && !authStore.isAdmin) {
     next('/chat')
     return
   }
