@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 文档版本 | v1.1 |
+| 最后更新 | 2026-06-15 |
 
 > **编号规范**
 >
@@ -21,13 +21,13 @@
 **预计总工期**：4-6 周（120-180 小时）
 
 ```
-Phase 1          Phase 2          Phase 3          Phase 4              Phase 5         Phase 6
-骨架搭建         文档入库          核心问答          会话 & 记忆           打磨上线        迭代优化
-3-4天            3-4天            3-4天            + 基础设施加固         3-4天           不设时限
+Phase 1          Phase 2          Phase 3          Phase 4              Phase 5      Phase 5.5           Phase 6
+骨架搭建         文档入库          核心问答          会话 & 记忆           打磨上线     知识库质量治理       迭代优化
+3-4天            3-4天            3-4天            + 基础设施加固         3-4天       1-2天              不设时限
                   ▲                ▲               4-5天
-  ├────────────────┼────────────────┼────────────────┼──────────────────┼──────────────┤
-Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6       Week 6+
-[✅]              [✅]             [✅]             [✅]                [⏳ 90%]       [—]
+  ├────────────────┼────────────────┼────────────────┼──────────────────┼──────┼────┤
+Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6  W6   Week 6+
+[✅]              [✅]             [✅]             [✅]                [✅]   [⏳]  [—]
 ```
 
 ---
@@ -556,16 +556,102 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 ---
 
-## 8. Phase 6：迭代优化
+## 8. Phase 5.5：知识库质量治理
 
-**目标**：高级功能、持续优化。不阻塞上线，按需求优先级逐个实现。不设时间线。
+**目标**：系统性治理知识库污染问题——RAG 系统将示例/测试/接口说明等引用性文本误认为事实答案返回。通过 Prompt 升级 + 句级修辞过滤 + 三层证据审计 + DashScope Rerank 精排 + Chunk 元数据增强，预计消除 85%+ 的污染问题。
 
-### 8.1 [高级功能] 高级功能（按优先级排序）
+> **架构决策**：详见 [ADR-019](decisions/ADR-019-句级修辞过滤.md) / [ADR-020](decisions/ADR-020-三层证据审计.md)。
+
+### 8.1 [后端] Prompt 陈述知识 vs 引用知识原则
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | `SYSTEM_PROMPT_TEMPLATE` 升级 | 从简单的「请仅基于文档回答」升级为完整的陈述知识/引用知识判断框架，包含核心原则、判断方法、必然属于引用知识的场景枚举、拒答规则。预计单独消除 60-80% 的「引用知识被当成答案」问题 |
+
+### 8.2 [后端] 句级修辞过滤
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | `detect_sentence_role()` | 基于 `_REFERENTIAL_PATTERNS` 规则层（显式标记 + 结构层 JSON/代码块检测）判断单个句子的修辞角色（assertive / referential） |
+| ✅ | `filter_chunk_sentences()` | 对 chunk 内容做句级修辞过滤，仅保留陈述句。过滤后为空时回退到原始内容（宁可放过不可错杀） |
+| ✅ | `knowledge_pipeline.py` 集成 | 在 `match_sentences()` 前插入 `filter_chunk_sentences()` 过滤步骤，解决 Chunk 内部混合陈述句和引用句的污染问题 |
+
+### 8.3 [后端] 程序级三层证据审计
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | `evidence_auditor.py` 新模块 | 三层审计：引用存在性检查（第一层，`[来源N]` 标注检测）、来源一致性检查（第二层，文档集中度评估）、句级证据回溯（第三层，jieba 关键词匹配验证） |
+| ✅ | `EvidenceAuditResult` 数据类 | 综合审计结果：`has_citation` / `consistency_status` / `evidence_status` / `confidence_level` / `confidence_note` |
+| ✅ | `_compute_confidence()` 置信度计算 | 综合三层审计结果计算 high/medium/low 三级置信度。≥2 问题或 unsupported → low；1 问题 → medium；无问题 → high |
+| ✅ | `chat_service.py` 集成 | LLM 流完成后、sources 事件构建阶段执行审计，审计失败不阻断主流程（降级跳过）。sources SSE 事件新增 `confidence` / `confidence_note` 字段 |
+
+### 8.4 [前端] 置信度展示
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | `chat.js` store 适配 | sources SSE 事件中提取 `confidence` / `confidence_note` 字段，挂载到消息对象 |
+| ✅ | `MessageItem.vue` 置信度警告组件 | 当证据审计发现 medium/low 置信度时展示黄色警告提示（low：「以下答案可能存在偏差，建议核实原始文档」；medium：「以下答案部分内容可能不准确，请注意核实」）+ 详细说明 |
+
+### 8.5 [测试] Phase 5.5 测试
+
+| 状态 | 任务 | 测试类型 | 说明 |
+|:---|:---|:---|:---|
+| ✅ | 修辞角色判断测试 | 单元测试 | `detect_sentence_role()` 12 用例（`TestDetectSentenceRole`）：陈述知识 2 + 引用知识标记 7 + JSON 结构 1 + 空/空白 2。覆盖示例/例如/测试用例/用户提问/系统返回/TODO/JSON 开头等模式 |
+| ✅ | 句级修辞过滤测试 | 单元测试 | `filter_chunk_sentences()` 6 用例（`TestFilterChunkSentences`）：全陈述保留 / 混合过滤 / 全引用回退 / API 文档示例过滤 / 空内容 / 无句末标点 |
+| ✅ | 三层证据审计测试 | 单元测试 | `test_evidence_auditor.py` 19 用例：引用存在性 5（`TestCitationExists`）+ 来源一致性 5（`TestSourceConsistency`）+ 句级证据回溯 7（`TestSentenceEvidence`）+ 置信度计算 4（`TestComputeConfidence`）+ 集成 4（`TestAuditEvidenceIntegration`） |
+| ⬜ | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用等）验证治理效果 |
+
+### 8.6 [后端] DashScope Rerank API 接入
+
+> 替换 NoopReranker 占位，用真实 Rerank 模型提升检索精度。
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ✅ | `DashScopeReranker(BaseReranker)` 实现 | 调用 DashScope Rerank API，对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常降级回退。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项 |
+| ✅ | `knowledge_pipeline.py` 切换 | 将 `NoopReranker()` 替换为 `DashScopeReranker()`，`NoopReranker` 保留为降级回退方案 |
+| ✅ | Reranker 测试 | 单元测试：API 响应解析（8 用例）+ 集成测试（12 用例：精排排序正确性 + API 异常处理 + 降级回退 + 空输入/单输入边界 + 请求体验证）+ 配置测试（2 用例）= 22 用例全部通过 |
+
+### 8.7 [后端] Chunk 元数据增强（section_title / section_path）
+
+> 章节元数据帮助 LLM 在判断修辞角色时有更多上下文。
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | `chunker.py` 标题层级感知 | Markdown 通过 `#`/`##`/`###` 正则提取标题；Word/PDF 通过 `parser.py` 解析标题样式。提取结果写入 `Chunk.metadata_` JSON 字段（当前只存 `{"page": N}` → 扩展为 `{"page": N, "section_title": "...", "section_path": "..."}`） |
+| ⬜ | `tasks.py` `metas_batch` 扩展 | ChromaDB metadata 从 3 字段（`kb_id/doc_id/chunk_index`）扩展到 5 字段（+`section_title`/`section_path`） |
+| ⬜ | `retriever.py` `_parse_results()` 回填 | 从 ChromaDB metadata 提取 `section_title`/`section_path` 写入 `RetrievalResult` |
+| ⬜ | `_format_chunk_reference()` 章节信息 | Prompt 中来源格式化从 `[来源1]（文档: API.md）` 升级为 `[来源1] 文档: API.md \| 章节: §6.1 SSE 事件完整格式` |
+
+### 8.8 [后端] 章节号 BM25 增强
+
+> 检测用户提问中的章节号，对 BM25 检索做加权 boost。
+
+| 状态 | 任务 | 说明 |
+|:---|:---|:---|
+| ⬜ | 章节号检测正则 | 检测用户提问中的章节号模式（如「4.7」「8.2.1」「第四章」「§3.2」） |
+| ⬜ | BM25 boost 逻辑 | 匹配到章节号时，对 `section_title`/`section_path` 匹配的 chunk 做 BM25 分数加权 |
+
+### 8.9 🚫 本阶段不做的
+
+| 推迟项 | 排期 | 原因 |
+|:---|:---|:---|
+| LLM 辅助修辞判断 | Phase 6 | 规则层覆盖高频场景，LLM 判断引入额外延迟和不确定性，ROI 待评估 |
+| 审计结果持久化 | Phase 6 | 当前审计结果仅通过 SSE 实时推送，不入库。如需历史审计分析需新增 `evidence_audits` 表 |
+| 自适应 `_REFERENTIAL_PATTERNS` | Phase 6 | 当前规则为手工维护的正则列表，后续可从审计日志中自动挖掘新模式 |
+| 层级检索（Section 表 + 三阶段检索管道） | Phase 6 | 架构级改造，需新增 `sections` 表 + DB 迁移 + `chunker.py` 结构感知分块重构，工程量较大。Phase 5.5 先做元数据增强（§8.7）作为过渡方案 |
+
+---
+
+## 9. Phase 6：迭代优化
+
+**目标**：高级功能、架构级改造、持续优化。不阻塞上线，按需求优先级逐个实现。不设时间线。
+
+### 9.1 [高级功能] 高级功能（按优先级排序）
 
 | 优先级 | 任务 | 来源 | 说明 |
 |:---|:---|:---|:---|
-| P0 | DashScope Rerank API | Phase 3 推迟 | 替换 NoopReranker 占位，用真实 Rerank 模型提升检索精度 |
-| P1 | 结构感知分块 | Phase 2/3 推迟 | Markdown 标题层级感知分块，提升长文档检索质量 |
+| P0 | 层级检索（Section 表 + 三阶段检索管道） | Phase 6 | 扁平 `KB→Documents→Chunks` 升级为 `KB→Documents→Sections→Chunks`。新增 `sections` 表（`id, doc_id, kb_id, title, path, level, start_chunk_index, end_chunk_index`），`Chunk` 表新增 `section_id` 外键。`chunker.py` 替换为结构感知分块器。检索管道从 `VectorRetriever.search(kb_id)` 单步改为 `DocumentRetriever → SectionRetriever → ChunkRetriever` 三步漏斗 |
+| P1 | 结构感知分块 | Phase 2/3 推迟 | Markdown 标题层级感知分块，提升长文档检索质量（层级检索的前置依赖） |
 | P1 | LLM 摘要压缩 | Phase 4 推迟 | 超窗口消息 LLM 摘要，避免长对话 Token 溢出 |
 | P2 | WebSocket 实时状态推送 | Phase 2 推迟 | 替换文档入库轮询，降低前端请求频率 |
 | P2 | thinking_content 持久化 | Phase 3 推迟 | `messages.thinking_content` 落库 + 历史回看 |
@@ -576,19 +662,20 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 ---
 
-## 9. 依赖关系
+## 10. 依赖关系
 
 ```
-Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 ──→ Phase 6
-  │            │            │              │            │            │            │
-  └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ────→ └─ 测试 ──→  └─ 测试 ──→  └─ 测试
-     (已测)      (已测)  (权限测试)     (含人工评分1) (含人工评分2)  (全量+压测)   (不设时限)
+Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 ──→ Phase 5.5 ──→ Phase 6
+  │            │            │              │            │            │            │              │
+  └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ────→ └─ 测试 ──→  └─ 测试 ──→  └─ 测试 ──→  └─ 测试
+     (已测)      (已测)  (权限测试)     (含人工评分1) (含人工评分2)  (全量+压测)  (污染回归)    (不设时限)
 ```
 
-> Phase 6 不设时间线，不阻塞上线。按优先级逐个实现。
 
 
-### 9.1 [规范] 测试准入规则
+
+
+### 10.1 [规范] 测试准入规则
 
 **每个 Phase 的测试必须在该 Phase 功能完成后立即执行，作为下一 Phase 的准入条件：**
 
@@ -597,11 +684,12 @@ Phase 1 ──→ Phase 2 ──→ Phase 2.5 ──→ Phase 3 ──→ Phase 
 
 ---
 
-## 10. 相关文档
+## 11. 相关文档
 
 - [产品需求文档](PRD.md)
 - [架构设计文档](ARCHITECTURE.md)
 - [开发指南](DEVELOPMENT.md)
 - [测试策略](tests/TESTING.md)
 - [测试用例跟踪](tests/TEST_CASES.md)
+
 - [UI 设计规范](../frontend/docs/UIDESIGN.md)

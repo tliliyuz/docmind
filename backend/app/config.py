@@ -42,8 +42,12 @@ class Settings(BaseSettings):
     EMBEDDING_API_KEY: str = ""
     EMBEDDING_MODEL: str = "text-embedding-v3"
 
-    # Rerank (可选)
+    # Rerank (DashScope)
     RERANK_API_KEY: str = ""
+    RERANK_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
+    RERANK_MODEL: str = "gte-rerank-v2"
+    RERANK_MAX_RETRIES: int = 3
+    RERANK_TIMEOUT: int = 30  # DashScope Rerank API 请求超时（秒）
 
     # JWT
     JWT_SECRET_KEY: str = "change-me"
