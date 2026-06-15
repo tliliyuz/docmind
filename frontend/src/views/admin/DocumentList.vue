@@ -161,6 +161,7 @@ import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { getAdminDocuments } from '@/api/admin'
 import { deleteDocument } from '@/api/knowledge'
 import { formatDateTime, formatFileSize } from '@/utils/format'
+import { TERMINAL_STATUSES_SET, isTerminal } from '@/stores/knowledge'
 
 // ==================== 列表数据 ====================
 const loading = ref(false)
@@ -175,15 +176,6 @@ const sortBy = ref('created_at')
 const sortOrder = ref('desc')
 
 let searchTimer = null
-
-// ==================== 终态常量 ====================
-const TERMINAL_STATUSES = new Set([
-  'completed', 'success_with_warnings', 'partial_failed', 'failed',
-])
-
-function isTerminal(status) {
-  return TERMINAL_STATUSES.has(status)
-}
 
 // ==================== 数据加载 ====================
 async function loadList() {

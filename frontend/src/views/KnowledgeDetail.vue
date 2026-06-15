@@ -452,6 +452,10 @@ function onFileChange(e) {
 }
 
 async function uploadFiles(files) {
+  // ── 第一阶段：逐文件校验，分离无冲突文件与需覆盖文件 ──
+  const validFiles = []      // 无冲突，可批量上传
+  const forceUploadFiles = [] // 有同名冲突且用户确认覆盖，需单文件上传
+
   for (const file of files) {
     // 校验格式
     const ext = file.name.split('.').pop()?.toLowerCase()
@@ -485,28 +489,59 @@ async function uploadFiles(files) {
       } catch {
         continue
       }
+      forceUploadFiles.push(file)
+    } else {
+      validFiles.push(file)
     }
+  }
 
-    // 上传
+  // ── 第二阶段：有冲突的文件逐个覆盖上传（批量接口不支持 force） ──
+  for (const file of forceUploadFiles) {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      if (existing) formData.append('force', 'true')
-
+      formData.append('force', 'true')
       await store.uploadDoc(kbId.value, formData)
-      await reloadDocList()
-      // 对新上传的非终态文档启动状态轮询
-      store.docList.forEach(doc => {
-        if (!isTerminal(doc.status)) {
-          store.startPolling(kbId.value, doc.uuid)
-        }
-      })
-      ElMessage.success(`"${file.name}" 上传成功`)
+      ElMessage.success(`"${file.name}" 已覆盖上传`)
     } catch (err) {
-      const msg = err.response?.data?.message || `"${file.name}" 上传失败`
+      const msg = err.response?.data?.message || `"${file.name}" 覆盖上传失败`
       ElMessage.error(msg)
     }
   }
+
+  // ── 第三阶段：无冲突文件批量上传 ──
+  if (validFiles.length > 0) {
+    const formData = new FormData()
+    validFiles.forEach(file => formData.append('files', file))
+
+    try {
+      const result = await store.batchUploadDocs(kbId.value, formData)
+
+      // 成功的文件
+      if (result.success?.length) {
+        const names = result.success.map(d => d.filename).join('、')
+        ElMessage.success(`${result.success.length} 个文件上传成功：${names}`)
+      }
+
+      // 失败的文件
+      if (result.failed?.length) {
+        result.failed.forEach(item => {
+          ElMessage.error(`"${item.filename}" 上传失败：${item.reason}`)
+        })
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || '批量上传失败'
+      ElMessage.error(msg)
+    }
+  }
+
+  // ── 统一刷新列表并启动轮询 ──
+  await reloadDocList()
+  store.docList.forEach(doc => {
+    if (!isTerminal(doc.status)) {
+      store.startPolling(kbId.value, doc.uuid)
+    }
+  })
 }
 
 // ==================== 文档操作 ====================
