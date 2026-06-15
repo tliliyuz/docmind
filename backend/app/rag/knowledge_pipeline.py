@@ -21,9 +21,9 @@ from app.rag.bm25 import BM25Retriever
 from app.rag.fusion import rrf_fusion
 from app.rag.prompt_builder import PromptBuildResult, build_prompt
 from app.rag.query_rewriter import _needs_rewrite, rewrite_query
-from app.rag.reranker import NoopReranker
+from app.rag.reranker import BaseReranker, DashScopeReranker, NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
-from app.rag.sentence_matcher import match_sentences
+from app.rag.sentence_matcher import filter_chunk_sentences, match_sentences
 from app.rag.trace_recorder import TraceRecorder
 
 logger = logging.getLogger(__name__)
@@ -53,10 +53,10 @@ class KnowledgePipeline:
         self,
         vector_retriever: VectorRetriever | None = None,
         bm25_retriever_factory: Callable[[], Awaitable[BM25Retriever]] | None = None,
-        reranker: NoopReranker | None = None,
+        reranker: BaseReranker | None = None,
     ):
         self._vector_retriever = vector_retriever or VectorRetriever()
-        self._reranker = reranker or NoopReranker()
+        self._reranker = reranker or DashScopeReranker()
         self._bm25_retriever: BM25Retriever | None = None
         self._bm25_factory = bm25_retriever_factory
 
@@ -151,6 +151,10 @@ class KnowledgePipeline:
             t_fusion = time.perf_counter()
             reranked_output = await self._reranker.rerank(question, fused_output)
             t_rerank = time.perf_counter()
+            # 句级修辞过滤：在 sentence_matcher 前过滤引用性句子，
+            # 解决 Chunk 内部混合陈述句和引用句的污染问题（§3.3-3.4）
+            for r in reranked_output.results:
+                r.content = filter_chunk_sentences(r.content)
             reranked_output = match_sentences(reranked_output, question)
             prompt_result = build_prompt(question, reranked_output, history_messages=history_messages)
             t_retrieval_done = time.perf_counter()
@@ -172,6 +176,7 @@ class KnowledgePipeline:
                     input_count=len(fused_output.results),
                     output_count=len(reranked_output.results),
                     duration_ms=(t_rerank - t_fusion) * 1000,
+                    reranker=self._reranker.name,
                     t_span_start=t_fusion,
                 )
         except Exception as e:

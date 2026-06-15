@@ -1,6 +1,6 @@
-"""句级 Evidence 定位单元测试 — match_sentences()
+"""句级 Evidence 定位 + 修辞角色过滤单元测试 — match_sentences() / detect_sentence_role() / filter_chunk_sentences()
 
-对齐 TEST_CASES.md：
+对齐 TEST_CASES.md + ROADMAP.md §8.2：
 - 空输入 / 空 results
 - 单句 chunk（切句后仅 1 句）
 - 多 chunk 各自独立定位
@@ -13,7 +13,11 @@ import re
 import pytest
 
 from app.rag.retriever import RetrievalOutput, RetrievalResult
-from app.rag.sentence_matcher import match_sentences
+from app.rag.sentence_matcher import (
+    detect_sentence_role,
+    filter_chunk_sentences,
+    match_sentences,
+)
 
 
 # ==================== 辅助函数 ====================
@@ -256,3 +260,110 @@ class TestMatchSentencesFieldPassthrough:
 
         # 同一 question 应返回同一句子
         assert s1 == s2
+
+
+# ==================== 句级修辞角色过滤 ====================
+
+
+class TestDetectSentenceRole:
+    """detect_sentence_role() 修辞角色判断测试"""
+
+    def test_陈述知识_普通描述句(self):
+        """普通描述句应判定为陈述知识"""
+        assert detect_sentence_role("差旅报销需提交：1. 差旅申请单 2. 交通票据") == "assertive"
+
+    def test_陈述知识_制度定义句(self):
+        """制度定义句应判定为陈述知识"""
+        assert detect_sentence_role("公司报销制度规定每月25日前提交") == "assertive"
+
+    def test_引用知识_包含示例标记(self):
+        """含「示例：」的句子应判定为引用知识"""
+        assert detect_sentence_role("示例：SSE 响应格式如下") == "referential"
+
+    def test_引用知识_包含例如标记(self):
+        """含「例如，」的句子应判定为引用知识"""
+        assert detect_sentence_role("例如，新员工可能询问报销制度") == "referential"
+
+    def test_引用知识_包含测试用例标记(self):
+        """含「测试用例：」的句子应判定为引用知识"""
+        assert detect_sentence_role("测试用例：验证报销制度回答正确性") == "referential"
+
+    def test_引用知识_包含测试目标标记(self):
+        """含「测试目标：」的句子应判定为引用知识"""
+        assert detect_sentence_role("测试目标：验证系统能正确回答") == "referential"
+
+    def test_引用知识_包含用户提问标记(self):
+        """含「用户提问：」的句子应判定为引用知识"""
+        assert detect_sentence_role('用户提问："报销制度是什么？"') == "referential"
+
+    def test_引用知识_包含系统返回标记(self):
+        """含「系统返回：」的句子应判定为引用知识"""
+        assert detect_sentence_role("系统返回：差旅报销需提交……") == "referential"
+
+    def test_引用知识_包含TODO标记(self):
+        """含「TODO」的句子应判定为引用知识"""
+        assert detect_sentence_role("TODO: 后续支持多币种报销") == "referential"
+
+    def test_引用知识_JSON开头(self):
+        """以 JSON `{` 开头的句子应判定为引用知识"""
+        assert detect_sentence_role('{"event": "message", "data": {...}}') == "referential"
+
+    def test_空字符串默认陈述(self):
+        """空字符串默认为陈述（宁可放过不可错杀）"""
+        assert detect_sentence_role("") == "assertive"
+
+    def test_纯空白默认陈述(self):
+        """纯空白默认为陈述"""
+        assert detect_sentence_role("   ") == "assertive"
+
+
+class TestFilterChunkSentences:
+    """filter_chunk_sentences() 句级修辞过滤测试"""
+
+    def test_全部陈述句_原样返回(self):
+        """全部为陈述句时返回原始内容结构"""
+        content = "公司报销制度规定：差旅报销需提交申请单。每月25日前提交至财务部。"
+        result = filter_chunk_sentences(content)
+        assert "差旅报销需提交申请单" in result
+        assert "每月25日前提交至财务部" in result
+
+    def test_混合内容_过滤引用句(self):
+        """混合陈述句和引用句时，仅保留陈述句"""
+        content = (
+            "公司报销制度规定：差旅报销需提交申请单。"
+            "示例：SSE 响应中的报销文本。"
+            "每月25日前提交至财务部。"
+        )
+        result = filter_chunk_sentences(content)
+        assert "差旅报销需提交申请单" in result
+        assert "每月25日前提交至财务部" in result
+        assert "SSE 响应中的报销文本" not in result
+
+    def test_全部引用句_回退到原始内容(self):
+        """全部为引用句时回退到原始内容（宁可放过不可错杀）"""
+        content = "示例：用户提问。测试用例：验证回答。TODO: 优化。"
+        result = filter_chunk_sentences(content)
+        # 回退到原始内容
+        assert len(result) > 0
+
+    def test_API文档示例chunk_过滤SSE示例部分(self):
+        """API 文档中混合 SSE 事件定义和示例响应时，过滤示例部分"""
+        content = (
+            "DocMind 的 SSE 事件包含以下类型：meta 事件包含会话元数据。"
+            '示例：{"event": "message", "data": {"delta": "差旅报销需提交……"}}'
+        )
+        result = filter_chunk_sentences(content)
+        assert "SSE 事件包含以下类型" in result
+        # JSON 示例应被过滤
+        assert "delta" not in result or "差旅报销" not in result
+
+    def test_空内容返回原内容(self):
+        """空内容返回原始内容"""
+        result = filter_chunk_sentences("")
+        assert result == ""
+
+    def test_无句末标点_整段保留(self):
+        """无句末标点的内容整段保留（缺乏切句依据）"""
+        content = "这是一段没有标点的陈述性文本"
+        result = filter_chunk_sentences(content)
+        assert "陈述性文本" in result

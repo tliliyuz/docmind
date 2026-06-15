@@ -42,6 +42,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.rag.bm25 import BM25Retriever
 from app.rag.chunker import estimate_tokens
+from app.rag.evidence_auditor import EvidenceAuditResult, audit_evidence
 from app.rag.intent import Intent, classify_intent
 from app.rag.knowledge_pipeline import (
     KnowledgePipeline,
@@ -251,6 +252,23 @@ def _build_sources(
     return sources
 
 
+def _build_sources_event_data(
+    sources: list[ChatSourceChunk],
+    audit_result: EvidenceAuditResult | None = None,
+) -> dict:
+    """构建 sources SSE 事件的 data dict，含置信度标注。
+
+    对齐 ROADMAP.md §8.3：
+    审计发现问题时通过 confidence 字段标注，前端据此展示警告提示。
+    """
+    data: dict = {"chunks": [s.model_dump() for s in sources]}
+    if audit_result:
+        data["confidence"] = audit_result.confidence_level
+        if audit_result.confidence_note:
+            data["confidence_note"] = audit_result.confidence_note
+    return data
+
+
 async def _generate_sse_stream(
     conv: Conversation,
     task_id: str,
@@ -293,10 +311,13 @@ async def _generate_sse_stream(
         ]
 
         # 流式调用 LLM（此阶段不持有 DB 连接，对齐 ADR-017）
+        llm_finish_reason: str | None = None
         async for chunk in stream_chat_completion(
             messages=messages,
             deep_thinking=deep_thinking,
         ):
+            if chunk.finish_reason:
+                llm_finish_reason = chunk.finish_reason
             if chunk.reasoning_content and deep_thinking:
                 if t_first_token is None:
                     t_first_token = time.perf_counter()
@@ -323,7 +344,7 @@ async def _generate_sse_stream(
                 total_ms=_total_val,
                 input_tokens=0,  # 流式 API 不返回 usage，下面估算后更新
                 output_tokens=0,
-                finish_reason="stop",
+                finish_reason=llm_finish_reason or "stop",
                 t_span_start=t0,
             )
 
@@ -343,6 +364,15 @@ async def _generate_sse_stream(
         if recorder and recorder._generate_data:
             recorder._generate_data["input_tokens"] = prompt_tokens
             recorder._generate_data["output_tokens"] = completion_tokens
+
+        # 三层证据审计（ROADMAP.md §8.3）
+        # LLM 流完成后执行，检查答案的证据链是否可追溯
+        _audit_result: EvidenceAuditResult | None = None
+        if assistant_content and prompt_result.used_chunks:
+            try:
+                _audit_result = audit_evidence(assistant_content, prompt_result.used_chunks)
+            except Exception:
+                logger.warning("证据审计执行失败，跳过", exc_info=True)
 
     except Exception as e:
         t_error = time.perf_counter()
@@ -429,7 +459,10 @@ async def _generate_sse_stream(
                 )
                 for j, (orig_idx, _) in enumerate(_cited_with_orig_index):
                     sources[j].chunk_index = orig_idx
-                yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
+                yield format_sse_event(
+                    "sources",
+                    _build_sources_event_data(sources, _audit_result),
+                )
         else:
             # 回退：LLM 未引用 [来源N] 但检索有结果 → 发送全部 used_chunks
             # 防止因 LLM 格式问题导致 sources 事件消失（RAG 退化误判）
@@ -438,7 +471,10 @@ async def _generate_sse_stream(
                 len(_send_chunks),
             )
             sources = _build_sources(_send_chunks, doc_map)
-            yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
+            yield format_sse_event(
+                "sources",
+                _build_sources_event_data(sources, _audit_result),
+            )
 
     t_sources_end = time.perf_counter()  # 引用构建结束
 
