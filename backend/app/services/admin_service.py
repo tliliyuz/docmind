@@ -26,16 +26,20 @@ from app.schemas.admin import (
     AdminUserDetailResponse,
     AdminUserItem,
     AdminUserListResponse,
+    AdminUserResetPasswordResponse,
+    AdminUserStatusResponse,
     StatsChartsData,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _escape_like(value: str) -> str:
+def escape_like(value: str) -> str:
     r"""转义 SQL LIKE 通配符 `%` 和 `_`，防止用户输入被解释为 LIKE 模式。
 
     MySQL / SQLite 默认使用 ``\`` 作为 ESCAPE 字符。
+
+    供 admin_service / trace_service / document_service 等模糊搜索复用。
     """
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -125,7 +129,7 @@ async def list_all_kbs(
     if visibility is not None:
         conditions.append(KnowledgeBase.visibility == visibility)
     if search:
-        conditions.append(KnowledgeBase.name.like(f"%{_escape_like(search)}%", escape="\\"))
+        conditions.append(KnowledgeBase.name.like(f"%{escape_like(search)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)
@@ -199,7 +203,7 @@ async def list_all_documents(
     if status is not None:
         conditions.append(Document.status == status)
     if filename:
-        conditions.append(Document.filename.like(f"%{_escape_like(filename)}%", escape="\\"))
+        conditions.append(Document.filename.like(f"%{escape_like(filename)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)
@@ -281,7 +285,7 @@ async def list_users(
     if status is not None:
         conditions.append(User.status == status)
     if search:
-        conditions.append(User.username.like(f"%{_escape_like(search)}%", escape="\\"))
+        conditions.append(User.username.like(f"%{escape_like(search)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)
@@ -423,7 +427,7 @@ async def change_user_status(
     user_id: int,
     new_status: str,
     current_user_id: int,
-) -> dict:
+) -> AdminUserStatusResponse:
     """禁用/启用用户。
 
     对齐 API.md §7.7 PUT /api/admin/users/{user_id}/status：
@@ -437,7 +441,7 @@ async def change_user_status(
     if user is None:
         raise UserNotFoundException(user_id)
     if user.status == new_status:
-        return {"id": user.id, "username": user.username, "status": user.status}
+        return AdminUserStatusResponse(id=user.id, username=user.username, status=user.status)
 
     user.status = new_status
     await db.flush()
@@ -448,14 +452,14 @@ async def change_user_status(
         await revoke_all_user_tokens(db, user_id)
 
     logger.info("用户状态变更: user_id=%d, new_status=%s", user_id, new_status)
-    return {"id": user.id, "username": user.username, "status": user.status}
+    return AdminUserStatusResponse(id=user.id, username=user.username, status=user.status)
 
 
 async def reset_user_password(
     db: AsyncSession,
     user_id: int,
     new_password: str,
-) -> dict:
+) -> AdminUserResetPasswordResponse:
     """重置用户密码 + 吊销全部 refresh_token。
 
     对齐 API.md §7.7 POST /api/admin/users/{user_id}/reset-password。
@@ -476,4 +480,4 @@ async def reset_user_password(
     await revoke_all_user_tokens(db, user_id)
 
     logger.info("管理员重置用户密码: user_id=%d", user_id)
-    return {"id": user.id, "username": user.username}
+    return AdminUserResetPasswordResponse(id=user.id, username=user.username)

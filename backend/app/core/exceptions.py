@@ -208,6 +208,11 @@ class TokenLeakDetectedException(AppException):
 
 # ==================== 用户管理错误 E7xxx ====================
 
+class TraceNotFoundException(AppException):
+    def __init__(self, trace_id: str):
+        super().__init__("E7001", "Trace 不存在", 404, f"trace_id={trace_id} 不存在")
+
+
 class UserNotFoundException(AppException):
     def __init__(self, user_id: int):
         super().__init__("E7002", "用户不存在", 404, f"user_id={user_id} 不存在")

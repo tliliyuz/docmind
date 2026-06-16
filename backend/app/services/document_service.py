@@ -43,6 +43,7 @@ from app.schemas.document import (
 )
 from app.ingest.tasks import delete_document as delete_doc_task
 from app.ingest.tasks import ingest_document as ingest_doc_task
+from app.services.admin_service import escape_like
 from app.services.knowledge_base_service import check_kb_active
 
 logger = logging.getLogger(__name__)
@@ -304,7 +305,7 @@ async def list_documents(
     if status:
         conditions.append(Document.status == status)
     if filename:
-        conditions.append(Document.filename.like(f"%{filename}%"))
+        conditions.append(Document.filename.like(f"%{escape_like(filename)}%", escape="\\"))
 
     # 总数
     count_q = (

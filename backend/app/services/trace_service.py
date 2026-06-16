@@ -14,6 +14,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import TraceNotFoundException
+from app.services.admin_service import escape_like
+
 from app.models.knowledge_base import KnowledgeBase
 from app.models.trace import Trace
 from app.models.user import User
@@ -68,12 +71,13 @@ async def list_traces(
     对齐 API.md §7.5：JOIN users 取 username，LEFT JOIN knowledge_bases 取 kb_name。
     """
     # 构建基础查询
+    # kb_name/kb_uuid 优先从 KnowledgeBase 取，KB 已删除时回退到 Conversation.original_kb_name/uuid
     base_q = (
         select(
             Trace,
             User.username,
-            KnowledgeBase.name.label("kb_name"),
-            KnowledgeBase.uuid.label("kb_uuid"),
+            func.coalesce(KnowledgeBase.name, Conversation.original_kb_name).label("kb_name"),
+            func.coalesce(KnowledgeBase.uuid, Conversation.original_kb_uuid).label("kb_uuid"),
             Conversation.uuid.label("conversation_uuid"),
         )
         .join(User, Trace.user_id == User.id)
@@ -96,7 +100,7 @@ async def list_traces(
     if end_date is not None:
         conditions.append(Trace.created_at <= end_date)
     if search:
-        conditions.append(Trace.question.like(f"%{search}%"))
+        conditions.append(Trace.question.like(f"%{escape_like(search)}%", escape="\\"))
 
     if conditions:
         base_q = base_q.where(*conditions)
@@ -123,7 +127,7 @@ async def list_traces(
             if end_date is not None:
                 q = q.where(Trace.created_at <= end_date)
             if search:
-                q = q.where(Trace.question.like(f"%{search}%"))
+                q = q.where(Trace.question.like(f"%{escape_like(search)}%", escape="\\"))
             return q
 
         # 按状态分组计数
@@ -215,8 +219,8 @@ async def get_trace_detail(
         select(
             Trace,
             User.username,
-            KnowledgeBase.name.label("kb_name"),
-            KnowledgeBase.uuid.label("kb_uuid"),
+            func.coalesce(KnowledgeBase.name, Conversation.original_kb_name).label("kb_name"),
+            func.coalesce(KnowledgeBase.uuid, Conversation.original_kb_uuid).label("kb_uuid"),
             Conversation.title.label("conversation_title"),
             Conversation.uuid.label("conversation_uuid"),
         )
@@ -227,7 +231,7 @@ async def get_trace_detail(
     )
     row = (await db.execute(q)).first()
     if row is None:
-        return None
+        raise TraceNotFoundException(trace_id)
 
     trace, username, kb_name, kb_uuid_val, conversation_title, conv_uuid = row
 

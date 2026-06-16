@@ -149,6 +149,19 @@ class AdminUserStatusRequest(BaseModel):
     status: str = Field(description="active / disabled")
 
 
+class AdminUserStatusResponse(BaseModel):
+    """PUT /api/admin/users/{user_id}/status 响应"""
+    id: int
+    username: str
+    status: str
+
+
+class AdminUserResetPasswordResponse(BaseModel):
+    """POST /api/admin/users/{user_id}/reset-password 响应"""
+    id: int
+    username: str
+
+
 class AdminUserResetPasswordRequest(BaseModel):
     """POST /api/admin/users/{user_id}/reset-password 请求体"""
     new_password: str = Field(min_length=6, description="新密码（≥6 字符）")

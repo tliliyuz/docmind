@@ -247,6 +247,15 @@ class TraceRecorder:
         """设置响应模式（顶层字段）。"""
         self._response_mode = mode
 
+    def set_token_usage(self, input_tokens: int, output_tokens: int) -> None:
+        """更新 LLM 生成阶段的 Token 用量（用于流式完成后补填精确值）。
+
+        防御性检查：若 _generate_data 不存在则 no-op。
+        """
+        if self._generate_data is not None:
+            self._generate_data["input_tokens"] = input_tokens
+            self._generate_data["output_tokens"] = output_tokens
+
     def record_error(self, error_message: str) -> None:
         """记录错误。"""
         self._status = "error"

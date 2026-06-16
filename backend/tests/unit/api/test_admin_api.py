@@ -24,6 +24,8 @@ from app.schemas.admin import (
     AdminKBItem,
     AdminKBListResponse,
     AdminStatsResponse,
+    AdminUserResetPasswordResponse,
+    AdminUserStatusResponse,
     StatsChartsData,
 )
 from app.schemas.trace import TraceLatencyItem, TraceTokenItem, TraceTrendItem
@@ -404,7 +406,7 @@ class TestAdminDocListAPI:
     async def test_admin获取文档列表_组合筛选(self, async_client, admin_auth_headers):
         """按 kb_id + status + filename 组合筛选"""
         with patch("app.api.admin.list_all_documents", new_callable=AsyncMock) as mock_svc, \
-             patch("app.core.uuid_helpers.resolve_uuid_to_id",
+             patch("app.api.admin.resolve_uuid_to_id",
                    new_callable=AsyncMock, return_value=1) as mock_resolve:
             mock_svc.return_value = AdminDocListResponse(
                 total=0, page=1, page_size=20, items=[]
@@ -724,7 +726,7 @@ class TestAdminUserStatusAPI:
     async def test_禁用用户成功(self, async_client, admin_auth_headers):
         """admin 禁用用户成功"""
         with patch("app.api.admin.change_user_status", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = {"id": 3, "username": "zhangsan", "status": "disabled"}
+            mock_svc.return_value = AdminUserStatusResponse(id=3, username="zhangsan", status="disabled")
             response = await async_client.put(
                 "/api/admin/users/3/status",
                 json={"status": "disabled"},
@@ -738,7 +740,7 @@ class TestAdminUserStatusAPI:
     async def test_启用用户成功(self, async_client, admin_auth_headers):
         """admin 启用用户成功"""
         with patch("app.api.admin.change_user_status", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = {"id": 3, "username": "zhangsan", "status": "active"}
+            mock_svc.return_value = AdminUserStatusResponse(id=3, username="zhangsan", status="active")
             response = await async_client.put(
                 "/api/admin/users/3/status",
                 json={"status": "active"},
@@ -767,7 +769,7 @@ class TestAdminUserResetPasswordAPI:
     async def test_重置密码成功(self, async_client, admin_auth_headers):
         """admin 重置用户密码成功"""
         with patch("app.api.admin.reset_user_password", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = {"id": 3, "username": "zhangsan"}
+            mock_svc.return_value = AdminUserResetPasswordResponse(id=3, username="zhangsan")
             response = await async_client.post(
                 "/api/admin/users/3/reset-password",
                 json={"new_password": "NewPass123!"},

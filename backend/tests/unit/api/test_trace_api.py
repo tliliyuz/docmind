@@ -342,8 +342,10 @@ class TestTraceDetailAPI:
     @pytest.mark.asyncio
     async def test_A9_8_Trace详情不存在(self, async_client, admin_auth_headers):
         """A9.8：Trace 不存在时返回 404"""
+        from app.core.exceptions import TraceNotFoundException
+
         with patch("app.api.admin.get_trace_detail", new_callable=AsyncMock) as mock_svc:
-            mock_svc.return_value = None
+            mock_svc.side_effect = TraceNotFoundException("non-existent")
 
             resp = await async_client.get(
                 "/api/admin/traces/non-existent",

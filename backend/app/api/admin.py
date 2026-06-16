@@ -9,8 +9,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.uuid_helpers import resolve_uuid_to_id
 from app.dependencies import get_db, require_admin
 from app.core.exceptions import AppException
+from app.models.knowledge_base import KnowledgeBase
 from app.schemas.admin import (
     AdminUserResetPasswordRequest,
     AdminUserStatusRequest,
@@ -81,8 +83,6 @@ async def list_admin_documents(
 ):
     """获取全部文档列表（跨知识库视图）"""
     # UUID → integer ID（API 边界转换）
-    from app.core.uuid_helpers import resolve_uuid_to_id
-    from app.models.knowledge_base import KnowledgeBase
     resolved_kb_id = None
     if kb_id:
         resolved_kb_id = await resolve_uuid_to_id(db, KnowledgeBase, kb_id)
@@ -146,8 +146,6 @@ async def get_admin_trace_detail(
     对齐 API.md §7.5。
     """
     data = await get_trace_detail(db, trace_id=trace_id)
-    if data is None:
-        raise AppException("E7001", "Trace 不存在", 404, f"trace_id={trace_id} 不存在")
     return {"code": "0", "message": "ok", "data": data.model_dump()}
 
 
@@ -226,7 +224,7 @@ async def update_admin_user_status(
         current_user_id=current_user.get("user_id"),
     )
     message = "用户已禁用" if body.status == "disabled" else "用户已启用"
-    return {"code": "0", "message": message, "data": data}
+    return {"code": "0", "message": message, "data": data.model_dump()}
 
 
 @router.post("/users/{user_id}/reset-password")
@@ -243,4 +241,4 @@ async def reset_admin_user_password(
     data = await reset_user_password(
         db, user_id=user_id, new_password=body.new_password
     )
-    return {"code": "0", "message": "密码重置成功", "data": data}
+    return {"code": "0", "message": "密码重置成功", "data": data.model_dump()}

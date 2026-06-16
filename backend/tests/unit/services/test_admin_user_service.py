@@ -334,9 +334,9 @@ class TestChangeUserStatus:
                 db, user_id=3, new_status="disabled", current_user_id=2,
             )
 
-        assert result["status"] == "disabled"
-        assert result["id"] == 3
-        assert result["username"] == "target_user"
+        assert result.status == "disabled"
+        assert result.id == 3
+        assert result.username == "target_user"
         assert user.status == "disabled"
         db.flush.assert_called_once()
         mock_revoke.assert_called_once_with(db, 3)
@@ -359,7 +359,7 @@ class TestChangeUserStatus:
                 db, user_id=3, new_status="active", current_user_id=2,
             )
 
-        assert result["status"] == "active"
+        assert result.status == "active"
         assert user.status == "active"
         db.flush.assert_called_once()
         # 启用时不吊销 token
@@ -406,7 +406,7 @@ class TestChangeUserStatus:
             db, user_id=3, new_status="active", current_user_id=2,
         )
 
-        assert result["status"] == "active"
+        assert result.status == "active"
         db.flush.assert_not_called()
 
 
@@ -436,8 +436,8 @@ class TestResetUserPassword:
 
             result = await reset_user_password(db, user_id=3, new_password="NewPass123!")
 
-        assert result["id"] == 3
-        assert result["username"] == "target_user"
+        assert result.id == 3
+        assert result.username == "target_user"
         mock_verify.assert_called_once_with("NewPass123!", "$2b$12$old_hash_value")
         mock_hash.assert_called_once_with("NewPass123!")
         assert user.password_hash == "$2b$12$new_hash_value"

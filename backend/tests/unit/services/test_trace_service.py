@@ -651,7 +651,8 @@ class TestGetTraceDetail:
 
     @pytest.mark.asyncio
     async def test_get_trace_detail不存在(self):
-        """get_trace_detail 不存在时返回 None"""
+        """get_trace_detail 不存在时抛出 TraceNotFoundException"""
+        from app.core.exceptions import TraceNotFoundException
         from app.services.trace_service import get_trace_detail
 
         db = AsyncMock()
@@ -660,9 +661,11 @@ class TestGetTraceDetail:
         result_mock.first.return_value = None
         db.execute = AsyncMock(return_value=result_mock)
 
-        result = await get_trace_detail(db, trace_id="non-existent")
+        with pytest.raises(TraceNotFoundException) as exc_info:
+            await get_trace_detail(db, trace_id="non-existent")
 
-        assert result is None
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail["code"] == "E7001"
 
 
 # ==================== get_trace_stats 测试 ====================

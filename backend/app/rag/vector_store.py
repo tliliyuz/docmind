@@ -6,6 +6,7 @@
 - ChromaVectorStore 通过 asyncio.to_thread() 将同步 ChromaDB 调用卸载到线程池
 """
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 
@@ -78,8 +79,6 @@ class ChromaVectorStore(BaseVectorStore):
         where: dict,
         include: list[str],
     ) -> dict:
-        import asyncio
-
         try:
             return await asyncio.to_thread(
                 self._collection.query,
@@ -99,8 +98,6 @@ class ChromaVectorStore(BaseVectorStore):
         documents: list[str] | None = None,
         metadatas: list[dict] | None = None,
     ) -> None:
-        import asyncio
-
         try:
             await asyncio.to_thread(
                 self._collection.add,
@@ -114,8 +111,6 @@ class ChromaVectorStore(BaseVectorStore):
             raise
 
     async def delete(self, where: dict) -> None:
-        import asyncio
-
         try:
             await asyncio.to_thread(
                 self._collection.delete,

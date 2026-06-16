@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import KnowledgeBaseEmptyException, RetrievalServiceException
 from app.models.document import Document
 from app.rag.bm25 import BM25Retriever
 from app.rag.evidence_reviewer import EvidenceReviewResult, review_evidence
@@ -91,7 +92,6 @@ class KnowledgePipeline:
             KnowledgeBaseEmptyException: KB 无可检索文档
             RetrievalServiceException: 检索链路异常
         """
-        from app.core.exceptions import KnowledgeBaseEmptyException, RetrievalServiceException
 
         # 1. 查询重写（仅多轮对话上下文触发，对齐 ARCHITECTURE.md §5.1.5）
         _original_question = question

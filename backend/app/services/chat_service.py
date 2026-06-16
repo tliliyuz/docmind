@@ -27,6 +27,7 @@ from app.core.database import async_session
 from app.core.exceptions import (
     ConversationAccessDeniedException,
     ConversationNotFoundException,
+    KnowledgeBaseEmptyException,
     KnowledgeBaseNotFoundException,
     MetaQuestionException,
     QuestionEmptyException,
@@ -361,9 +362,8 @@ async def _generate_sse_stream(
         }
 
         # Trace: 更新 token 估算值（纯内存操作）
-        if recorder and recorder._generate_data:
-            recorder._generate_data["input_tokens"] = prompt_tokens
-            recorder._generate_data["output_tokens"] = completion_tokens
+        if recorder:
+            recorder.set_token_usage(prompt_tokens, completion_tokens)
 
         # 三层证据审计（ROADMAP.md §8.3）
         # LLM 流完成后执行，检查答案的证据链是否可追溯
@@ -589,37 +589,43 @@ _META_RESPONSE = (
 _REJECT_RESPONSE = "未找到相关信息"
 
 
-async def _generate_reject_response(
+async def _persist_fixed_response(
     conv: Conversation,
     is_first_turn: bool,
     question: str,
+    content: str,
+    log_label: str,
     recorder: TraceRecorder | None = None,
-) -> AsyncIterator[str]:
-    """证据审查 REJECT 时的固定 SSE 响应：不调 LLM，直接返回兜底消息。
+) -> tuple[int | None, str | None]:
+    """固定响应公共持久化：创建 Message → 更新 Conversation → 写入 Trace。
 
-    与 _generate_meta_response 同样的持久化模式：
-    保存 assistant 消息到数据库，保证对话成对。
+    供 _generate_reject_response / _generate_meta_response 复用，
+    消除 ~50 行重复代码。
 
-    SSE 事件序列（对齐 ADR-021 §7b）：
-    meta → message("未找到相关信息") → sources(空) → finish
+    Args:
+        conv: 会话对象（跨 session 引用，内部重新查询）
+        is_first_turn: 是否首轮，用于生成标题
+        question: 用户问题，用于生成标题
+        content: assistant 消息文本
+        log_label: 日志标识（"REJECT" / "META"）
+        recorder: Trace 收集器
+
+    Returns:
+        (message_id, title)：成功时 message_id > 0；异常时返回 (0, None)
     """
-    yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
-    yield format_sse_event("message", {"delta": _REJECT_RESPONSE})
-
-    # 持久化阶段：独立短生命周期 session，消息 + Trace 单事务提交（ADR-017）
-    title = None
     message_id = 0
+    title = None
     async with async_session() as s:
         try:
             conv_in = await s.get(Conversation, conv.id)
             if conv_in is None:
-                logger.error("会话 %d 在 REJECT 持久化时已不存在", conv.id)
+                logger.error("会话 %d 在 %s 持久化时已不存在", conv.id, log_label)
                 raise ConversationNotFoundException(conv.id)
 
             assistant_msg = Message(
                 conversation_id=conv_in.id,
                 role="assistant",
-                content=_REJECT_RESPONSE,
+                content=content,
                 thinking_content=None,
                 token_count=0,
             )
@@ -636,24 +642,44 @@ async def _generate_reject_response(
                 title = _generate_title(question)
                 conv_in.title = title
 
-            # Trace 写入（commit=False，由外层统一提交，确保与消息在同一事务）
             if recorder:
                 await recorder.finish(s, commit=False)
 
             await s.commit()
 
         except Exception:
-            logger.exception("REJECT 响应保存失败")
+            logger.exception("%s 响应保存失败", log_label)
             await s.rollback()
-            yield format_sse_event("sources", {"chunks": []})
-            yield format_sse_event("finish", {
-                "message_id": 0,
-                "title": None,
-                "token_usage": {"prompt": 0, "completion": 0, "total": 0},
-            })
-            return
+            return None, None
 
-    # session 已释放，安全发送事件
+    return message_id, title
+
+
+async def _generate_reject_response(
+    conv: Conversation,
+    is_first_turn: bool,
+    question: str,
+    recorder: TraceRecorder | None = None,
+) -> AsyncIterator[str]:
+    """证据审查 REJECT 时的固定 SSE 响应：不调 LLM，直接返回兜底消息。
+
+    SSE 事件序列（对齐 ADR-021 §7b）：
+    meta → message("未找到相关信息") → sources(空) → finish
+    """
+    yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
+    yield format_sse_event("message", {"delta": _REJECT_RESPONSE})
+
+    message_id, title = await _persist_fixed_response(
+        conv, is_first_turn, question, _REJECT_RESPONSE, "REJECT", recorder,
+    )
+    if message_id is None:
+        yield format_sse_event("sources", {"chunks": []})
+        yield format_sse_event("finish", {
+            "message_id": 0, "title": None,
+            "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+        })
+        return
+
     yield format_sse_event("sources", {"chunks": []})
     yield format_sse_event("finish", {
         "message_id": message_id,
@@ -668,68 +694,17 @@ async def _generate_meta_response(
     question: str,
     recorder: TraceRecorder | None = None,
 ) -> AsyncIterator[str]:
-    """META 意图的固定 SSE 响应：不调 LLM，直接返回模板。
-
-    与 _generate_sse_stream 一致：保存 assistant 消息到数据库，
-    保证对话历史完整性（用户消息已在 _validate_and_prepare 中保存）。
-
-    DB 会话管理（ADR-017）：使用独立短生命周期 session，消息 + Trace 单事务提交。
-    """
+    """META 意图的固定 SSE 响应：不调 LLM，直接返回模板。"""
     yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
     yield format_sse_event("message", {"delta": _META_RESPONSE})
 
-    # 持久化阶段：独立短生命周期 session，消息 + Trace 单事务提交（ADR-017）
-    title = None
-    message_id = 0  # 异常回退时的默认值
-    async with async_session() as s:
-        try:
-            # 跨 session 重新查询 conv，确保绑定到当前 session
-            conv_in = await s.get(Conversation, conv.id)
-            if conv_in is None:
-                logger.error("会话 %d 在 META 持久化时已不存在", conv.id)
-                raise ConversationNotFoundException(conv.id)
+    message_id, title = await _persist_fixed_response(
+        conv, is_first_turn, question, _META_RESPONSE, "META", recorder,
+    )
 
-            assistant_msg = Message(
-                conversation_id=conv_in.id,
-                role="assistant",
-                content=_META_RESPONSE,
-                thinking_content=None,
-                token_count=0,
-            )
-            s.add(assistant_msg)
-            conv_in.message_count += 1
-            _now = datetime.now(timezone.utc)
-            conv_in.updated_at = _now
-            conv_in.last_message_at = _now
-            await s.flush()
-            await s.refresh(assistant_msg)
-            message_id = assistant_msg.id
-
-            if is_first_turn:
-                title = _generate_title(question)
-                conv_in.title = title
-
-            # Trace 写入（commit=False，由外层统一提交，确保与消息在同一事务）
-            if recorder:
-                await recorder.finish(s, commit=False)
-
-            await s.commit()
-
-        except Exception:
-            logger.exception("META 响应保存失败")
-            await s.rollback()
-            yield format_sse_event("sources", {"chunks": []})
-            yield format_sse_event("finish", {
-                "message_id": 0,
-                "title": None,
-                "token_usage": {"prompt": 0, "completion": 0, "total": 0},
-            })
-            return
-
-    # session 已释放，安全发送事件
     yield format_sse_event("sources", {"chunks": []})
     yield format_sse_event("finish", {
-        "message_id": message_id,
+        "message_id": message_id or 0,
         "title": title,
         "token_usage": {"prompt": 0, "completion": 0, "total": 0},
     })
@@ -787,7 +762,6 @@ async def _validate_and_prepare(
     )
     retrievable_count = (await db.execute(doc_count_q)).scalar() or 0
     if retrievable_count == 0:
-        from app.core.exceptions import KnowledgeBaseEmptyException
         raise KnowledgeBaseEmptyException(real_kb_id)
 
     # 会话处理 + 历史消息加载
