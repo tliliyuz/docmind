@@ -19,6 +19,9 @@ from app.rag.bm25 import (
     BM25Retriever,
     _build_cache_key,
     _tokenize,
+    detect_section_numbers,
+    _match_section_numbers,
+    _cn_to_int,
     invalidate_bm25_cache,
     invalidate_bm25_cache_async,
     _local_cache,
@@ -30,16 +33,24 @@ from app.core.exceptions import RetrievalServiceException
 
 
 def _mock_db_rows(chunks=None):
-    """构造模拟的 DB 查询结果（chunks 表 SELECT doc_id, chunk_index, content）"""
+    """构造模拟的 DB 查询结果（chunks 表 SELECT doc_id, chunk_index, content, metadata_）。
+
+    §8.8: 新增 metadata_ 字段（含 section_title/section_path）。
+    """
     if chunks is None:
         chunks = [
-            (1, 0, "入职指南欢迎加入公司"),
-            (1, 1, "报销制度差旅标准"),
-            (2, 0, "VPN 配置远程访问"),
+            (1, 0, "入职指南欢迎加入公司", None),
+            (1, 1, "报销制度差旅标准", None),
+            (2, 0, "VPN 配置远程访问", None),
         ]
     mock_result = MagicMock()
     mock_result.all.return_value = [
-        MagicMock(doc_id=c[0], chunk_index=c[1], content=c[2])
+        MagicMock(
+            doc_id=c[0],
+            chunk_index=c[1],
+            content=c[2],
+            metadata_=c[3] if len(c) > 3 else None,
+        )
         for c in chunks
     ]
     return mock_result
@@ -115,16 +126,18 @@ class TestLocalCache:
     """进程内缓存测试"""
 
     def test_设置和获取缓存(self):
-        _set_local_cache(1, None, [(1, 0)], ["内容"])
+        """§8.8: 含 section_info 参数"""
+        _set_local_cache(1, None, [(1, 0)], ["内容"], [{"section_title": "§3.2"}])
         result = _get_local_cache(1)
         assert result is not None
-        bm25, doc_ids, contents = result
+        bm25, doc_ids, contents, section_info = result
         assert bm25 is None
         assert doc_ids == [(1, 0)]
         assert contents == ["内容"]
+        assert section_info == [{"section_title": "§3.2"}]
 
     def test_缓存过期(self):
-        _local_cache[1] = (None, [], [], time.time() - 1)  # 已过期
+        _local_cache[1] = (None, [], [], [], time.time() - 1)  # 已过期，5 元素
         result = _get_local_cache(1)
         assert result is None
         assert 1 not in _local_cache
@@ -655,3 +668,248 @@ class TestBM25RetrieverWithRealJieba:
         assert "VPN" in output.results[0].content
         # 不含 VPN 的文档应排在最后
         assert "VPN" not in output.results[2].content
+
+
+# ==================== §8.8 章节号检测测试 ====================
+
+
+class TestCnToInt:
+    """_cn_to_int() — 中文数字 → 整数"""
+
+    def test_单个数字(self):
+        assert _cn_to_int("一") == 1
+        assert _cn_to_int("四") == 4
+        assert _cn_to_int("九") == 9
+        assert _cn_to_int("十") == 10
+
+    def test_两位数(self):
+        assert _cn_to_int("十二") == 12
+        assert _cn_to_int("二十") == 20
+        assert _cn_to_int("三十五") == 35
+
+    def test_三位数(self):
+        assert _cn_to_int("一百零三") == 103
+        assert _cn_to_int("三百五十") == 350
+
+
+class TestDetectSectionNumbers:
+    """detect_section_numbers() — 章节号检测"""
+
+    def test_空文本(self):
+        assert detect_section_numbers("") == []
+        assert detect_section_numbers(None) == []  # type: ignore
+
+    def test_无章节号(self):
+        assert detect_section_numbers("报销制度是什么？") == []
+
+    def test_段落符号引导(self):
+        """§3.2, §8.2.1"""
+        result = detect_section_numbers("请解释 §3.2 的内容")
+        assert "3.2" in result
+
+        result = detect_section_numbers("§8.2.1 说的什么？")
+        assert "8.2.1" in result
+
+    def test_段落符号带空格(self):
+        """§ 4.7"""
+        result = detect_section_numbers("参见 § 4.7")
+        assert "4.7" in result
+
+    def test_中文数字章节(self):
+        """第四章, 第三节"""
+        result = detect_section_numbers("第四章的内容是什么？")
+        assert "4" in result
+
+        result = detect_section_numbers("第三节讲的是什么？")
+        assert "3" in result
+
+    def test_中文数字两位章节(self):
+        """第十二章"""
+        result = detect_section_numbers("参见第十二章")
+        assert "12" in result
+
+    def test_显式节编号(self):
+        """第4.7节, 第8.2.1节"""
+        result = detect_section_numbers("参考第4.7节")
+        assert "4.7" in result
+
+        result = detect_section_numbers("第8.2.1 节的内容")
+        assert "8.2.1" in result
+
+    def test_裸数字章节号(self):
+        """4.7, 8.2.1 — 不含字母前缀"""
+        result = detect_section_numbers("请解释 4.7 的内容")
+        assert "4.7" in result
+
+        result = detect_section_numbers("8.2.1 节是怎么说的")
+        assert "8.2.1" in result
+
+    def test_不匹配版本号(self):
+        """v4.7.0 不应被当作章节号"""
+        result = detect_section_numbers("v4.7.0 版本有什么更新")
+        # v4.7.0 前面有字母 v，不应匹配裸数字章节模式
+        assert "4.7.0" not in result
+
+    def test_多模式混合去重(self):
+        """同一种编号多次出现去重"""
+        result = detect_section_numbers("§3.2 和第3.2节都提到了 3.2 的内容")
+        assert result.count("3.2") == 1
+
+
+class TestMatchSectionNumbers:
+    """_match_section_numbers() — 章节元数据匹配"""
+
+    def test_空目标列表返回False(self):
+        assert _match_section_numbers("§3.2", "概述 > §3.2", []) is False
+
+    def test_空元数据返回False(self):
+        assert _match_section_numbers(None, None, ["3.2"]) is False
+        assert _match_section_numbers("", "", ["3.2"]) is False
+
+    def test_section_title精确匹配(self):
+        assert _match_section_numbers("§3.2 限流配置", None, ["3.2"]) is True
+
+    def test_section_path匹配(self):
+        assert _match_section_numbers(
+            None, "架构 > §3 基础设施 > §3.2 限流", ["3.2"],
+        ) is True
+
+    def test_层级匹配_单个数字(self):
+        """单数字 "4" 可匹配 section_title 中以 "4 " 开头的标题"""
+        assert _match_section_numbers("4 数据库设计", None, ["4"]) is True
+
+    def test_不匹配_无关章节号(self):
+        assert _match_section_numbers("§3.2 限流", None, ["5.1"]) is False
+
+    def test_多章节号任一匹配(self):
+        """多个目标章节号，只要有一个匹配即 True"""
+        assert _match_section_numbers("§3.2 限流", None, ["5.1", "3.2"]) is True
+
+
+class TestBM25SectionBoost:
+    """BM25 检索集成 §8.8 章节号 boost"""
+
+    @pytest.mark.asyncio
+    async def test_章节号查询触发boost(self):
+        """包含章节号的查询应对匹配 chunk 做分数加权。
+
+        两个 chunk 内容完全相同（BM25 基础分一致），仅 section_info 不同，
+        带 §6.1 的查询应 boost 匹配的 chunk 使其跃居第一。
+        """
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0], [2, 0]],
+            "tokens": [
+                jieba.lcut("SSE 事件格式详解"),
+                jieba.lcut("SSE 事件格式详解"),
+            ],
+            "contents": [
+                "SSE 事件格式详解",
+                "SSE 事件格式详解",
+            ],
+            "section_info": [
+                {"section_title": "§6.1 SSE 事件格式", "section_path": "API > §6 SSE > §6.1"},
+                {"section_title": "§3.2 限流配置", "section_path": "架构 > §3 基础设施 > §3.2"},
+            ],
+        }, ensure_ascii=False)
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory(_mock_db_rows())
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        # 查询含 "§6.1" — 两个 chunk 内容一样，但只有 chunk 0 匹配
+        output = await retriever.search("§6.1 SSE 事件格式说明", kb_id=1, top_k=2)
+
+        assert output.total == 2
+        # 两个内容相同、基础分相同，boost 使 chunk 0 排第一
+        assert output.results[0].section_title == "§6.1 SSE 事件格式"
+
+    @pytest.mark.asyncio
+    async def test_无章节号查询不触发boost(self):
+        """普通查询（无章节号）不做 boost：返回全部结果，分数无异常变动"""
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0], [1, 1]],
+            "tokens": [
+                jieba.lcut("SSE 事件格式详解"),
+                jieba.lcut("限流配置参数说明"),
+            ],
+            "contents": [
+                "SSE 事件格式详解",
+                "限流配置参数说明",
+            ],
+            "section_info": [
+                {"section_title": "§6.1 SSE 事件格式", "section_path": ""},
+                {"section_title": "§3.2 限流配置", "section_path": ""},
+            ],
+        }, ensure_ascii=False)
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory(_mock_db_rows())
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        # 查询中无章节号 → 不触发 boost，正常返回全部结果
+        output = await retriever.search("限流怎么配置", kb_id=1, top_k=2)
+
+        assert output.total == 2
+        # 无章节号时 detect_section_numbers 返回空，不进入 boost 逻辑
+        # 两个结果均返回（小语料下分数可能为 0 或类似，但都应存在）
+
+    @pytest.mark.asyncio
+    async def test_章节号查询_RetrievalResult含section信息(self):
+        """BM25 检索返回的 RetrievalResult 应填充 section_title/section_path"""
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0]],
+            "tokens": [jieba.lcut("SSE 事件格式详解")],
+            "contents": ["SSE 事件格式详解"],
+            "section_info": [
+                {"section_title": "§6.1 SSE 事件格式", "section_path": "API > §6 SSE > §6.1"},
+            ],
+        }, ensure_ascii=False)
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory(_mock_db_rows())
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        output = await retriever.search("SSE 事件", kb_id=1, top_k=1)
+
+        assert output.total == 1
+        assert output.results[0].section_title == "§6.1 SSE 事件格式"
+        assert output.results[0].section_path == "API > §6 SSE > §6.1"
+
+    @pytest.mark.asyncio
+    async def test_空section_info不报错(self):
+        """无 section_info 时正常检索"""
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0], [1, 1]],
+            "tokens": [
+                jieba.lcut("测试内容一"),
+                jieba.lcut("测试内容二"),
+            ],
+            "contents": ["测试内容一", "测试内容二"],
+            "section_info": [],
+        }, ensure_ascii=False)
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory(_mock_db_rows())
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        output = await retriever.search("测试", kb_id=1, top_k=2)
+
+        assert output.total == 2
+        for r in output.results:
+            assert r.section_title is None
+            assert r.section_path is None
+
+    @pytest.mark.asyncio
+    async def test_旧缓存无section_info向后兼容(self):
+        """旧缓存数据不含 section_info 字段，不应报错"""
+        # 旧格式缓存：无 section_info
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0]],
+            "tokens": [jieba.lcut("测试内容")],
+            "contents": ["测试内容"],
+            # 无 section_info 字段
+        }, ensure_ascii=False)
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory(_mock_db_rows())
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        output = await retriever.search("测试", kb_id=1, top_k=1)
+
+        assert output.total == 1
+        assert output.results[0].section_title is None

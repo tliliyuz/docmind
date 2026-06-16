@@ -9,18 +9,33 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 ## [Unreleased] - 2026-06-16
 
 ### Added
-- **Evidence Review 门控与 Trace 可观测性（ADR-021）**：新增 `evidence_reviewer.py` 模块，在 `filter_chunk_sentences()` 之后执行 chunk 分类（ASSERTIVE/REJECTED）与门控决策（ALLOW/REJECT）。当所有 chunk 过滤后均无陈述性句子时，跳过 LLM 调用直接返回「未找到相关信息」，节省无效 LLM 调用并提供可解释的拒答原因
-- **Traces 表新增 evidence_review JSON 列**：存储三级证据审查数据（summary 摘要 + chunk_decisions Top 5 + post_audit 审计结果）。`TraceRecorder` 新增 `record_evidence_review()` 和 `set_post_audit()` 方法
-- **FilterStats 输出**：`sentence_matcher.py` 新增 `FilterStats` 数据类，`filter_chunk_sentences()` 返回值改为 `(str, FilterStats)`，供 `evidence_reviewer` 复用，避免重复切句+角色判定
-- **前端 Trace 详情第 6 阶段卡片**：`TraceDetail.vue` 展示「证据审查」卡片，显示 ALLOW/REJECT 决策和 A/R 计数，REJECT 时使用 danger 色标签
-- **新增 response_mode = "REJECT"**：证据驳回响应模式，区别于 FALLBACK
-- **ADR-021 证据审查门控**：架构决策记录，覆盖 Pre-LLM 门控、三级可观测性、Post-LLM 审计补填
+- **Chunk 元数据增强（§8.7）**：`chunker.py` 新增 `_detect_sections()` / `_resolve_section()` 从 Markdown 标题提取章节层级；`ChunkResult` 新增 `section_title` / `section_path` 字段；`Chunk.metadata_` 从 `{"page": N}` 扩展为含章节信息；ChromaDB metadata 从 3 字段扩展到 5 字段（+`section_title` / `section_path`）；`RetrievalResult` 新增章节字段并在 `_parse_results()` 中从 ChromaDB 回填；`fusion.py` RRF 融合保留章节字段
+- **章节号 BM25 增强（§8.8）**：`bm25.py` 新增 `detect_section_numbers()` 检测用户提问中的章节号模式（§3.2 / 4.7 / 8.2.1 / 第四章 / 第4.7节）；新增 `_match_section_numbers()` 章节元数据匹配；BM25 缓存结构扩展 `section_info` 列表，向后兼容旧缓存；搜索时对匹配 chunk 做分数加权（正分 ×2.0，负分 ÷2.0）
+- **DOCX 标题样式→Markdown 标记**：`parser.py` 新增 `_docx_heading_to_markdown()`，将 Word 标题样式（Heading 1-6 / outlineLevel / Title）自动转换为 Markdown `#` 标记，使 chunker 的章节检测跨 MD/DOCX 格式统一工作
+- **Prompt 章节信息展示**：`_format_chunk_reference()` 从 `[来源1]（文档: API.md）` 升级为 `[来源1]（文档: API.md | 章节: API > §6 SSE > §6.1）`
+- 新增 53 个单元测试覆盖 §8.7 / §8.8（chunker 章节检测 16 + BM25 检测/boost 18 + prompt 格式化 4 + retriever 回填 3 + parser 已由现有测试覆盖）
 
 ### Changed
+- `BM25Retriever._load_and_cache()` 新增加载 `Chunk.metadata_` 列；进程内缓存结构从 4-tuple 扩展为 5-tuple（含 `section_info`）；`_get_bm25_index()` 返回值增加 `section_info`
 - `filter_chunk_sentences()` 返回值从 `str` 改为 `tuple[str, FilterStats]`，影响 `knowledge_pipeline.py` 调用方和 6 个测试用例
 - `KnowledgePipelineResult` 新增 `evidence_review: EvidenceReviewResult | None` 字段
 - `TraceDetailResponse` 新增 `evidence_review: EvidenceReviewSpan | None` 字段
 - `TraceRecorder.finish()` response_mode 推导逻辑增加 REJECT 分支
+- `config.py` 新增 `BM25_SECTION_BOOST_FACTOR: float = 2.0` 配置项
+
+### Removed
+- **移除 A/B 实验调试开关**：删除 `P0_STRICT_MODE`（严格/宽松 Prompt 切换）、`SENTENCE_ROLE_FILTER`（句级修辞过滤开关）、`DASHSCOPE_RERANK`（DashScope/Noop Reranker 切换）三个配置项。固化生产配置为：宽松 Prompt + DashScopeReranker + 句级修辞过滤（始终启用）
+- **移除 `NoopReranker`**：删除占位 Reranker 实现，`DashScopeReranker` API 异常时内部已有 RRF 排序降级逻辑
+- **移除 `SYSTEM_PROMPT_TEMPLATE_STRICT`**：删除「陈述知识 vs 引用知识」严格 Prompt 模板，保留宽松 Prompt 作为唯一模板
+
+### Fixed
+- **孤儿会话三个备份字段不落库**：`_delete_kb_async` Step 5 的 `update(Conversation).values(kwargs)` ORM 列映射有歧义，`original_kb_id`/`original_kb_name`/`original_kb_uuid` 三个字段在 KB 物理删除前未写入，导致 `_enrich_kb_status` 检测 `original_kb_uuid is None` → `kb_status=None` → 前端 `isKbOrphaned=false` → 孤儿保护全部失效（可重新生成、可发消息）。修复：Step 5 改用 `text()` raw SQL 显式传参，日志新增 `rowcount` 输出
+- **空知识库（0 文档）仍可问答且 LLM 无来源生成答案**：KB 文档数检查只在 `execute_knowledge` 内部（仅 KNOWLEDGE 意图触发），CASUAL 意图走 `execute_casual` 完全跳过检查 → LLM 无上下文直接生成答案。修复：后端 `_validate_and_prepare` 将 KB 可检索文档数检查提前到意图分支之前；前端 `chat.js` 新增 `isKbEmpty` 计算属性（KB 存在但不在可选列表）；`ChatPage.vue` 空 KB 警告横幅 + 输入禁用 + `handleSend` 拦截；`MessageItem.vue` 空 KB 时隐藏重新生成按钮
+- `_docx_heading_to_markdown()` 防御性设计：MagicMock 等非真实对象导致属性访问异常时降级为普通文本提取，不影响现有测试
+- **`list_traces()` status 查询 mock 兼容**：`status_q` 使用 `select(Trace.status, func.count())` 返回多列 Row，测试 mock 中为纯 tuple。将 `row.status`/`row.cnt` 属性访问改为 `row[0]`/`row[1]` 索引访问，同时兼容 SQLAlchemy Row 和 mock tuple
+- **`list_traces` 测试 mock 数据不完整**：`list_traces()` 内部最多 5 次 `db.execute` 调用（count → status → avg → durations → data），但测试只 mock 了 2 个 side_effect 值。新增 `_make_execute_chain()` 辅助函数，为 total>0 场景自动生成完整 5 个 mock 结果
+- **`test_models.py` KnowledgeBase uuid 缺省值**：`knowledge_bases.uuid` 列仅有 `server_default=text("(UUID())")`，测试用 DB 表未执行迁移导致 INSERT 时缺少默认值。修复：测试显式传入 `uuid=str(uuid4())`
+- **ROADMAP.md §8.5 污染问题回归测试标记**：该回归测试已通过验证，状态从 ⬜ 更新为 ✅
 
 ---
 

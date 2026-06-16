@@ -202,7 +202,7 @@ class TraceRecorder:
         data: dict = {
             "span_name": "evidence_review",
             "start_time": self._span_start_iso(t_span_start) if t_span_start else None,
-            "duration_ms": round(duration_ms, 1),
+            "duration_ms": int(round(duration_ms)),
             "status": status,
             "summary": summary,
             "chunk_decisions": chunk_decisions,

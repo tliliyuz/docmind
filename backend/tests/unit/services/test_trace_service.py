@@ -476,6 +476,48 @@ class TestTraceRecorder:
 # ==================== list_traces 测试 ====================
 
 
+def _make_execute_chain(total, data_rows):
+    """为 list_traces 构建完整的 db.execute side_effect 链。
+
+    list_traces 内部执行 5 次 db.execute（total > 0 时）：
+      1. count_q      → .scalar()            → total
+      2. status_q     → .all()               → [(status, count), ...]
+      3. avg_q        → .scalar()            → avg_ms
+      4. durations_q  → .scalars().all()     → [durations]
+      5. data_q       → .all()               → list_rows
+    total == 0 时跳过 2-4，仅执行 2 次。
+    """
+    results = []
+
+    # 1. count query
+    count_result = MagicMock()
+    count_result.scalar.return_value = total
+    results.append(count_result)
+
+    if total > 0:
+        # 2. status group-by query
+        status_result = MagicMock()
+        status_result.all.return_value = [("success", total)]
+        results.append(status_result)
+
+        # 3. avg duration query
+        avg_result = MagicMock()
+        avg_result.scalar.return_value = 1500.0
+        results.append(avg_result)
+
+        # 4. durations query
+        durations_result = MagicMock()
+        durations_result.scalars.return_value.all.return_value = [1500]
+        results.append(durations_result)
+
+    # 5. data query
+    data_result = MagicMock()
+    data_result.all.return_value = data_rows
+    results.append(data_result)
+
+    return results
+
+
 class TestListTraces:
     """list_traces() — 分页+筛选列表"""
 
@@ -486,21 +528,14 @@ class TestListTraces:
 
         db = AsyncMock()
 
-        # 模拟 count 查询
-        count_result = MagicMock()
-        count_result.scalar.return_value = 2
-
-        # 模拟数据查询
         trace1 = _make_trace_record(id=1, trace_id="trace-001")
         trace2 = _make_trace_record(id=2, trace_id="trace-002")
-        data_result = MagicMock()
-        data_result.all.return_value = [
+        data_rows = [
             _make_list_row(trace1, "user1", "KB1"),
             _make_list_row(trace2, "user2", "KB2"),
         ]
 
-        # 顺序返回 count 和 data
-        db.execute = AsyncMock(side_effect=[count_result, data_result])
+        db.execute = AsyncMock(side_effect=_make_execute_chain(total=2, data_rows=data_rows))
 
         result = await list_traces(db, page=1, page_size=20)
 
@@ -519,14 +554,10 @@ class TestListTraces:
 
         db = AsyncMock()
 
-        count_result = MagicMock()
-        count_result.scalar.return_value = 1
-
         trace = _make_trace_record(status="error")
-        data_result = MagicMock()
-        data_result.all.return_value = [_make_list_row(trace)]
+        data_rows = [_make_list_row(trace)]
 
-        db.execute = AsyncMock(side_effect=[count_result, data_result])
+        db.execute = AsyncMock(side_effect=_make_execute_chain(total=1, data_rows=data_rows))
 
         result = await list_traces(db, status="error")
 
@@ -540,14 +571,10 @@ class TestListTraces:
 
         db = AsyncMock()
 
-        count_result = MagicMock()
-        count_result.scalar.return_value = 1
-
         trace = _make_trace_record(intent_type="CASUAL")
-        data_result = MagicMock()
-        data_result.all.return_value = [_make_list_row(trace)]
+        data_rows = [_make_list_row(trace)]
 
-        db.execute = AsyncMock(side_effect=[count_result, data_result])
+        db.execute = AsyncMock(side_effect=_make_execute_chain(total=1, data_rows=data_rows))
 
         result = await list_traces(db, intent_type="CASUAL")
 
@@ -561,14 +588,10 @@ class TestListTraces:
 
         db = AsyncMock()
 
-        count_result = MagicMock()
-        count_result.scalar.return_value = 1
-
         trace = _make_trace_record(question="报销需要哪些材料？")
-        data_result = MagicMock()
-        data_result.all.return_value = [_make_list_row(trace)]
+        data_rows = [_make_list_row(trace)]
 
-        db.execute = AsyncMock(side_effect=[count_result, data_result])
+        db.execute = AsyncMock(side_effect=_make_execute_chain(total=1, data_rows=data_rows))
 
         result = await list_traces(db, search="报销")
 
@@ -582,13 +605,7 @@ class TestListTraces:
 
         db = AsyncMock()
 
-        count_result = MagicMock()
-        count_result.scalar.return_value = 0
-
-        data_result = MagicMock()
-        data_result.all.return_value = []
-
-        db.execute = AsyncMock(side_effect=[count_result, data_result])
+        db.execute = AsyncMock(side_effect=_make_execute_chain(total=0, data_rows=[]))
 
         result = await list_traces(db)
 

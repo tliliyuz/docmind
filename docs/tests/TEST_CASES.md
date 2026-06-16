@@ -343,15 +343,15 @@
 | P3-U7.36 | RRF-排名相同处理 | `rrf_fusion()` | 不同 chunk 在同一路中 rank 相同（罕见） | 使用平均 rank 或文档 ID 作为 tiebreaker | ✅ | 2026-05-30 | — |
 | P3-U7.37 | RRF-k 值可配置 | `rrf_fusion()` | k=10 / k=60 / k=120 | k 越小排名影响越大，k=60 为默认平衡值 | ✅ | 2026-05-30 | — |
 
-### 5.5 后端 — NoopReranker 测试
+### 5.5 后端 — NoopReranker 测试 ❌ 已移除
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P3-U7.40 | NoopReranker-保持 RRF 排序 | `NoopReranker.rerank()` | 输入混合长度 chunks | 保持 RRF 融合原始排序（相关性降序），仅截取 top_k | ✅ | 2026-06-04 | 11 用例全部通过；修复：不再按长度重排 |
-| P3-U7.41 | NoopReranker-截取 top_k | `NoopReranker.rerank()` | 输入 10 chunks, top_k=5 | 保持 RRF 排序，返回前 5 个 | ✅ | 2026-06-04 | — |
-| P3-U7.42 | NoopReranker-输入不足 top_k | `NoopReranker.rerank()` | 输入 3 chunks, top_k=5 | 返回全部 3 个 | ✅ | 2026-06-04 | — |
-| P3-U7.43 | NoopReranker-空输入 | `NoopReranker.rerank()` | 输入 [] | 返回 [] | ✅ | 2026-06-04 | — |
-| P3-U7.44 | NoopReranker-不改变 chunk 内容 | `NoopReranker.rerank()` | 正常输入 | 仅截取数量，chunk 的 content/metadata 不变 | ✅ | 2026-06-04 | — |
+| P3-U7.40 | NoopReranker-保持 RRF 排序 | ~~`NoopReranker.rerank()`~~ | — | — | ❌ | 2026-06-16 | NoopReranker 类已删除，用例随之下线。DashScopeReranker 集成测试已覆盖降级回退路径 |
+| P3-U7.41 | NoopReranker-截取 top_k | ~~`NoopReranker.rerank()`~~ | — | — | ❌ | 2026-06-16 | 同上 |
+| P3-U7.42 | NoopReranker-输入不足 top_k | ~~`NoopReranker.rerank()`~~ | — | — | ❌ | 2026-06-16 | 同上 |
+| P3-U7.43 | NoopReranker-空输入 | ~~`NoopReranker.rerank()`~~ | — | — | ❌ | 2026-06-16 | 同上 |
+| P3-U7.44 | NoopReranker-不改变 chunk 内容 | ~~`NoopReranker.rerank()`~~ | — | — | ❌ | 2026-06-16 | 同上 |
 
 ### 5.5+ 后端 — DashScopeReranker 测试（Phase 5.5 §8.6）
 
@@ -1247,8 +1247,8 @@
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例；适配 BaseVectorStore 抽象，AsyncMock 替代 ChromaDB Mock） |
 | `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2：BM25 检索 + 三级缓存（进程内→Redis→MySQL）+ async Redis（31 用例，含 7 个真实 jieba 集成测试 + 进程内缓存 + 异步缓存清除） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
-| `rag/reranker.py` | ≥ 80% | ✅ | Phase 3：NoopReranker 占位（11 用例）+ Phase 5.5：DashScopeReranker（22 用例，P55-RR.1-P55-RR.22） |
-| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例）+ Phase 5.5 陈述知识/引用知识模板 |
+| `rag/reranker.py` | ≥ 80% | ✅ | DashScopeReranker（24 用例，P55-RR.1-P55-RR.22 + 接口测试 2） |
+| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例） |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
 | `services/conversation_service.py` | ≥ 80% | ✅ 通过 API 测试 | Phase 4.1：会话 CRUD（5 个端点，20 用例） |

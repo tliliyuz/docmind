@@ -1,4 +1,6 @@
 """用户模型测试 — U4.1 / U4.2 / U4.3"""
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -65,7 +67,7 @@ class TestUserModel:
             assert len(result.scalars().all()) == 0
 
             # 创建 KB 后，通过 FK 可查到该 KB
-            kb = KnowledgeBase(name="u43_测试知识库", user_id=user.id)
+            kb = KnowledgeBase(name="u43_测试知识库", user_id=user.id, uuid=str(uuid4()))
             session.add(kb)
             await session.flush()
 

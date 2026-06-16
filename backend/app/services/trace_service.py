@@ -135,12 +135,13 @@ async def list_traces(
         error = 0
         running = 0
         for row in status_rows:
-            if row.status == "success":
-                success = row.cnt
-            elif row.status == "error":
-                error = row.cnt
-            elif row.status == "partial":
-                running = row.cnt
+            s, c = row[0], row[1]
+            if s == "success":
+                success = c
+            elif s == "error":
+                error = c
+            elif s == "partial":
+                running = c
         success_rate = round((success / total) * 100, 1)
 
         # 平均耗时
