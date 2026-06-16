@@ -16,14 +16,13 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models.document import Document
 from app.rag.bm25 import BM25Retriever
 from app.rag.evidence_reviewer import EvidenceReviewResult, review_evidence
 from app.rag.fusion import rrf_fusion
 from app.rag.prompt_builder import PromptBuildResult, build_prompt
 from app.rag.query_rewriter import _needs_rewrite, rewrite_query
-from app.rag.reranker import BaseReranker, DashScopeReranker, NoopReranker
+from app.rag.reranker import BaseReranker, DashScopeReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
 from app.rag.sentence_matcher import FilterStats, filter_chunk_sentences, match_sentences
 from app.rag.trace_recorder import TraceRecorder
@@ -59,10 +58,7 @@ class KnowledgePipeline:
         reranker: BaseReranker | None = None,
     ):
         self._vector_retriever = vector_retriever or VectorRetriever()
-        # 诊断开关：settings.DASHSCOPE_RERANK=False 时降级为 NoopReranker
-        self._reranker = reranker or (
-            DashScopeReranker() if settings.DASHSCOPE_RERANK else NoopReranker()
-        )
+        self._reranker = reranker or DashScopeReranker()
         self._bm25_retriever: BM25Retriever | None = None
         self._bm25_factory = bm25_retriever_factory
 
@@ -158,13 +154,11 @@ class KnowledgePipeline:
             reranked_output = await self._reranker.rerank(question, fused_output)
             t_rerank = time.perf_counter()
             # 句级修辞过滤：在 sentence_matcher 前过滤引用性句子，
-            # 解决 Chunk 内部混合陈述句和引用句的污染问题（§3.3-3.4）
-            # 诊断开关：settings.SENTENCE_ROLE_FILTER=False 时跳过
+            # 解决 Chunk 内部混合陈述句和引用句的污染问题
             filter_stats_map: dict[int, FilterStats] = {}
-            if settings.SENTENCE_ROLE_FILTER:
-                for r in reranked_output.results:
-                    r.content, stats = filter_chunk_sentences(r.content)
-                    filter_stats_map[r.chunk_index] = stats
+            for r in reranked_output.results:
+                r.content, stats = filter_chunk_sentences(r.content)
+                filter_stats_map[r.chunk_index] = stats
             reranked_output = match_sentences(reranked_output, question)
             t_match_done = time.perf_counter()
 

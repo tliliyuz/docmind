@@ -17,76 +17,13 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Prompt 模板
-# ====================
-# 两套模板通过 settings.P0_STRICT_MODE 切换：
-#   True  → STRICT（Phase 5.5 质量治理）：陈述知识 vs 引用知识 严格判断，Precision 优先
-#   False → RELAXED（Phase 3 原版）：Recall 优先，有相关信息即回答
-# ====================
-
-SYSTEM_PROMPT_TEMPLATE_STRICT = """你是一个企业知识库助手。请严格遵循以下规则。
-
-【核心原则：陈述知识 vs 引用知识】
-
-在回答前，你必须先判断每个来源的"写作目的"：
-
-■ 陈述知识（可作为答案依据）：
-该段文字的主要目的是定义、说明、规定、描述某项事实、流程、制度、配置、概念或操作步骤。
-→ 该段文字"本身就是在说这件事"。
-
-■ 引用知识（不可作为答案依据）：
-该段文字只是把知识作为示例、测试数据、历史记录、演示输出、背景介绍、问题描述、讨论内容、引用内容的一部分出现，其主要目的不是回答该问题。
-→ 该段文字"在说别的事，顺便提到了这件事"。
-
-【判断方法】
-
-对于每个来源，问自己：
-- 作者写这段话，是为了"说明 X 是什么/怎么做"？
-- 还是为了"说明另一个东西（测试/示例/背景/接口），顺便提到了 X"？
-
-以下情况必然属于"引用知识"：
-- 文字在描述"如果用户问 X，系统应返回/显示 Y"→ 这是在演示系统行为，不是陈述 X 的事实
-- 文字在描述"测试目标：验证……""测试用例：……"→ 这是在定义测试，不是陈述知识
-- 文字在描述"例如……""举例：……"且举例服务于更大的说明目的 → 举例只是辅助手段
-- 文字在记录"用户提问：……""历史问答：……"→ 这是历史记录，不是知识本身
-
-【拒答规则】
-
-若所有来源均属于"引用知识"（即没有任何来源在以"陈述知识"的方式直接回答你的问题），即使其中出现与问题高度相关的关键词、短语或完整句子，你也**必须**返回：
-
-"知识库中未找到相关信息。"
-
-不得根据"引用知识"来源中的内容作答，不得推断，不得编造。
-
-【回答要求】
-
-参考文档：
-{context}
-
-- 引用来源时标注 [来源N]（N 为文档编号）
-- 请用中文回答"""
-
-SYSTEM_PROMPT_TEMPLATE_RELAXED = """你是一个企业知识库助手。请仅基于以下文档内容回答问题。
+SYSTEM_PROMPT_TEMPLATE = """你是一个企业知识库助手。请仅基于以下文档内容回答问题。
 如果文档中没有相关信息，请明确说明"知识库中未找到相关信息"，不要编造。
 
 参考文档：
 {context}
 
 请用中文回答，引用来源时标注 [来源N]（N 为文档编号）。"""
-
-def _get_system_prompt_template() -> str:
-    """按 settings.P0_STRICT_MODE 返回当前激活的 Prompt 模板。
-
-    True  → STRICT（Phase 5.5 质量治理）：陈述知识 vs 引用知识 严格判断，Precision 优先
-    False → RELAXED（Phase 3 原版）：Recall 优先，有相关信息即回答
-
-    函数而非模块级变量，确保 .env 修改后重启即生效，无需重新导入。
-    """
-    return SYSTEM_PROMPT_TEMPLATE_STRICT if settings.P0_STRICT_MODE else SYSTEM_PROMPT_TEMPLATE_RELAXED
-
-
-# 向后兼容：模块级别名供外部导入（如测试），实际使用请走 _get_system_prompt_template()
-SYSTEM_PROMPT_TEMPLATE = _get_system_prompt_template()
 
 # Token 预算常量（从 settings 读取）
 
@@ -105,6 +42,10 @@ class PromptBuildResult:
 def _format_chunk_reference(chunk: RetrievalResult, index: int) -> str:
     """格式化单个 chunk 为参考文档片段。
 
+    对齐 ROADMAP.md §8.7：章节信息增强 —
+    从 [来源1]（文档: API.md）
+    升级为 [来源1] 文档: API.md | 章节: §6.1 SSE 事件完整格式
+
     Args:
         chunk: 检索结果
         index: 文档编号（从 1 开始）
@@ -113,10 +54,29 @@ def _format_chunk_reference(chunk: RetrievalResult, index: int) -> str:
         格式化的文档片段字符串
     """
     source_label = f"[来源{index}]"
-    doc_info = f"（文档: {chunk.doc_name}）" if chunk.doc_name else ""
-    page_info = f"（页码: {chunk.page}）" if chunk.page is not None else ""
 
-    return f"{source_label}{doc_info}{page_info}\n{chunk.content}"
+    # 文档名
+    doc_info = f"文档: {chunk.doc_name}" if chunk.doc_name else ""
+
+    # 章节信息（优先 section_path，回退 section_title）
+    section_info = ""
+    if chunk.section_path:
+        section_info = f"章节: {chunk.section_path}"
+    elif chunk.section_title:
+        section_info = f"章节: {chunk.section_title}"
+
+    # 页码（无章节信息时展示）
+    page_info = ""
+    if chunk.page is not None:
+        page_info = f"页码: {chunk.page}"
+
+    # 组装元信息行
+    meta_parts = [p for p in [doc_info, section_info, page_info] if p]
+    if meta_parts:
+        meta_line = " | ".join(meta_parts)
+        return f"{source_label}（{meta_line}）\n{chunk.content}"
+    else:
+        return f"{source_label}\n{chunk.content}"
 
 
 def build_prompt(
@@ -142,12 +102,10 @@ def build_prompt(
     Returns:
         PromptBuildResult: 包含 system_prompt、user_prompt、使用的 chunks 等
     """
-    template = _get_system_prompt_template()
-
     if not retrieval_output.results:
         logger.warning("检索结果为空，使用空上下文")
         return PromptBuildResult(
-            system_prompt=template.format(context="（无相关文档）"),
+            system_prompt=SYSTEM_PROMPT_TEMPLATE.format(context="（无相关文档）"),
             user_prompt=question,
             used_chunks=[],
             total_context_tokens=0,
@@ -196,7 +154,7 @@ def build_prompt(
 
     # 组装 system prompt
     context_text = "\n\n".join(context_parts)
-    system_prompt = template.format(context=context_text)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
 
     logger.info(
         f"Prompt 组装完成: {len(used_chunks)} chunks, "

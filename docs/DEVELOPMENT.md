@@ -123,9 +123,9 @@ docmind/
 │   │   │   ├── retriever.py           # 向量检索器（依赖 BaseVectorStore 抽象，ADR-018）
 │   │   │   ├── bm25.py                # BM25 关键词检索 + Redis 缓存
 │   │   │   ├── fusion.py              # RRF 多路融合算法
-│   │   │   ├── reranker.py            # 重排序（当前 NoopReranker 占位）
+│   │   │   ├── reranker.py            # DashScope Rerank API 语义精排
 │   │   │   ├── knowledge_pipeline.py  # 知识管线：查询重写→双路检索→RRF→Rerank→句级修辞过滤→句子匹配→Prompt 构建
-│   │   │   ├── prompt_builder.py      # Prompt 模板组装（陈述/引用知识判断框架 + System/History/Retrieval/Question）
+│   │   │   ├── prompt_builder.py      # Prompt 模板组装（宽松策略 + System/History/Retrieval/Question）
 │   │   │   ├── intent.py              # 意图识别（Meta/Chitchat/RAG 三路分发）
 │   │   │   ├── query_rewriter.py      # 多轮对话问题重写
 │   │   │   ├── sentence_matcher.py    # 句级修辞过滤（陈述/引用角色判断）+ Evidence Highlight 句子匹配

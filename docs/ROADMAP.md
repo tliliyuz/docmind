@@ -211,7 +211,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | BM25 关键词检索器 | `rank-bm25` (BM25Okapi) + `jieba.lcut` 分词，每个 KB 独立索引 | 决策 #16 |
 | ✅ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建 | 决策 #16 |
 | ✅ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
-| ✅ | NoopReranker | 占位实现：保持 RRF 融合排序（相关性降序），截取 top_k=5 | 决策 #18 |
+| ❌ | NoopReranker | ~~占位实现：保持 RRF 融合排序（相关性降序），截取 top_k=5。~~ 已于 Phase 5.5 被 DashScopeReranker 完全替代，类已删除 | 决策 #18 |
 | ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时跳过当前 chunk 尝试下一个），保持 RRF 相关性排序（相关性降序） | 决策 #19 |
 | ✅ | LLM 调用 | DeepSeek API（OpenAI 兼容），流式 `chat/completions`，`extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅 `deep_thinking=true` 时传 `reasoning_effort="high"`，解析 `content` + `reasoning_content` | 决策 #20 |
 | ✅ | ChromaDB metadata 类型一致性 | metadata 保持数值型，入库/查询两端统一使用 int 类型 `kb_id/doc_id/chunk_index`，显式 `int()` 转换保障（由 BaseVectorStore 层处理） | 决策 #21 |
@@ -255,7 +255,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | 意图识别（知识查询/闲聊分类） | Phase 5 | Phase 3 已加轻量规则级 stopgap（`_is_casual_chat()`：问候/致谢/告别等 6 类正则），跳过检索直接回复。完整意图识别（含问题类型判别）仍排 Phase 5 |
 | 问题重写（多轮上下文补全） | Phase 4 | Phase 3 仅单轮，不注入历史 |
 | 会话 CRUD（列表/重命名/删除） | Phase 4 | Phase 3 仅自动创建 + 标题生成 |
-| DashScope Rerank API | Phase 3+ | 先用 NoopReranker 占位跑通链路 |
+| DashScope Rerank API | Phase 5.5 | 语义精排，已完全替代 NoopReranker |
 | 对话历史注入 Prompt | Phase 4 | Phase 3 `history=[]`，数据结构兼容 Phase 4 |
 | thinking_content 持久化 | Phase 5+ | Phase 3 仅流式展示不落库；SSE 中断半条消息持久化见 Phase 4 消息状态机 |
 | reasoning_effort 前端可控 | Phase 5+ | Phase 3 后端在 `deep_thinking=true` 时固定 `"high"`，前端仅 deep_thinking 开关 |
@@ -270,7 +270,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | BM25 检索器单元测试 | 单元测试 | BM25Okapi 初始化 + `get_scores()` 排序 + jieba 分词 + 空语料处理（12 用例） |
 | ✅ | BM25 索引缓存测试 | 单元测试 | Redis 缓存命中/未命中懒加载/Celery 触发重建/缓存失效（8 用例） |
 | ✅ | RRF 融合算法测试 | 单元测试 | k=60 标准合并 / 单路为空 / 两路均空 / 排名相同处理（14 用例） |
-| ✅ | NoopReranker 测试 | 单元测试 | 保持 RRF 排序 + top_k 截取 + 输入不足 top_k（11 用例） |
+| ❌ | NoopReranker 测试 | ~~单元测试~~ | ~~保持 RRF 排序 + top_k 截取 + 输入不足 top_k（11 用例）~~ 随 NoopReranker 类一并移除 |
 | ✅ | Prompt 模板测试 | 单元测试 | 检索结果拼接 / 软上限预算控制 / chunk 择优填充 / 空检索结果处理（15 用例） |
 | ✅ | Chat Service 单元测试 | 单元测试 | 检索→RRF→Rerank→Prompt→LLM 全链路 Mock（19 用例） |
 | ✅ | sources 引用过滤测试 | 单元测试 | `_extract_citation_indices` 提取/去重/无效编号；SSE sources 仅含被引用 chunk / 全引用 / 零引用 / LLM 失败回退（9 用例全部通过） |
@@ -558,15 +558,15 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 ## 8. Phase 5.5：知识库质量治理
 
-**目标**：系统性治理知识库污染问题——RAG 系统将示例/测试/接口说明等引用性文本误认为事实答案返回。通过 Prompt 升级 + 句级修辞过滤 + 三层证据审计 + DashScope Rerank 精排 + Chunk 元数据增强，预计消除 85%+ 的污染问题。
+**目标**：系统性治理知识库污染问题——RAG 系统将示例/测试/接口说明等引用性文本误认为事实答案返回。通过句级修辞过滤 + 三层证据审计 + DashScope Rerank 精排 + Chunk 元数据增强 + Evidence Review 门控，预计消除 85%+ 的污染问题。
 
-> **架构决策**：详见 [ADR-019](decisions/ADR-019-句级修辞过滤.md) / [ADR-020](decisions/ADR-020-三层证据审计.md)。
+> **架构决策**：详见 [ADR-019](decisions/ADR-019-句级修辞过滤.md) / [ADR-020](decisions/ADR-020-三层证据审计.md) / [ADR-021](decisions/ADR-021-EvidenceReview门控.md)。
 
-### 8.1 [后端] Prompt 陈述知识 vs 引用知识原则
+### 8.1 [后端] Prompt 陈述知识 vs 引用知识原则 ❌ 已移除
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ✅ | `SYSTEM_PROMPT_TEMPLATE` 升级 | 从简单的「请仅基于文档回答」升级为完整的陈述知识/引用知识判断框架，包含核心原则、判断方法、必然属于引用知识的场景枚举、拒答规则。预计单独消除 60-80% 的「引用知识被当成答案」问题 |
+| ❌ | `SYSTEM_PROMPT_TEMPLATE` 升级 | ~~从简单的「请仅基于文档回答」升级为完整的陈述知识/引用知识判断框架。~~ 实验结果表明严格 Prompt 导致 Recall 显著下降（单轮 19/30 vs 旧版 30/30），已回退为旧版宽松 Prompt。「陈述 vs 引用」思想保留在证据审计后验检查中，不做生成前强约束 |
 
 ### 8.2 [后端] 句级修辞过滤
 
@@ -599,17 +599,15 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 修辞角色判断测试 | 单元测试 | `detect_sentence_role()` 12 用例（`TestDetectSentenceRole`）：陈述知识 2 + 引用知识标记 7 + JSON 结构 1 + 空/空白 2。覆盖示例/例如/测试用例/用户提问/系统返回/TODO/JSON 开头等模式 |
 | ✅ | 句级修辞过滤测试 | 单元测试 | `filter_chunk_sentences()` 6 用例（`TestFilterChunkSentences`）：全陈述保留 / 混合过滤 / 全引用回退 / API 文档示例过滤 / 空内容 / 无句末标点 |
 | ✅ | 三层证据审计测试 | 单元测试 | `test_evidence_auditor.py` 19 用例：引用存在性 5（`TestCitationExists`）+ 来源一致性 5（`TestSourceConsistency`）+ 句级证据回溯 7（`TestSentenceEvidence`）+ 置信度计算 4（`TestComputeConfidence`）+ 集成 4（`TestAuditEvidenceIntegration`） |
-| ⬜ | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用等）验证治理效果 |
+| ✅ | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用等）验证治理效果 | 2026-06-16 |
 
 ### 8.6 [后端] DashScope Rerank API 接入
 
-> 替换 NoopReranker 占位，用真实 Rerank 模型提升检索精度。
-
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ✅ | `DashScopeReranker(BaseReranker)` 实现 | 调用 DashScope Rerank API，对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常降级回退。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项 |
-| ✅ | `knowledge_pipeline.py` 切换 | 将 `NoopReranker()` 替换为 `DashScopeReranker()`，`NoopReranker` 保留为降级回退方案 |
-| ✅ | Reranker 测试 | 单元测试：API 响应解析（8 用例）+ 集成测试（12 用例：精排排序正确性 + API 异常处理 + 降级回退 + 空输入/单输入边界 + 请求体验证）+ 配置测试（2 用例）= 22 用例全部通过 |
+| ✅ | `DashScopeReranker(BaseReranker)` 实现 | 调用 DashScope Rerank API，对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常时内部降级为 RRF 排序截取。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项 |
+| ✅ | `knowledge_pipeline.py` 固化 | `DashScopeReranker()` 为唯一 Reranker，已移除 `NoopReranker` 类及诊断开关 |
+| ✅ | Reranker 测试 | 单元测试：API 响应解析（8 用例）+ 集成测试（12 用例）+ 配置测试（2 用例）+ 接口测试（2 用例）= 24 用例全部通过 |
 
 ### 8.7 [后端] Chunk 元数据增强（section_title / section_path）
 
@@ -617,10 +615,10 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | `chunker.py` 标题层级感知 | Markdown 通过 `#`/`##`/`###` 正则提取标题；Word/PDF 通过 `parser.py` 解析标题样式。提取结果写入 `Chunk.metadata_` JSON 字段（当前只存 `{"page": N}` → 扩展为 `{"page": N, "section_title": "...", "section_path": "..."}`） |
-| ⬜ | `tasks.py` `metas_batch` 扩展 | ChromaDB metadata 从 3 字段（`kb_id/doc_id/chunk_index`）扩展到 5 字段（+`section_title`/`section_path`） |
-| ⬜ | `retriever.py` `_parse_results()` 回填 | 从 ChromaDB metadata 提取 `section_title`/`section_path` 写入 `RetrievalResult` |
-| ⬜ | `_format_chunk_reference()` 章节信息 | Prompt 中来源格式化从 `[来源1]（文档: API.md）` 升级为 `[来源1] 文档: API.md \| 章节: §6.1 SSE 事件完整格式` |
+| ✅ | `chunker.py` 标题层级感知 | Markdown 通过 `#`/`##`/`###` 正则提取标题；Word/PDF 通过 `parser.py` 解析标题样式。提取结果写入 `Chunk.metadata_` JSON 字段（`{"page": N}` → `{"page": N, "section_title": "...", "section_path": "..."}`） |
+| ✅ | `tasks.py` `metas_batch` 扩展 | ChromaDB metadata 从 3 字段（`kb_id/doc_id/chunk_index`）扩展到 5 字段（+`section_title`/`section_path`） |
+| ✅ | `retriever.py` `_parse_results()` 回填 | 从 ChromaDB metadata 提取 `section_title`/`section_path` 写入 `RetrievalResult`；`fusion.py` RRF 融合保留章节字段 |
+| ✅ | `_format_chunk_reference()` 章节信息 | Prompt 中来源格式化从 `[来源1]（文档: API.md）` 升级为 `[来源1] 文档: API.md \| 章节: §6.1 SSE 事件完整格式` |
 
 ### 8.8 [后端] 章节号 BM25 增强
 
@@ -628,8 +626,8 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ⬜ | 章节号检测正则 | 检测用户提问中的章节号模式（如「4.7」「8.2.1」「第四章」「§3.2」） |
-| ⬜ | BM25 boost 逻辑 | 匹配到章节号时，对 `section_title`/`section_path` 匹配的 chunk 做 BM25 分数加权 |
+| ✅ | 章节号检测正则 | 检测用户提问中的章节号模式（「4.7」「8.2.1」「第四章」「§3.2」），支持 § 符号/中文章节/显式节编号/裸数字章节号四种模式 |
+| ✅ | BM25 boost 逻辑 | 匹配到章节号时，对 `section_title`/`section_path` 匹配的 chunk 做 BM25 分数加权（正分 ×2.0，负分 ÷2.0）；缓存结构扩展 `section_info`，向后兼容旧缓存 |
 
 ### 8.9 🚫 本阶段不做的
 

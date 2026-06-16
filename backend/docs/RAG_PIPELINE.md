@@ -60,7 +60,7 @@ Phase 4 在 Phase 3 单轮链路基础上加入**会话记忆**和**问题重写
 	    ↓
 [Fusion] RRF 融合排序 → 合并两路结果
 	    ↓
-[Rerank] DashScope Rerank API → 语义精排（Phase 5.5，原 NoopReranker 占位）
+[Rerank] DashScope Rerank API → 语义精排
 	    ↓
 [句级修辞过滤] filter_chunk_sentences() → 过滤引用性句子，仅保留陈述知识 + 返回 FilterStats 统计  ← §7.1
 	    ↓
@@ -632,7 +632,93 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 
 ---
 
-## 11. 相关源文件
+## 11. Chunk 元数据增强与章节号 BM25 Boost（§8.7 + §8.8）
+
+### 11.1 Chunk 元数据增强（§8.7）
+
+**目标**：为每个 chunk 标注所属章节标题和路径，帮助 LLM 在判断陈述/引用知识时获得更多上下文。
+
+#### 数据流
+
+```
+文档
+  ↓
+[parser.py] DOCX 标题样式 → Markdown # 标记
+  ↓ full_text（含 # 标题）
+[chunker.py] _detect_sections() → 扫描 #/##/### 标题
+  ↓ sections: [(offset, level, title), ...]
+[chunker.py] _resolve_section(offset, sections) → (section_title, section_path)
+  ↓ 写入 ChunkResult.section_title / section_path
+[tasks.py] 写入 Chunk.metadata_ JSON → {"page": N, "section_title": "...", "section_path": "..."}
+  ↓ 写入 ChromaDB metadata（5 字段）
+[retriever.py] _parse_results() → RetrievalResult.section_title / section_path
+  ↓ RRF fusion 保留
+[prompt_builder.py] _format_chunk_reference() → "文档: X | 章节: Y | 页码: Z"
+```
+
+#### 章节检测规则
+
+| 来源 | 检测方式 | 示例 |
+|:---|:---|:---|
+| Markdown | `^(#{1,6})[^\S\n]+(.+)$` 正则 | `## 1.1 背景` → level=2, title="1.1 背景" |
+| DOCX | `_docx_heading_to_markdown()` 样式→Markdown | Heading 1 → `# 标题`; Heading 2 → `## 标题` |
+| PDF/TXT | 不支持 | section 字段为 None |
+
+#### 章节路径构建
+
+```
+# 概述
+## 环境配置       → section_title="环境配置", section_path="概述 > 环境配置"
+### 数据库       → section_title="数据库", section_path="概述 > 环境配置 > 数据库"
+## 部署          → section_title="部署", section_path="概述 > 部署"（同级替换）
+```
+
+### 11.2 章节号 BM25 Boost（§8.8）
+
+**目标**：当用户提问中包含章节号时（如「§3.2」「8.2.1」「第四章」），对匹配章节的 chunk 做 BM25 分数加权，提升检索命中率。
+
+#### 章节号检测模式
+
+| 模式 | 正则 | 示例输入 | 检出 |
+|:---|:---|:---|:---|
+| § 符号引导 | `§\s*(\d+(?:\.\d+)*)` | 「§3.2 限流」 | `["3.2"]` |
+| 显式节编号 | `第\s*(\d+(?:\.\d+)+)\s*节` | 「第4.7节」 | `["4.7"]` |
+| 中文章节 | `第([一二三四五六七八九十百千]+)[章节]` | 「第四章」 | `["4"]` |
+| 裸数字章节号 | `(?<![a-zA-Z§第])(\d+\.[\d.]+)(?![a-zA-Z])` | 「8.2.1」 | `["8.2.1"]` |
+
+#### Boost 逻辑
+
+```
+detect_section_numbers(question) → ["3.2"]
+    ↓
+对每个 chunk 的 section_info:
+    _match_section_numbers(section_title, section_path, ["3.2"])
+      → "3.2" in "§3.2 限流配置" → True
+    ↓
+BM25 分数加权：
+  - 正分 → score × BM25_SECTION_BOOST_FACTOR（默认 2.0）
+  - 负分 → score ÷ BM25_SECTION_BOOST_FACTOR（向零靠近，减少惩罚）
+```
+
+#### 缓存结构扩展
+
+```json
+{
+  "doc_ids": [[1, 0], [1, 1]],
+  "tokens": [["入职", "指南"], ["报销", "制度"]],
+  "contents": ["入职指南...", "报销制度..."],
+  "section_info": [
+    {"section_title": "§3.2 限流", "section_path": "架构 > §3 > §3.2"},
+    {"section_title": "§4.1 数据库", "section_path": "架构 > §4 > §4.1"}
+  ]
+}
+```
+
+> **向后兼容**：旧缓存无 `section_info` 字段时 `data.get("section_info", [])` 返回空列表，boost 逻辑自动跳过。
+
+---
+
+## 12. 相关源文件
 
 | 文件 | 职责 |
 |:---|:---|
@@ -645,14 +731,14 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 | `backend/app/rag/retriever.py` | 向量检索 |
 | `backend/app/rag/bm25_retriever.py` | BM25 关键词检索 + 三级缓存 |
 | `backend/app/rag/fusion.py` | RRF 融合排序 |
-| `backend/app/rag/reranker.py` | Rerank（DashScope Rerank API 精排 + NoopReranker 降级回退） |
-| `backend/app/rag/prompt_builder.py` | Prompt 组装（陈述/引用知识判断框架） |
+| `backend/app/rag/reranker.py` | Rerank（DashScope Rerank API 精排） |
+| `backend/app/rag/prompt_builder.py` | Prompt 组装 |
 | `backend/app/rag/trace_recorder.py` | Trace 上下文管理器 |
 | `backend/app/core/llm.py` | LLM 调用封装（流式/非流式） |
 
 ---
 
-## 12. 相关文档
+## 13. 相关文档
 
 - [架构设计文档](../../docs/ARCHITECTURE.md) — 技术选型、系统架构、基础设施
 - [接口文档](API.md) — REST 接口定义、SSE 事件格式、错误码

@@ -19,7 +19,7 @@ from typing import AsyncIterator
 from uuid import uuid4
 
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, exists, select
+from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -776,6 +776,19 @@ async def _validate_and_prepare(
     require_kb_readable(kb, user_id, role)
 
     # 检查 KB 是否有可检索文档（含 partial_failed：部分分块可用）
+    # 提前到意图分支之前，避免 CASUAL 意图绕过检查导致 LLM 无上下文生成
+    doc_count_q = (
+        select(func.count())
+        .select_from(Document)
+        .where(
+            Document.kb_id == real_kb_id,
+            Document.status.in_(RETRIEVABLE_STATUSES),
+        )
+    )
+    retrievable_count = (await db.execute(doc_count_q)).scalar() or 0
+    if retrievable_count == 0:
+        from app.core.exceptions import KnowledgeBaseEmptyException
+        raise KnowledgeBaseEmptyException(real_kb_id)
 
     # 会话处理 + 历史消息加载
     if real_conv_id:

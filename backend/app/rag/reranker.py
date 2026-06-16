@@ -1,8 +1,4 @@
-"""Rerank 重排序模块 — 检索结果精排
-
-对齐 ARCHITECTURE.md §7.3 / ROADMAP.md §8.6：
-- Phase 3-5: NoopReranker 占位实现，保持 RRF 融合排序（相关性降序），截取 top_k=5
-- Phase 5.5: DashScope Rerank API 精排（gte-rerank-v2）
+"""Rerank 重排序模块 — DashScope Rerank API 语义精排
 
 DashScope Rerank API 说明：
 - 端点：POST {RERANK_BASE_URL}/services/rerank/text-rerank/text-rerank
@@ -10,10 +6,10 @@ DashScope Rerank API 说明：
 - 输入：query（字符串）+ documents（字符串列表）
 - 输出：results 列表（按 relevance_score 降序），含 index / relevance_score
 - 重试：指数退避，默认 3 次
+- API 异常时降级回退到原始 RRF 排序（不阻断检索管线）
 
 设计要点：
-- DashScopeReranker：调用 DashScope API，按语义相关性重新排序
-- NoopReranker：占位实现，保持 RRF 融合排序，作为降级回退方案
+- 调用 DashScope API，按语义相关性重新排序
 - 输入不足 top_k 时返回全部
 - 不改变 chunk 内容，仅调整顺序和数量
 """
@@ -45,7 +41,7 @@ class BaseReranker(ABC):
         """对检索结果进行重排序。
 
         Args:
-            query: 用户问题（当前 NoopReranker 不使用，保留接口一致性）
+            query: 用户问题
             retrieval_output: 检索结果
             top_k: 返回结果数量上限
 
@@ -55,72 +51,16 @@ class BaseReranker(ABC):
         ...
 
 
-class NoopReranker(BaseReranker):
-    """占位实现：保持 RRF 融合排序，截取 top_k
-
-    对齐 ARCHITECTURE.md §7.3：
-    - Phase 5.5 将被 DashScopeReranker 替换
-    - 保持 RRF 排序：RRF 融合已按相关性降序排列，直接截取 top_k
-    - 不再按长度重排：短 chunk 优先策略在语义/跨文档场景下破坏相关性排名
-    - 输入不足 top_k 时返回全部
-    - 不改变 chunk 内容，仅调整数量
-    """
-
-    name: str = "noop"
-
-    async def rerank(
-        self,
-        query: str,
-        retrieval_output: RetrievalOutput,
-        top_k: int = settings.RERANK_TOP_K,
-    ) -> RetrievalOutput:
-        """保持 RRF 融合原始排序，截取 top_k。
-
-        Args:
-            query: 用户问题（NoopReranker 不使用）
-            retrieval_output: 检索结果
-            top_k: 返回结果数量上限，默认 5
-
-        Returns:
-            RetrievalOutput: 重排序后的结果
-        """
-        if not retrieval_output.results:
-            logger.info("NoopReranker: 输入结果为空，直接返回")
-            return RetrievalOutput()
-
-        # 保持 RRF 融合的原始排序（已按相关性分数降序），仅截取 top_k
-        # 不再按长度重排：短 chunk 优先策略在语义匹配/跨文档场景下会破坏 RRF 排名，
-        # 导致 LLM 拿到不相关的短 chunk → 误判"未找到"→ sources 被抑制
-        truncated_results = retrieval_output.results[:top_k]
-
-        logger.info(
-            "NoopReranker: %d 条输入 → 保持 RRF 排序 → 截取 top_%d → %d 条输出",
-            len(retrieval_output.results),
-            top_k,
-            len(truncated_results),
-        )
-
-        return RetrievalOutput(
-            results=truncated_results,
-            total=len(truncated_results),
-        )
-
-
 class DashScopeReranker(BaseReranker):
     """DashScope Rerank API 精排实现
 
     调用 DashScope text-rerank API（gte-rerank-v2），对 RRF 融合结果做语义精排。
     按 relevance_score 降序排列，截取 top_k。
 
-    对齐 ROADMAP.md §8.6：
-    - 替换 NoopReranker 占位，用真实 Rerank 模型提升检索精度
-    - 支持指数退避重试（默认 3 次）
-    - API 异常时降级回退到原始顺序（不阻断检索管线）
-
-    设计要点：
     - 输入不足 top_k 时返回全部
     - 不改变 chunk 内容，仅调整顺序和数量
     - 空输入直接返回空结果
+    - API 异常时降级回退到原始 RRF 排序（不阻断检索管线）
     """
 
     name: str = "dashscope"
