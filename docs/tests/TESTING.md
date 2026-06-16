@@ -520,9 +520,9 @@ Phase 5.5 新增的修辞过滤和证据审计是 RAG 管线中的"质量增强"
 | Phase 5 | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 | 上线准入 |
 | Phase 5.5 | 修辞过滤测试 | 单元测试 | `detect_sentence_role()` 12 + `filter_chunk_sentences()` 6 用例，覆盖正则模式/结构检测/回退策略/确定性（P5.5-SF.1-SF.7） | ✅ 已完成 |
 | Phase 5.5 | 三层证据审计测试 | 单元测试 | 引用存在性 5 + 来源一致性 5 + 句级证据 7 + 置信度 4 + 集成 4 = 25 用例（P5.5-EA.1-EA.14） | ✅ 已完成 |
-| Phase 5.5 | 前端置信度展示测试 | 组件测试 | MessageItem.vue 置信度警告组件渲染 + confidence/confidence_note 字段展示 | Phase 6 准入 |
-| Phase 5.5 | DashScope Reranker 测试 | 单元测试 | 精排正确性 + API 异常降级 + 空/单输入边界 + top_k 截取（P5.5-RR.1-RR.10） | ⬜ 待实现 |
-| Phase 5.5 | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用）验证治理效果 | Phase 6 准入 |
+| Phase 5.5 | 前端置信度展示测试 | 组件测试 | MessageItem.vue 置信度警告组件渲染 + confidence/confidence_note 字段展示 | ✅ 已完成（2026-06-16） |
+| Phase 5.5 | DashScope Reranker 测试 | 单元测试 | 精排正确性 + API 异常降级 + 空/单输入边界 + top_k 截取（P5.5-RR.1-P5.5-RR.22） | ✅ 已完成（2026-06-16） |
+| Phase 5.5 | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用）验证治理效果 | ✅ 已完成（2026-06-16） |
 | Phase 6 | 高级功能测试 | 按需 | 结构感知分块 / LLM 摘要压缩等 8 项（详见 TEST_CASES.md §8.4） | 不设时限 |
 
 ---

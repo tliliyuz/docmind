@@ -9,16 +9,9 @@
 
 ## 0. 时区约定
 
-> **所有 DATETIME 列均存储 UTC 时间。**
+> **所有 DATETIME 列均存储 UTC 时间。** 四层 UTC 统一策略（MySQL → 后端 → API → 前端）详见 [ARCHITECTURE.md §11](../../docs/ARCHITECTURE.md#11-时区策略)。
 
-| 层面 | 约定 | 实施方式 |
-|:---|:---|:---|
-| MySQL 会话 | `time_zone='+00:00'` | 连接串 `init_command=SET time_zone='%2B00:00'`，确保 `CURRENT_TIMESTAMP` 返回 UTC |
-| ORM 声明 | `UTCDateTime` TypeDecorator | 自定义 `TypeDecorator(DateTime)` — 写入剥离 tzinfo、读取附加 UTC tzinfo，对 Pydantic 透明 |
-| Python 代码 | `datetime.now(timezone.utc)` | 禁止 `datetime.utcnow()`；业务代码写入的时间值也是 UTC |
-| API 序列化 | ISO 8601 + `+00:00` | Pydantic 序列化 aware datetime 自动输出 `2026-06-09T11:26:20+00:00` |
-
-> **注意**：MySQL 的 `DATETIME` 类型本身不存储时区信息，UTC 约定是应用层的协议。`app/models/_types.py` 中的 `UTCDateTime` TypeDecorator 在 ORM 层完成 aware ↔ naive 双向转换——写入时剥离 tzinfo 存 naive UTC，读取时附加 UTC tzinfo 返回 aware datetime。Pydantic 自然收到 aware datetime → 自动序列化 `2026-06-09T12:00:02Z`。底层列依然是 `DATETIME`，不需要数据迁移。
+`app/models/_types.py` 中的 `UTCDateTime` TypeDecorator 在 ORM 层完成 aware ↔ naive 双向转换——写入时剥离 tzinfo 存 naive UTC，读取时附加 UTC tzinfo 返回 aware datetime。Pydantic 收到 aware datetime 后自动序列化为 `2026-06-09T12:00:02+00:00`。底层列依然是 `DATETIME`，不需要数据迁移。
 
 ---
 
@@ -270,6 +263,8 @@ CREATE TABLE conversations (
 
 **设计决策：为什么使用双字段方案（id + uuid）？**
 
+> **架构决策详见**：[ARCHITECTURE.md §8.11](../../docs/ARCHITECTURE.md#811-外部资源-uuid-化)（资源分级改造决策表和各资源 UUID 化范围）。
+
 > 外部暴露的资源（knowledge_bases、documents、conversations）采用双字段方案：
 > - `id BIGINT AUTO_INCREMENT`：内部主键，用于外键关联、JOIN 查询、内部逻辑
 > - `uuid CHAR(36) UNIQUE`：外部暴露标识符，用于 API 路由、响应、URL。应用层使用 `uuid.uuid4()` 显式生成（v4，随机），`server_default=text("(UUID())")` 为安全网兜底（MySQL `UUID()` 生成 v1）
@@ -316,7 +311,7 @@ CREATE TABLE messages (
 
 ### 2.7 刷新令牌表 `refresh_tokens`
 
-> **Phase 4 新增**。配合 Refresh Token 机制（见 ARCHITECTURE.md §9.2），持久化存储刷新令牌哈希。
+> **Phase 4 新增**。配合 Refresh Token 机制（见 [ARCHITECTURE.md §9.2](../../docs/ARCHITECTURE.md#92-refresh-token-机制)），持久化存储刷新令牌哈希。
 
 ```sql
 CREATE TABLE refresh_tokens (

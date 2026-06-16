@@ -36,6 +36,7 @@
     --dm-success-light: #ECFDF5;
     --dm-warning-light: #FFFBEB;
     --dm-danger-light: #FEF2F2;
+    --dm-danger-border: rgba(239, 68, 68, 0.2);  /* --dm-danger 20% 透明度，用于分隔线/边框 */
     --dm-info-light: #EFF6FF;
     --dm-purple-light: #F5F3FF;
 
@@ -113,13 +114,19 @@
 
     /* ===== 间距 ===== */
     --dm-space-1: 4px;
+    --dm-space-1_5: 6px;
     --dm-space-2: 8px;
+    --dm-space-2_5: 10px;
     --dm-space-3: 12px;
+    --dm-space-3_5: 14px;
     --dm-space-4: 16px;
     --dm-space-5: 20px;
     --dm-space-6: 24px;
+    --dm-space-7: 28px;
     --dm-space-8: 32px;
+    --dm-space-9: 36px;
     --dm-space-10: 40px;
+    --dm-space-11: 44px;
     --dm-space-12: 48px;
 
     /* ===== 圆角 ===== */

@@ -4,9 +4,60 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 设计决策详见 [`docs/decisions/`](docs/decisions/)。
 
+> **版本号说明**：CHANGELOG 使用语义化版本（SemVer），与各设计文档的 `v1.0` 独立。
+> 设计文档版本号仅表示文档自身的修订代次，不与代码版本的 0.x / 1.x 挂钩。
+
 ---
 
-## [Unreleased] - 2026-06-16
+## [Unreleased] - 2026-06-17
+
+### Changed
+- **S6 Batch 2: 私有函数提升为公开函数 — RAG 管线（2026-06-17）**：
+  - **源码（4 文件）**：
+    - `query_rewriter.py`：`_needs_rewrite` → `needs_rewrite`（纯判断函数，零外部依赖，参数化测试覆盖全部 12 个信号词 + None/空历史边界）
+    - `document_service.py`：`_validate_file` → `validate_file`（安全关键路径，新增魔数不匹配/匹配通过/docx 魔数/md 无校验/读取异常 5 个测试）
+    - `bm25.py`：`_cn_to_int` → `cn_to_int`（参数化 20 个中文数字用例 + 4 个无效输入边界）；`_match_section_numbers` → `match_section_numbers`（参数化 11 个匹配策略用例）
+    - `chunker.py`：`_build_page_offset_map` / `_resolve_page_number` / `_detect_sections` / `_resolve_section` 全部 → 公开（均为纯函数独立算法）
+    - `knowledge_pipeline.py` / `parser.py`：更新导入引用
+  - **文档（4 文件）**：RAG_PIPELINE.md / ARCHITECTURE.md / ROADMAP.md / TEST_CASES.md 函数引用同步更新
+- **S6 Batch 1: 私有函数提升为公开函数（2026-06-17）**：
+  - **源码（4 文件）**：`chat_helpers.py` 6 个工具函数去掉 `_` 前缀（`build_sources` / `build_sources_event_data` / `extract_citation_indices` / `generate_title` / `generate_title_llm` / `load_history`）；`reranker.py` `_parse_rerank_response` → `parse_rerank_response`；`chat_service.py` 更新导入+重导出；`sse_stream.py` 全部 6 个函数导入及调用更新
+  - **测试（9 文件）**：
+    - 函数重命名（7 文件）：`test_history_memory.py` / `test_conversation_title.py` / `test_sse_helpers.py` / `test_sources_preview.py`（18 处）/ `test_reranker.py`（8 处）/ `test_chat_service.py`（含 patch 路径更新）— 所有 `_` 前缀导入→公开名
+    - 测试移除（2 文件）：`test_intent.py` 移除 U-I09/U-I10（直接调用 `_validate_and_prepare`，已通过 `chat()` SSE 集成测试覆盖）；`test_conversation_service.py` 移除 `TestEnrichKbStatus` 类（5 个测试，已通过 `TestListConversations` / `TestGetConversationDetail` 公共 API 覆盖）
+    - 内联修复（1 文件）：`test_document_api.py` `_get_not_found_exception` 内联为直接异常映射（消解对 `uuid_helpers._get_not_found_exception` 私有函数的依赖）
+  - **验证**：1155/1155 测试通过
+
+### Fixed
+- **Y10 JWT_SECRET_KEY 默认值安全加固（2026-06-17）**：`config.py` 默认值从 `"change-me"` 改为 `""`（空字符串）；`main.py` 启动校验从仅检查 `"change-me"` 扩展为 `not key or key == "change-me"`，生产环境空密钥同样拒绝启动
+- **Y2b TraceDetail.vue 硬编码 rgba 修复（2026-06-17）**：`rgba(239, 68, 68, 0.2)` → `var(--dm-danger-border)`；新增 Design Token `--dm-danger-border`（`--dm-danger` 20% 透明度，用于分隔线/边框），同步更新 `global.css` 和 `UIDESIGN.md`
+- Y1: `Conversation.original_kb_id` 添加注释说明有意不使用 ForeignKey
+- Y2: Design Token 硬编码颜色修复（`MessageItem.vue` `#1A1A1A` → `var(--dm-text-primary)`；`TrendChart.vue` rgba 值改用 `hexToRgba()` 从 Token 派生；`charts.js` 回退值添加注释说明）
+- **Y3 Batch 1: Vue 组件硬编码 px → Design Token（2026-06-16）**：18 个 Vue 文件 ~85 处 Tier 1 硬编码 px 值（4/8/12/16/24/32/48px）替换为 Token。510/510 前端测试通过。
+- **Y3 Batch 2: 新 Design Token + 重复模式替换（2026-06-16）**：间距体系扩展 6 个新 Token（`--dm-space-1_5: 6px` / `--dm-space-2_5: 10px` / `--dm-space-3_5: 14px` / `--dm-space-7: 28px` / `--dm-space-9: 36px` / `--dm-space-11: 44px`）。~55 处硬编码 px → Token，覆盖 16 个 Vue 文件 + `global.css`。510/510 前端测试通过。
+- **Y3 Batch 3: JS 内联样式修复（2026-06-16）**：3 个图表组件 ECharts tooltip formatter 中 `font-size:13px` → `var(--dm-text-xs)`。510/510 前端测试通过。
+- Y4: `AdminUserDetail.vue` `--dm-shadow-card` → `--dm-shadow-md`（修复不存在的 CSS 变量）
+- **Y5 测试弱断言强化（2026-06-16）**：13 处弱断言替换为精确值断言——`test_chunker.py` estimated_tokens `isinstance`→`== 10`、total_chunks `> 0`→`== 3`；`test_intent.py` metadata model `is not None`→`== settings.LLM_FLASH_MODEL`；`test_sentence_matcher.py` len `> 0`→`== len(content)`；`test_evidence_reviewer.py` len `> 0`→`== 2`、text 验证→`in content`、chunk_index `in (1,)`→`== 1`；`test_rate_limit.py` len `> 0`→`== 2`；`test_history_memory.py` 移除重复断言；`test_bm25.py` 5 处 score `> 0`→`pytest.approx()` 精确值、total `> 0`→精确 chunk 数
+- **Y6 文档重复交叉引用修复（2026-06-16）**：
+  - DATABASE.md §0 时区约定：详细四层策略表替换为摘要 + 交叉引用 [ARCHITECTURE.md §11](../../docs/ARCHITECTURE.md#11-时区策略)
+  - ARCHITECTURE.md §7.7 权限模型：详细规则表替换为核心原则摘要 + 交叉引用 [PRD.md §5](PRD.md#5-知识库可见性模型)
+  - 补充 4 处缺失交叉引用：ARCHITECTURE.md §8.11→DATABASE.md §2.5（UUID 双字段方案）、ARCHITECTURE.md §11→DATABASE.md §0（UTCDateTime TypeDecorator）、DATABASE.md §2.5→ARCHITECTURE.md §8.11（UUID 架构决策）、DATABASE.md §2.7→ARCHITECTURE.md §9.2（Refresh Token 机制）
+- Y7: `CHANGELOG.md` 新增版本号说明（SemVer vs 设计文档 v1.0 独立）
+- Y8: `ARCHITECTURE.md` / `PRD.md` / `FRONTEND.md` / `ROADMAP.md` 更新日期至 2026-06-16
+- **Y11 sse_stream.py 持久化逻辑去重（2026-06-16）**：提取 `_persist_message()` 公共函数，`_generate_sse_stream` / `_generate_reject_response` / `_generate_meta_response` 三处 ~45 行重复持久化逻辑统一为单次调用；修复 `message_id = assistant_msg.id or 0` 防止未 mock ORM 模型返回 None 致 StopIteration→RuntimeError
+- **Y12 admin_service.py 统计聚合去重（2026-06-16）**：提取 `_get_user_kb_count()` / `_get_user_doc_count()` / `_get_user_conversation_count()` / `_get_user_message_count()` 四个辅助函数，消除 `list_users()` 和 `get_user_detail()` 间 ~30 行重复聚合查询
+- Y13: `TEST_CASES.md` NoopReranker 已移除用例添加历史记录说明
+- S1: `Trace.kb_id` 添加 `ForeignKey("knowledge_bases.id", ondelete="SET NULL")`，匹配 nullable 语义
+- S2/S3: `TESTING.md` §10 / `TEST_CASES.md` §8.4 过时条目更新，DashScope Reranker 标记为 ✅ 已完成
+- S4: `FRONTEND.md` §11 标题从「已知 TODO」改为「实现状态」
+- S5: `ROADMAP.md` 时间线 Phase 5 标记从 [✅] 改为 [🔄]，压测待完成
+- S6: 5 个测试文件新增加技术债务注释（`test_sources_preview.py` / `test_chunker.py` / `test_kb_service.py` / `test_reranker.py` / `test_sse_helpers.py`）
+- S7: `escape_like()` 提取至 `app/core/utils.py`，消除 `admin_service.py` ↔ `trace_service.py` 循环依赖
+- B1: `document_service.py` `_validate_file()` 新增魔数（magic bytes）校验，PDF/DOCX 二进制签名验证
+- B2: `document_service.py` 文件保存后以实际磁盘大小二次校验上传限制；修复 `FileSizeExceededException` 被 `except Exception` 误吞为 `StorageErrorException` 的 bug
+- B3: `VectorRetriever` 通过构造函数注入 `BaseVectorStore` 抽象层，解耦 ChromaDB 直接依赖
+- B4: `TestChatKBEmpty` 迁移至 `_mock_chat_pipeline()` 共享 mock 上下文管理器，`_mock_chat_pipeline` 新增 `doc_count` 参数
+- B5: `chat_helpers.py` 标题截断长度 12 提取为 `TITLE_TRUNCATE_LENGTH` 常量
 
 ### Added
 - **Chunk 元数据增强（§8.7）**：`chunker.py` 新增 `_detect_sections()` / `_resolve_section()` 从 Markdown 标题提取章节层级；`ChunkResult` 新增 `section_title` / `section_path` 字段；`Chunk.metadata_` 从 `{"page": N}` 扩展为含章节信息；ChromaDB metadata 从 3 字段扩展到 5 字段（+`section_title` / `section_path`）；`RetrievalResult` 新增章节字段并在 `_parse_results()` 中从 ChromaDB 回填；`fusion.py` RRF 融合保留章节字段
