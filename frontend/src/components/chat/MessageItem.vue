@@ -207,7 +207,7 @@ function getSourcePreviewHtml(src) {
   const displayText = src.preview_text || (src.content || '').slice(0, 200)
   if (!displayText) return ''
 
-  const markStyle = 'background:#FFE082;color:#1A1A1A;padding:1px 3px;border-radius:2px;box-decoration-break:clone'
+  const markStyle = 'background:var(--dm-evidence-highlight-bg);color:#1A1A1A;padding:1px 3px;border-radius:2px;box-decoration-break:clone'
 
   // 后端已计算高亮区间，直接切片渲染
   if (src.preview_text && src.highlight_start != null && src.highlight_end != null) {
@@ -517,7 +517,7 @@ function getSourcePreviewHtml(src) {
   gap: 8px;
   font-size: var(--dm-text-xs);
   font-weight: var(--dm-weight-semibold);
-  color: var(--dm-warning-dark, #856404);
+  color: var(--dm-warning-dark);
 }
 
 .confidence-warning-header i {

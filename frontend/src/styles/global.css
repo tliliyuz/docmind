@@ -21,6 +21,11 @@
     /* ===== Evidence 高亮标记（RAG 引用片段，需比 --dm-warning-light 更醒目） ===== */
     --dm-evidence-highlight-bg: #FFF3B0;
 
+    /* ===== 语义色补充（对齐 UIDESIGN.md） ===== */
+    --dm-purple: #8B5CF6;
+    --dm-purple-light: #F5F3FF;
+    --dm-warning-dark: #856404;
+
     /* ===== 孤儿会话警告横幅（会话关联 KB 被删除时显示） ===== */
     --dm-orphan-bg: #FFF8E1;
     --dm-orphan-border: #FFE082;
@@ -29,6 +34,18 @@
     --dm-orphan-hover-bg: #FFF3E0;
     --dm-orphan-hover-accent: #E65100;
     --dm-orphan-lock: #6A1B9A;
+
+    /* ===== 孤儿会话不可访问变体（紫色系） ===== */
+    --dm-orphan-unavailable-bg: #F5F3FF;
+    --dm-orphan-unavailable-border: #C4B5FD;
+    --dm-orphan-unavailable-accent: #8B5CF6;
+    --dm-orphan-unavailable-text: #3C1A70;
+
+    /* ===== JSON 代码高亮（深色背景） ===== */
+    --dm-json-string: #A5D6FF;
+    --dm-json-number: #79C0FF;
+    --dm-json-literal: #FF7B72;
+    --dm-json-keyword: #FF7B72;
 
     /* ===== 部门图标色 ===== */
     --dm-hr-color: #DC2626;
@@ -120,6 +137,8 @@
     --dm-header-height: 56px;
     --dm-chat-max-width: 768px;
     --dm-content-max-width: 1200px;
+    --dm-input-height: 40px;
+    --dm-empty-icon-size: 48px;
 
     /* ===== 过渡 ===== */
     --dm-transition-fast: 0.15s ease;

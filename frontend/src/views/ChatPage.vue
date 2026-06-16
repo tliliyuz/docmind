@@ -45,8 +45,19 @@
     </div>
 
     <!-- 孤儿会话警告 Banner -->
-    <div v-if="chatStore.isKbOrphaned && !chatStore.isEmpty" class="orphan-banner">
-      <i class="fas fa-exclamation-triangle orphan-banner-icon"></i>
+    <div
+      v-if="chatStore.isKbOrphaned && !chatStore.isEmpty"
+      class="orphan-banner"
+      :class="{ 'orphan-banner--unavailable': chatStore.kbStatus === 'unavailable' }"
+    >
+      <i
+        v-if="chatStore.kbStatus === 'deleted'"
+        class="fas fa-exclamation-triangle orphan-banner-icon"
+      ></i>
+      <i
+        v-else-if="chatStore.kbStatus === 'unavailable'"
+        class="fas fa-lock orphan-banner-icon"
+      ></i>
       <div class="orphan-banner-text">
         <span v-if="chatStore.kbStatus === 'deleted'">
           该会话关联的知识库「{{ chatStore.kbName || '未知' }}」已被删除。
@@ -393,5 +404,30 @@ function handleQuickQuestion(question) {
   background: var(--dm-orphan-hover-bg);
   border-color: var(--dm-orphan-hover-accent);
   color: var(--dm-orphan-hover-accent);
+}
+
+/* 不可访问变体（紫色系） */
+.orphan-banner--unavailable {
+  background: var(--dm-orphan-unavailable-bg);
+  border-bottom-color: var(--dm-orphan-unavailable-border);
+}
+
+.orphan-banner--unavailable .orphan-banner-icon {
+  color: var(--dm-orphan-unavailable-accent);
+}
+
+.orphan-banner--unavailable .orphan-banner-text {
+  color: var(--dm-orphan-unavailable-text);
+}
+
+.orphan-banner--unavailable .orphan-banner-btn {
+  border-color: var(--dm-orphan-unavailable-accent);
+  color: var(--dm-orphan-unavailable-accent);
+}
+
+.orphan-banner--unavailable .orphan-banner-btn:hover {
+  background: var(--dm-orphan-unavailable-bg);
+  border-color: var(--dm-orphan-unavailable-accent);
+  color: var(--dm-orphan-unavailable-accent);
 }
 </style>

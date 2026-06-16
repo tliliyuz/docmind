@@ -643,19 +643,19 @@ onMounted(loadDetail)
 
 /* highlight.js 深色主题下的 JSON token 样式 */
 .json-content :deep(.hljs-string) {
-  color: #a5d6ff;
+  color: var(--dm-json-string);
 }
 
 .json-content :deep(.hljs-number) {
-  color: #79c0ff;
+  color: var(--dm-json-number);
 }
 
 .json-content :deep(.hljs-literal) {
-  color: #ff7b72;
+  color: var(--dm-json-literal);
 }
 
 .json-content :deep(.hljs-keyword) {
-  color: #ff7b72;
+  color: var(--dm-json-keyword);
 }
 
 /* 错误面板 */
@@ -697,7 +697,7 @@ onMounted(loadDetail)
 }
 
 .empty-icon {
-  font-size: 48px;
+  font-size: var(--dm-empty-icon-size);
   margin-bottom: var(--dm-space-4);
   opacity: 0.5;
 }

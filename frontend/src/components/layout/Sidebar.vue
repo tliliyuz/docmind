@@ -930,11 +930,11 @@ async function handleChangePassword() {
 
 /* 孤儿会话图标（替换左侧会话图标） */
 .conv-icon-orphan {
-  color: var(--dm-orphan-hover-accent);
+  color: var(--dm-warning);
 }
 
 .conv-icon-orphan .fa-lock {
-  color: var(--dm-orphan-lock);
+  color: var(--dm-purple);
 }
 
 /* 重命名输入框 */

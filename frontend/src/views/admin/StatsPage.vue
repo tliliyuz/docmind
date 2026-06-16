@@ -275,7 +275,7 @@ function formatStorage(bytes) {
 }
 
 .empty-icon {
-  font-size: 48px;
+  font-size: var(--dm-empty-icon-size);
   margin-bottom: var(--dm-space-4);
   opacity: 0.5;
 }
