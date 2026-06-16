@@ -1,11 +1,11 @@
-# RAG Pipeline — 问答管线详细设计
+﻿# RAG Pipeline — 问答管线详细设计
 
-| 属性 | 值 |
-|:---|:---|
-| 文档版本 | v1.1 |
-| 最后更新 | 2026-06-15（Phase 5.5 DashScope Rerank API 接入完成） |
+| 属性 | 值          |
+|:---|:-----------|
+| 文档版本 | v1.2       |
+| 最后更新 | 2026-06-16 |
 
-本文档描述 DocMind 问答管线（RAG Pipeline）的完整设计，涵盖多路检索、Prompt 组装、问题重写、意图识别、句级修辞过滤、Evidence Highlight、三层证据审计、Trace 链路追踪、SSE 事件流等核心模块。
+本文档描述 DocMind 问答管线（RAG Pipeline）的完整设计，涵盖多路检索、Prompt 组装、问题重写、意图识别、句级修辞过滤、Evidence Review 门控、Evidence Highlight、三层证据审计、Trace 链路追踪、SSE 事件流等核心模块。
 
 ---
 
@@ -17,25 +17,29 @@
 
 ```
 用户提问
-    ↓
+	    ↓
 [Intent] 意图识别 → 判断类型（查知识库 / 闲聊 / 元问题）       ← [Designed: Phase 5]
-    ↓ （如果是查知识库）
+	    ↓ （如果是查知识库）
 [Rewrite] 问题重写 → 结合对话历史补全上下文              ← [Implemented]
-    ↓
+	    ↓
 [Retrieval] 多路检索 → 向量检索 + BM25 关键词检索       ← [Implemented]
-    ↓
+	    ↓
 [Fusion] RRF 融合排序 → 合并两路结果                     ← [Implemented]
-    ↓
+	    ↓
 [Rerank] 重排序 → DashScope Rerank API 精排              ← [Phase 5.5 ✅]
-    ↓
-[修辞过滤] 句级修辞角色过滤 → 过滤引用性句子              ← [Phase 5.5 ADR-019]
-    ↓
-[Evidence] 句级 BM25 定位 → 选出最佳证据句               ← [Implemented]
-    ↓
-[Prompt] 组装 Prompt → 陈述/引用知识判断框架 + 检索结果   ← [Phase 5.5 升级]
-    ↓
+	    ↓
+[修辞过滤] 句级修辞角色过滤 → 过滤引用性句子 + 返回 FilterStats 统计  ← [Phase 5.5 ADR-019]
+	    ↓
+[Evidence] 句级 BM25 定位 → 选出最佳证据句                        ← [Implemented]
+	    ↓
+[证据审查] Evidence Review → chunk 角色分类 + 门控决策                 ← [Phase 5.5 ADR-021]
+	  ├─ ALLOW → 继续
+	  └─ REJECT → 跳过 LLM，直接返回「未找到相关信息」
+	    ↓
+[Prompt] 组装 Prompt → 陈述/引用知识判断框架 + 检索结果            ← [Phase 5.5 升级]
+	    ↓
 [LLM] 调用 LLM → SSE 流式返回答案                        ← [Implemented]
-    ↓
+	    ↓
 [证据审计] 三层程序级审计 → 置信度标注                    ← [Phase 5.5 ADR-020]
 ```
 
@@ -45,31 +49,35 @@ Phase 4 在 Phase 3 单轮链路基础上加入**会话记忆**和**问题重写
 
 ```
 用户提问
-    ↓
+	    ↓
 [会话管理] conversation_id=null → 自动创建会话；已有会话 → 加载历史
-    ↓
+	    ↓
 [Rewrite 触发判断] _needs_rewrite(question, history) → 有歧义才触发  ← §4
-    ├─ 无历史 / 无歧义 → 跳过，使用原始 question
-    └─ 有歧义 → LLM Rewrite → 成功则使用改写后 query，失败降级
-    ↓
+	    ├─ 无历史 / 无歧义 → 跳过，使用原始 question
+	    └─ 有歧义 → LLM Rewrite → 成功则使用改写后 query，失败降级
+	    ↓
 [Retrieval] 多路检索（使用改写后或原始 question）→ 向量 + BM25  ← §2
-    ↓
+	    ↓
 [Fusion] RRF 融合排序 → 合并两路结果
-    ↓
+	    ↓
 [Rerank] DashScope Rerank API → 语义精排（Phase 5.5，原 NoopReranker 占位）
-    ↓
-[句级修辞过滤] filter_chunk_sentences() → 过滤引用性句子，仅保留陈述知识  ← §7.1
-    ↓
+	    ↓
+[句级修辞过滤] filter_chunk_sentences() → 过滤引用性句子，仅保留陈述知识 + 返回 FilterStats 统计  ← §7.1
+	    ↓
 [Evidence Highlight] 句级 BM25 定位 → 每个 chunk 内切句 → BM25Okapi → 记录 best_sentence  ← §7
-    ↓
+	    ↓
+[证据审查] review_evidence() → 逐 chunk 角色分类（ASSERTIVE/REJECTED）+ 门控决策（ALLOW/REJECT）  ← §10
+	  ├─ ALLOW → 继续
+	  └─ REJECT → 跳过 LLM + 审计，直接 SSE 返回「未找到相关信息」
+	    ↓
 [Prompt] 组装 Prompt → 陈述/引用知识判断框架 + 检索结果 + 历史消息 + 用户问题，软上限预算控制  ← §3
-    ↓
+	    ↓
 [LLM] 调用 LLM → 流式 `chat/completions`，解析 content + reasoning_content
-    ↓
-[证据审计] 三层程序级审计 → 引用存在性 + 来源一致性 + 句级证据回溯 → confidence 标注  ← §9
-    ↓
+	    ↓
+[证据审计] 三层程序级审计 → 引用存在性 + 来源一致性 + 句级证据回溯 → confidence 标注 + 补填 post_audit  ← §9
+	    ↓
 [SSE] StreamingResponse → 6 事件类型 + 15s 心跳（sources 含 confidence）  ← §5
-    ↓
+	    ↓
 [标题生成] 首轮截取前 12 字 → event: finish 返回 title → 异步 LLM 更新
 ```
 
@@ -449,9 +457,9 @@ _build_sources()：matched_sentence → preview_text + preview_range
 | `status` | VARCHAR(32) | success / error / partial |
 | `intent_type` | VARCHAR(32) | KNOWLEDGE / CASUAL / META |
 | `intent_method` | VARCHAR(32) | regex / llm_flash / llm_pro |
-| `response_mode` | VARCHAR(32) | RAG / DIRECT_LLM / META / CASUAL / FALLBACK |
+| `response_mode` | VARCHAR(32) | RAG / DIRECT_LLM / META / CASUAL / FALLBACK / REJECT |
 | `total_duration_ms` | INT | 总耗时（毫秒） |
-| `intent` / `rewrite` / `retrieve` / `rerank` / `generate` | JSON | 各阶段详情 |
+| `intent` / `rewrite` / `retrieve` / `rerank` / `evidence_review` / `generate` | JSON | 各阶段详情 |
 | `error_message` | TEXT | 错误信息（status=error 时） |
 | `created_at` | DATETIME | 创建时间（UTC） |
 
@@ -466,6 +474,7 @@ _build_sources()：matched_sentence → preview_text + preview_range
 | `retrieve` | vector, bm25, fusion, match_sentence 各自独立计时 | 细粒度拆分 |
 | `rerank` | input_count, output_count, metadata.reranker | 输入输出数量 + reranker 类型 |
 | `generate` | model, ttft_ms, input_tokens, output_tokens, finish_reason | LLM 生成指标，**不存 output** |
+| `evidence_review` | summary(decision/assertive_count/referential_count/rejected_count/reason), chunk_decisions[], sentence_review, post_audit | 证据审查阶段详情（chunk 分类 + REJECT 决策 + post-LLM 审计补填），chunk_decisions 上限 5 条 |
 
 ### 8.3 埋点集成点
 
@@ -594,20 +603,30 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
         bm25_results = await bm25_retriever.search(question, kb_id, top_k=10)
         merged = rrf_fusion(vector_results, bm25_results, k=60)
         reranked = await reranker.rerank(question, merged, top_k=5)
-        # 句级修辞过滤（Phase 5.5 ADR-019）
+        # 句级修辞过滤（Phase 5.5 ADR-019）→ 返回 FilterStats 统计
+        filter_stats_map = {}
         for r in reranked.results:
-            r.content = filter_chunk_sentences(r.content)
+            r.content, stats = filter_chunk_sentences(r.content)
+            filter_stats_map[r.chunk_index] = stats
         reranked = match_sentences(reranked, question)  # Evidence Highlight
     else:
         reranked = []
+        filter_stats_map = {}
 
-    # 4. 拼 Prompt + LLM SSE 流式输出
+    # 3.5 证据审查 + 门控（Phase 5.5 ADR-021）
+    evidence_result = review_evidence(reranked, filter_stats_map)
+    if evidence_result.decision == "REJECT":
+        # 无陈述性证据 → 跳过 LLM，直接返回「未找到相关信息」
+        return StreamingResponse(_generate_reject_response(...))
+
+    # 4. 拼 Prompt + LLM SSE 流式输出（仅 ALLOW 路径）
     prompt_messages = prompt_builder.build(question, reranked, history=history_messages)
     # ... SSE StreamingResponse ...
     # LLM 流完成后：
     
     # 5. 三层证据审计（Phase 5.5 ADR-020）
     audit_result = audit_evidence(assistant_content, prompt_result.used_chunks)
+    # → 补填到 trace.evidence_review.post_audit
     # → sources 事件含 confidence / confidence_note 字段
 ```
 
@@ -622,6 +641,7 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 | `backend/app/rag/intent.py` | 意图分类（规则 + Flash 模型） |
 | `backend/app/rag/sentence_matcher.py` | 句级修辞过滤 + Evidence Highlight 句级 BM25 定位 |
 | `backend/app/rag/evidence_auditor.py` | 三层证据审计（引用存在性 + 来源一致性 + 句级证据回溯） |
+| `backend/app/rag/evidence_reviewer.py` | Evidence Review 门控（chunk 角色分类 + ALLOW/REJECT 决策） |
 | `backend/app/rag/retriever.py` | 向量检索 |
 | `backend/app/rag/bm25_retriever.py` | BM25 关键词检索 + 三级缓存 |
 | `backend/app/rag/fusion.py` | RRF 融合排序 |

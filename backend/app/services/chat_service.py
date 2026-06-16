@@ -371,6 +371,17 @@ async def _generate_sse_stream(
         if assistant_content and prompt_result.used_chunks:
             try:
                 _audit_result = audit_evidence(assistant_content, prompt_result.used_chunks)
+                # 补填 post_audit 到 evidence_review Trace（ADR-021）
+                if recorder and _audit_result:
+                    recorder.set_post_audit({
+                        "has_citation": _audit_result.has_citation,
+                        "citations_detected": _audit_result.cited_indices,
+                        "consistency_status": _audit_result.consistency_status,
+                        "evidence_status": _audit_result.evidence_status,
+                        "confidence_level": _audit_result.confidence_level,
+                        "confidence_note": _audit_result.confidence_note,
+                        "raw_answer_preview": assistant_content[:200],
+                    })
             except Exception:
                 logger.warning("证据审计执行失败，跳过", exc_info=True)
 
@@ -573,6 +584,82 @@ _META_RESPONSE = (
     "3. 检索相关文档并提供引用来源\n\n"
     "请直接向我提问，或选择一个知识库开始问答。"
 )
+
+# REJECT 固定回复模板（对齐 ADR-021：证据审查门控拒绝时返回）
+_REJECT_RESPONSE = "未找到相关信息"
+
+
+async def _generate_reject_response(
+    conv: Conversation,
+    is_first_turn: bool,
+    question: str,
+    recorder: TraceRecorder | None = None,
+) -> AsyncIterator[str]:
+    """证据审查 REJECT 时的固定 SSE 响应：不调 LLM，直接返回兜底消息。
+
+    与 _generate_meta_response 同样的持久化模式：
+    保存 assistant 消息到数据库，保证对话成对。
+
+    SSE 事件序列（对齐 ADR-021 §7b）：
+    meta → message("未找到相关信息") → sources(空) → finish
+    """
+    yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
+    yield format_sse_event("message", {"delta": _REJECT_RESPONSE})
+
+    # 持久化阶段：独立短生命周期 session，消息 + Trace 单事务提交（ADR-017）
+    title = None
+    message_id = 0
+    async with async_session() as s:
+        try:
+            conv_in = await s.get(Conversation, conv.id)
+            if conv_in is None:
+                logger.error("会话 %d 在 REJECT 持久化时已不存在", conv.id)
+                raise ConversationNotFoundException(conv.id)
+
+            assistant_msg = Message(
+                conversation_id=conv_in.id,
+                role="assistant",
+                content=_REJECT_RESPONSE,
+                thinking_content=None,
+                token_count=0,
+            )
+            s.add(assistant_msg)
+            conv_in.message_count += 1
+            _now = datetime.now(timezone.utc)
+            conv_in.updated_at = _now
+            conv_in.last_message_at = _now
+            await s.flush()
+            await s.refresh(assistant_msg)
+            message_id = assistant_msg.id
+
+            if is_first_turn:
+                title = _generate_title(question)
+                conv_in.title = title
+
+            # Trace 写入（commit=False，由外层统一提交，确保与消息在同一事务）
+            if recorder:
+                await recorder.finish(s, commit=False)
+
+            await s.commit()
+
+        except Exception:
+            logger.exception("REJECT 响应保存失败")
+            await s.rollback()
+            yield format_sse_event("sources", {"chunks": []})
+            yield format_sse_event("finish", {
+                "message_id": 0,
+                "title": None,
+                "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+            })
+            return
+
+    # session 已释放，安全发送事件
+    yield format_sse_event("sources", {"chunks": []})
+    yield format_sse_event("finish", {
+        "message_id": message_id,
+        "title": title,
+        "token_usage": {"prompt": 0, "completion": 0, "total": 0},
+    })
 
 
 async def _generate_meta_response(
@@ -821,6 +908,22 @@ async def chat(
         return StreamingResponse(
             stream_with_heartbeat(_generate_meta_response(
                 conv=e.conv, is_first_turn=e.is_first_turn, question=question,
+                recorder=recorder,
+            )),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    # 证据审查 REJECT 门控（ADR-021）：无陈述性证据时跳过 LLM，直接返回固定拒绝响应
+    if pipeline_result.evidence_review and pipeline_result.evidence_review.decision == "REJECT":
+        recorder.conversation_id = conv.id
+        recorder.kb_id = conv.kb_id
+        return StreamingResponse(
+            stream_with_heartbeat(_generate_reject_response(
+                conv=conv, is_first_turn=is_first_turn, question=question,
                 recorder=recorder,
             )),
             media_type="text/event-stream",

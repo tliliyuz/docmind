@@ -67,6 +67,7 @@ class TraceRecorder:
         self._rewrite_data: dict | None = None
         self._retrieve_data: dict | None = None
         self._rerank_data: dict | None = None
+        self._evidence_review_data: dict | None = None
         self._generate_data: dict | None = None
 
     def record_intent(
@@ -184,6 +185,41 @@ class TraceRecorder:
             "metadata": {"reranker": reranker},
         }
 
+    def record_evidence_review(
+        self,
+        summary: dict,
+        chunk_decisions: list[dict],
+        sentence_review: list[dict] | None = None,
+        duration_ms: float = 0,
+        t_span_start: float | None = None,
+        status: str = "success",
+    ) -> None:
+        """记录证据审查阶段（Pre-LLM chunk 分类 + 门控决策）。
+
+        post_audit 不在此处传入——LLM 流完成后通过 set_post_audit() 补填。
+        status 通过 EvidenceReviewResult.status 传入，异常降级时为 "error"。
+        """
+        data: dict = {
+            "span_name": "evidence_review",
+            "start_time": self._span_start_iso(t_span_start) if t_span_start else None,
+            "duration_ms": round(duration_ms, 1),
+            "status": status,
+            "summary": summary,
+            "chunk_decisions": chunk_decisions,
+            "sentence_review": sentence_review,  # None → JSON null（前端可区分「debug 未开启」与「无句子」）
+            "post_audit": None,                  # 显式初始化，LLM 流完成后由 set_post_audit() 补填
+        }
+        self._evidence_review_data = data
+
+    def set_post_audit(self, post_audit: dict) -> None:
+        """LLM 流完成后补填 evidence_review.post_audit。
+
+        REJECT 路径不调用此方法，post_audit 保持 null。
+        防御性检查：若 evidence_review_data 不存在则 no-op。
+        """
+        if self._evidence_review_data is not None:
+            self._evidence_review_data["post_audit"] = post_audit
+
     def record_generate(
         self,
         model: str,
@@ -228,12 +264,16 @@ class TraceRecorder:
         """
         total_duration_ms = int((time.perf_counter() - self._t_start) * 1000)
 
-        # 根据 intent_type 推导 response_mode（如果未显式设置）
+        # 根据 intent_type / evidence_review 推导 response_mode（如果未显式设置）
         if self._response_mode is None:
             if self._intent_type == "META":
                 self._response_mode = "META"
             elif self._intent_type == "CASUAL":
                 self._response_mode = "CASUAL"
+            elif self._evidence_review_data and self._evidence_review_data.get(
+                "summary", {}
+            ).get("decision") == "REJECT":
+                self._response_mode = "REJECT"
             elif self._generate_data is not None:
                 self._response_mode = "RAG"
             else:
@@ -258,6 +298,7 @@ class TraceRecorder:
                 retrieve=self._retrieve_data,
                 rerank=self._rerank_data,
                 generate=self._generate_data,
+                evidence_review=self._evidence_review_data,
                 error_message=self._error_message,
             )
             logger.info(

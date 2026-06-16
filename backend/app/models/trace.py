@@ -77,6 +77,10 @@ class Trace(Base):
         JSON, nullable=True,
         comment="LLM 生成阶段详情（不存 output）",
     )
+    evidence_review: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True,
+        comment="证据审查阶段详情（chunk 分类 + REJECT 决策 + post-LLM 审计结果）",
+    )
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True,
         comment="错误信息（status=error 时）",

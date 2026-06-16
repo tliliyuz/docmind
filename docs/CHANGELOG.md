@@ -6,7 +6,25 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
-## [Unreleased] - 2026-06-15
+## [Unreleased] - 2026-06-16
+
+### Added
+- **Evidence Review 门控与 Trace 可观测性（ADR-021）**：新增 `evidence_reviewer.py` 模块，在 `filter_chunk_sentences()` 之后执行 chunk 分类（ASSERTIVE/REJECTED）与门控决策（ALLOW/REJECT）。当所有 chunk 过滤后均无陈述性句子时，跳过 LLM 调用直接返回「未找到相关信息」，节省无效 LLM 调用并提供可解释的拒答原因
+- **Traces 表新增 evidence_review JSON 列**：存储三级证据审查数据（summary 摘要 + chunk_decisions Top 5 + post_audit 审计结果）。`TraceRecorder` 新增 `record_evidence_review()` 和 `set_post_audit()` 方法
+- **FilterStats 输出**：`sentence_matcher.py` 新增 `FilterStats` 数据类，`filter_chunk_sentences()` 返回值改为 `(str, FilterStats)`，供 `evidence_reviewer` 复用，避免重复切句+角色判定
+- **前端 Trace 详情第 6 阶段卡片**：`TraceDetail.vue` 展示「证据审查」卡片，显示 ALLOW/REJECT 决策和 A/R 计数，REJECT 时使用 danger 色标签
+- **新增 response_mode = "REJECT"**：证据驳回响应模式，区别于 FALLBACK
+- **ADR-021 证据审查门控**：架构决策记录，覆盖 Pre-LLM 门控、三级可观测性、Post-LLM 审计补填
+
+### Changed
+- `filter_chunk_sentences()` 返回值从 `str` 改为 `tuple[str, FilterStats]`，影响 `knowledge_pipeline.py` 调用方和 6 个测试用例
+- `KnowledgePipelineResult` 新增 `evidence_review: EvidenceReviewResult | None` 字段
+- `TraceDetailResponse` 新增 `evidence_review: EvidenceReviewSpan | None` 字段
+- `TraceRecorder.finish()` response_mode 推导逻辑增加 REJECT 分支
+
+---
+
+## [0.7.0] - 2026-06-15
 
 ### Added
 - **Phase 5.5 — Prompt 陈述知识 vs 引用知识原则**：`SYSTEM_PROMPT_TEMPLATE` 从简单的「请仅基于文档回答」升级为完整的陈述知识/引用知识判断框架，包含核心原则、判断方法、必然属于引用知识的场景枚举、拒答规则。预计单独消除 60-80% 的「引用知识被当成答案」问题

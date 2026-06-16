@@ -248,6 +248,7 @@ async def get_trace_detail(
         rewrite=trace.rewrite,
         retrieve=trace.retrieve,
         rerank=trace.rerank,
+        evidence_review=trace.evidence_review,
         generate=trace.generate,
         error_message=trace.error_message,
         created_at=trace.created_at,

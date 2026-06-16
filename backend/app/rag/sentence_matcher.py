@@ -8,10 +8,13 @@
   IDF 天然区分「审批流程」和「经审批后」的关键词权重差异
 - 句级修辞过滤：在 BM25 定位前过滤引用性句子（示例/测试/历史记录等），
   解决 Chunk 内部混合陈述句和引用句的污染问题
+- filter_chunk_sentences() 返回 (过滤后文本, FilterStats)，
+  供 EvidenceReview 复用，避免重复切句+角色判定
 """
 
 import logging
 import re
+from dataclasses import dataclass
 
 import jieba
 from rank_bm25 import BM25Okapi
@@ -36,6 +39,14 @@ _REFERENTIAL_PATTERNS = [
         r'会议.*讨论', r'上次.*提到',
     ]
 ]
+
+
+@dataclass
+class FilterStats:
+    """句级修辞过滤统计信息（供 EvidenceReview 复用，避免重复切句+角色判定）。"""
+    total_sentences: int = 0        # 过滤前总句子数
+    assertive_count: int = 0        # 保留的断言性句子数
+    referential_count: int = 0      # 被过滤的引用性句子数
 
 
 def detect_sentence_role(sentence: str) -> str:
@@ -70,8 +81,8 @@ def detect_sentence_role(sentence: str) -> str:
     return "assertive"
 
 
-def filter_chunk_sentences(chunk_content: str) -> str:
-    """对 chunk 内容做句级修辞过滤，返回过滤后的文本。
+def filter_chunk_sentences(chunk_content: str) -> tuple[str, FilterStats]:
+    """对 chunk 内容做句级修辞过滤，返回过滤后的文本和统计信息。
 
     对齐 ROADMAP.md §8.2：
     - 切句后逐句判断修辞角色
@@ -82,23 +93,35 @@ def filter_chunk_sentences(chunk_content: str) -> str:
         chunk_content: 原始 chunk 文本
 
     Returns:
-        过滤后的文本（仅含陈述句），若过滤后为空则返回原始内容
+        (过滤后文本, FilterStats) — 过滤后文本仅含陈述句，
+        若过滤后为空则返回原始内容；FilterStats 记录切句总数和角色分布
     """
     raw = _SENTENCE_SEP.split(chunk_content)
     sentences = [s.strip() for s in raw if s.strip()]
     if not sentences:
-        return chunk_content
+        return chunk_content, FilterStats()
 
     filtered = []
+    assertive = 0
+    referential = 0
     for s in sentences:
         role = detect_sentence_role(s)
         if role == "assertive":
             filtered.append(s)
+            assertive += 1
+        else:
+            referential += 1
+
+    stats = FilterStats(
+        total_sentences=len(sentences),
+        assertive_count=assertive,
+        referential_count=referential,
+    )
 
     if not filtered:
         # 过滤后为空，返回原始内容（宁可放过，不可错杀）
         logger.debug("句级修辞过滤后为空，回退到原始内容")
-        return chunk_content
+        return chunk_content, stats
 
     if len(filtered) < len(sentences):
         logger.debug(
@@ -106,7 +129,7 @@ def filter_chunk_sentences(chunk_content: str) -> str:
             len(filtered), len(sentences),
         )
 
-    return '。'.join(filtered) + '。'
+    return '。'.join(filtered) + '。', stats
 
 
 def match_sentences(output: RetrievalOutput, question: str) -> RetrievalOutput:

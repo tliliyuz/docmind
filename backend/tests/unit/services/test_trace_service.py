@@ -39,6 +39,7 @@ def _make_trace_record(
     retrieve=None,
     rerank=None,
     generate=None,
+    evidence_review=None,
     error_message=None,
     created_at=None,
 ):
@@ -98,6 +99,7 @@ def _make_trace_record(
         "output_tokens": 500,
         "finish_reason": "stop",
     }
+    trace.evidence_review = evidence_review
     trace.error_message = error_message
     trace.created_at = created_at or datetime(2026, 6, 12, 10, 0, 0, tzinfo=timezone.utc)
     return trace

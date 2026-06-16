@@ -1266,6 +1266,7 @@
 | `services/admin_service.py` (统计增强) | ≥ 80% | ✅ 7 用例 | Phase 5：ECharts 统计增强（test_admin_api.py TestAdminStatsChartsAPI：charts 字段 1 + trend 1 + latency 3 + tokens 2） |
 | `rag/sentence_matcher.py` | ≥ 80% | ✅ 32 用例 | Phase 5.5：修辞角色过滤 + Evidence 定位（detect_sentence_role 12 + filter_chunk_sentences 6 + match_sentences 14） |
 | `rag/evidence_auditor.py` | ≥ 80% | ✅ 19 用例 | Phase 5.5：三层证据审计（引用存在性 5 + 来源一致性 5 + 句级证据 7 + 置信度 4 + 集成 4） |
+| `rag/evidence_reviewer.py` | ≥ 80% | ✅ 13 用例 | 2026-06-16：Evidence Review 门控（decision 7 + chunk_decisions 1 + sentence_detail 2 + degradation 1 + performance 1 + counts 1） |
 | 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例 |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例） |
 | 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |

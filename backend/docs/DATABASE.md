@@ -371,6 +371,7 @@ CREATE TABLE traces (
     retrieve JSON COMMENT '检索阶段详情（细粒度拆分：vector/bm25/fusion/match_sentence）',
     rerank JSON COMMENT 'Rerank 阶段详情',
     generate JSON COMMENT 'LLM 生成阶段详情（不存 output）',
+    evidence_review JSON COMMENT '证据审查阶段详情（chunk 分类 + REJECT 决策 + post-LLM 审计结果）',
     error_message TEXT COMMENT '错误信息（status=error 时）',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间（UTC）',
     UNIQUE INDEX idx_trace_id (trace_id),
@@ -402,6 +403,7 @@ CREATE TABLE traces (
 | retrieve | JSON | 检索阶段详情，**细粒度拆分**：vector/bm25/fusion/match_sentence 各自独立计时 |
 | rerank | JSON | Rerank 阶段详情（input_count/output_count/metadata.reranker） |
 | generate | JSON | LLM 生成阶段详情（model/ttft_ms/input_tokens/output_tokens/finish_reason），**不存 output** |
+| evidence_review | JSON | 证据审查阶段详情（summary/chunk_decisions/sentence_review/post_audit），chunk_decisions 上限 5 条 |
 | error_message | TEXT | 错误信息（status=error 时） |
 | created_at | DATETIME | 创建时间（UTC） |
 

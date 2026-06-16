@@ -16,14 +16,16 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.document import Document
 from app.rag.bm25 import BM25Retriever
+from app.rag.evidence_reviewer import EvidenceReviewResult, review_evidence
 from app.rag.fusion import rrf_fusion
 from app.rag.prompt_builder import PromptBuildResult, build_prompt
 from app.rag.query_rewriter import _needs_rewrite, rewrite_query
 from app.rag.reranker import BaseReranker, DashScopeReranker, NoopReranker
 from app.rag.retriever import RetrievalOutput, VectorRetriever
-from app.rag.sentence_matcher import filter_chunk_sentences, match_sentences
+from app.rag.sentence_matcher import FilterStats, filter_chunk_sentences, match_sentences
 from app.rag.trace_recorder import TraceRecorder
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ class KnowledgePipelineResult:
     reranked_output: RetrievalOutput
     prompt_result: PromptBuildResult
     doc_map: dict[int, str]  # doc_id -> filename
+    evidence_review: EvidenceReviewResult | None = None  # PRE-LLM 证据审查结果；chat_service 读取 decision 做门控
 
 
 class KnowledgePipeline:
@@ -56,7 +59,10 @@ class KnowledgePipeline:
         reranker: BaseReranker | None = None,
     ):
         self._vector_retriever = vector_retriever or VectorRetriever()
-        self._reranker = reranker or DashScopeReranker()
+        # 诊断开关：settings.DASHSCOPE_RERANK=False 时降级为 NoopReranker
+        self._reranker = reranker or (
+            DashScopeReranker() if settings.DASHSCOPE_RERANK else NoopReranker()
+        )
         self._bm25_retriever: BM25Retriever | None = None
         self._bm25_factory = bm25_retriever_factory
 
@@ -153,9 +159,92 @@ class KnowledgePipeline:
             t_rerank = time.perf_counter()
             # 句级修辞过滤：在 sentence_matcher 前过滤引用性句子，
             # 解决 Chunk 内部混合陈述句和引用句的污染问题（§3.3-3.4）
-            for r in reranked_output.results:
-                r.content = filter_chunk_sentences(r.content)
+            # 诊断开关：settings.SENTENCE_ROLE_FILTER=False 时跳过
+            filter_stats_map: dict[int, FilterStats] = {}
+            if settings.SENTENCE_ROLE_FILTER:
+                for r in reranked_output.results:
+                    r.content, stats = filter_chunk_sentences(r.content)
+                    filter_stats_map[r.chunk_index] = stats
             reranked_output = match_sentences(reranked_output, question)
+            t_match_done = time.perf_counter()
+
+            # 证据审查：在过滤后内容上做 chunk 分类 + 门控决策（ADR-021）
+            evidence_result = review_evidence(reranked_output, filter_stats_map)
+            t_evidence_done = time.perf_counter()
+
+            if recorder:
+                recorder.record_evidence_review(
+                    summary={
+                        "decision": evidence_result.decision,
+                        "total_chunks": evidence_result.total_chunks,
+                        "assertive_count": evidence_result.assertive_count,
+                        "referential_count": evidence_result.referential_count,
+                        "rejected_count": evidence_result.rejected_count,
+                        "reason": evidence_result.reason,
+                    },
+                    chunk_decisions=[
+                        {
+                            "chunk_index": d.chunk_index,
+                            "doc_id": d.doc_id,
+                            "role": d.role,
+                            "filtered_sentence_count": d.filtered_sentence_count,
+                            "assertive_sentence_count": d.assertive_sentence_count,
+                            "referential_sentence_count": d.referential_sentence_count,
+                            "reason": d.reason,
+                        }
+                        for d in evidence_result.chunk_decisions[:5]
+                    ],
+                    sentence_review=None,
+                    duration_ms=(t_evidence_done - t_match_done) * 1000,
+                    t_span_start=t_match_done,
+                    status=evidence_result.status,
+                )
+                if evidence_result.decision == "REJECT":
+                    recorder.set_response_mode("REJECT")
+
+            # REJECT 门控（ADR-021）：无陈述性证据时跳过 Prompt 构建，提前返回
+            if evidence_result.decision == "REJECT":
+                logger.info(
+                    "EVIDENCE_REVIEW REJECT: 无陈述性证据，所有 %d chunks 过滤后均为空",
+                    evidence_result.total_chunks,
+                )
+                # 记录 retrieve/rerank（不含 prompt 构建耗时）
+                t_retrieval_done = time.perf_counter()
+                if recorder:
+                    recorder.record_retrieve(
+                        vector_ms=(t_vector - t_retrieve_start) * 1000,
+                        vector_count=len(vector_output.results),
+                        bm25_ms=(t_bm25 - t_vector) * 1000,
+                        bm25_stats=bm25_output.stats,
+                        fusion_ms=(t_fusion - t_bm25) * 1000,
+                        fusion_count=len(fused_output.results),
+                        fusion_method=fused_output.fusion_method,
+                        match_sentence_ms=(t_match_done - t_rerank) * 1000,
+                        total_ms=(t_retrieval_done - t_retrieve_start) * 1000,
+                        t_span_start=t_retrieve_start,
+                    )
+                    recorder.record_rerank(
+                        input_count=len(fused_output.results),
+                        output_count=len(reranked_output.results),
+                        duration_ms=(t_rerank - t_fusion) * 1000,
+                        reranker=self._reranker.name,
+                        t_span_start=t_fusion,
+                    )
+                return KnowledgePipelineResult(
+                    reranked_output=reranked_output,
+                    prompt_result=PromptBuildResult(
+                        system_prompt="",
+                        user_prompt="",
+                        used_chunks=[],
+                        total_context_tokens=0,
+                        chunks_count=0,
+                        history_messages=history_messages,
+                    ),
+                    doc_map={},
+                    evidence_review=evidence_result,
+                )
+
+            # ALLOW 路径：构建 Prompt
             prompt_result = build_prompt(question, reranked_output, history_messages=history_messages)
             t_retrieval_done = time.perf_counter()
 
@@ -168,7 +257,7 @@ class KnowledgePipeline:
                     fusion_ms=(t_fusion - t_bm25) * 1000,
                     fusion_count=len(fused_output.results),
                     fusion_method=fused_output.fusion_method,
-                    match_sentence_ms=(t_retrieval_done - t_rerank) * 1000,
+                    match_sentence_ms=(t_match_done - t_rerank) * 1000,
                     total_ms=(t_retrieval_done - t_retrieve_start) * 1000,
                     t_span_start=t_retrieve_start,
                 )
@@ -205,6 +294,7 @@ class KnowledgePipeline:
             reranked_output=reranked_output,
             prompt_result=prompt_result,
             doc_map=doc_map,
+            evidence_review=evidence_result,
         )
 
     async def execute_casual(

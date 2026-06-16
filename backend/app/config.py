@@ -136,6 +136,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT_PER_MINUTE: int = 120 # 其他接口
     RATE_LIMIT_WINDOW_SECONDS: int = 60      # 窗口大小（秒）
 
+    # ── 诊断开关（多轮对话退化归因排查）──
+    P0_STRICT_MODE: bool = False            # True=严格「陈述知识 vs 引用知识」Prompt；False=旧版宽松 Prompt
+    SENTENCE_ROLE_FILTER: bool = True        # True=启用句级修辞过滤；False=跳过（不调用 filter_chunk_sentences）
+    DASHSCOPE_RERANK: bool = True            # True=使用 DashScope Rerank 精排；False=降级为 NoopReranker
+
     @property
     def mysql_url(self) -> str:
         """构造异步 MySQL 连接串（强制会话 time_zone=UTC，确保 CURRENT_TIMESTAMP 返回 UTC）"""

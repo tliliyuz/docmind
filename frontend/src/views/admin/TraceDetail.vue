@@ -124,6 +124,11 @@
             <span v-if="stage.key === 'rerank' && stage.data?.metadata?.reranker" class="stage-meta-item">
               {{ stage.data.metadata.reranker }}
             </span>
+            <span v-if="stage.key === 'evidence_review' && stage.data?.summary" class="stage-meta-item"
+                  :class="{ 'reject': stage.data.summary.decision === 'REJECT' }">
+              {{ stage.data.summary.decision === 'REJECT' ? 'REJECT' : 'ALLOW' }}
+              ({{ stage.data.summary.assertive_count }}A / {{ stage.data.summary.referential_count + stage.data.summary.rejected_count }}R)
+            </span>
           </div>
           <button
             class="stage-json-btn"
@@ -183,6 +188,7 @@ const expandedJson = reactive({
   rewrite: false,
   retrieve: false,
   rerank: false,
+  evidence_review: false,
   generate: false,
 })
 
@@ -194,6 +200,7 @@ const stages = computed(() => {
     { key: 'rewrite', label: 'Rewrite', data: trace.value.rewrite },
     { key: 'retrieve', label: 'Retrieve', data: trace.value.retrieve },
     { key: 'rerank', label: 'Rerank', data: trace.value.rerank },
+    { key: 'evidence_review', label: '证据审查', data: trace.value.evidence_review },
     { key: 'generate', label: 'Generate', data: trace.value.generate },
   ]
 })
@@ -274,7 +281,7 @@ function intentLabel(type) {
 }
 
 function responseLabel(mode) {
-  const map = { RAG: 'RAG', DIRECT_LLM: '直接 LLM', META: '元查询', CASUAL: '闲聊', FALLBACK: '兜底回复' }
+  const map = { RAG: 'RAG', DIRECT_LLM: '直接 LLM', META: '元查询', CASUAL: '闲聊', FALLBACK: '兜底回复', REJECT: '证据驳回' }
   return map[mode] || mode
 }
 
@@ -469,6 +476,11 @@ onMounted(loadDetail)
   color: var(--dm-danger);
 }
 
+.response-tag.reject {
+  background: var(--dm-danger-light);
+  color: var(--dm-danger);
+}
+
 .status-icon {
   font-size: var(--dm-text-base);
   margin-right: var(--dm-space-1);
@@ -484,7 +496,7 @@ onMounted(loadDetail)
 
 .stages-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--dm-space-4);
   margin-bottom: var(--dm-space-5);
 }
@@ -544,6 +556,12 @@ onMounted(loadDetail)
   background: var(--dm-bg-page);
   padding: 1px 6px;
   border-radius: var(--dm-radius-xs);
+}
+
+.stage-meta-item.reject {
+  background: var(--dm-danger-light);
+  color: var(--dm-danger);
+  font-weight: var(--dm-weight-semibold);
 }
 
 .stage-json-btn {

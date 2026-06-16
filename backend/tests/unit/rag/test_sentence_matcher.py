@@ -14,6 +14,7 @@ import pytest
 
 from app.rag.retriever import RetrievalOutput, RetrievalResult
 from app.rag.sentence_matcher import (
+    FilterStats,
     detect_sentence_role,
     filter_chunk_sentences,
     match_sentences,
@@ -321,30 +322,39 @@ class TestFilterChunkSentences:
     """filter_chunk_sentences() 句级修辞过滤测试"""
 
     def test_全部陈述句_原样返回(self):
-        """全部为陈述句时返回原始内容结构"""
+        """全部为陈述句时返回原始内容结构和正确的统计"""
         content = "公司报销制度规定：差旅报销需提交申请单。每月25日前提交至财务部。"
-        result = filter_chunk_sentences(content)
+        result, stats = filter_chunk_sentences(content)
         assert "差旅报销需提交申请单" in result
         assert "每月25日前提交至财务部" in result
+        assert stats.total_sentences == 2
+        assert stats.assertive_count == 2
+        assert stats.referential_count == 0
 
     def test_混合内容_过滤引用句(self):
-        """混合陈述句和引用句时，仅保留陈述句"""
+        """混合陈述句和引用句时，仅保留陈述句，统计正确"""
         content = (
             "公司报销制度规定：差旅报销需提交申请单。"
             "示例：SSE 响应中的报销文本。"
             "每月25日前提交至财务部。"
         )
-        result = filter_chunk_sentences(content)
+        result, stats = filter_chunk_sentences(content)
         assert "差旅报销需提交申请单" in result
         assert "每月25日前提交至财务部" in result
         assert "SSE 响应中的报销文本" not in result
+        assert stats.total_sentences == 3
+        assert stats.assertive_count == 2
+        assert stats.referential_count == 1
 
     def test_全部引用句_回退到原始内容(self):
-        """全部为引用句时回退到原始内容（宁可放过不可错杀）"""
+        """全部为引用句时回退到原始内容（宁可放过不可错杀），统计显示全部引用性"""
         content = "示例：用户提问。测试用例：验证回答。TODO: 优化。"
-        result = filter_chunk_sentences(content)
+        result, stats = filter_chunk_sentences(content)
         # 回退到原始内容
         assert len(result) > 0
+        assert stats.total_sentences == 3
+        assert stats.assertive_count == 0
+        assert stats.referential_count == 3
 
     def test_API文档示例chunk_过滤SSE示例部分(self):
         """API 文档中混合 SSE 事件定义和示例响应时，过滤示例部分"""
@@ -352,18 +362,23 @@ class TestFilterChunkSentences:
             "DocMind 的 SSE 事件包含以下类型：meta 事件包含会话元数据。"
             '示例：{"event": "message", "data": {"delta": "差旅报销需提交……"}}'
         )
-        result = filter_chunk_sentences(content)
+        result, stats = filter_chunk_sentences(content)
         assert "SSE 事件包含以下类型" in result
         # JSON 示例应被过滤
         assert "delta" not in result or "差旅报销" not in result
+        assert stats.assertive_count == 1
+        assert stats.referential_count == 1
 
     def test_空内容返回原内容(self):
-        """空内容返回原始内容"""
-        result = filter_chunk_sentences("")
+        """空内容返回原始内容和零统计"""
+        result, stats = filter_chunk_sentences("")
         assert result == ""
+        assert stats.total_sentences == 0
 
     def test_无句末标点_整段保留(self):
         """无句末标点的内容整段保留（缺乏切句依据）"""
         content = "这是一段没有标点的陈述性文本"
-        result = filter_chunk_sentences(content)
+        result, stats = filter_chunk_sentences(content)
         assert "陈述性文本" in result
+        assert stats.total_sentences == 1
+        assert stats.assertive_count == 1

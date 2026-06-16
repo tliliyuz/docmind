@@ -93,6 +93,14 @@ class GenerateSpan(TraceSpanBase):
     finish_reason: str | None = None
 
 
+class EvidenceReviewSpan(TraceSpanBase):
+    """证据审查阶段详情（chunk 分类 + REJECT 决策 + post-LLM 审计结果）"""
+    summary: dict | None = None
+    chunk_decisions: list[dict] | None = None
+    sentence_review: list[dict] | None = None
+    post_audit: dict | None = None
+
+
 class TraceDetailResponse(BaseModel):
     """GET /api/admin/traces/{trace_id} 响应
 
@@ -115,6 +123,7 @@ class TraceDetailResponse(BaseModel):
     rewrite: RewriteSpan | None = None
     retrieve: RetrieveSpan | None = None
     rerank: RerankSpan | None = None
+    evidence_review: EvidenceReviewSpan | None = None
     generate: GenerateSpan | None = None
     error_message: str | None = None
     created_at: datetime
