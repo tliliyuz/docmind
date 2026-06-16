@@ -1,0 +1,46 @@
+# ============================================================
+# DocMind 后端 Dockerfile
+# 用途：FastAPI 应用 + Celery Worker（同一镜像，不同启动命令）
+# 构建：docker build -f Dockerfile.backend -t docmind-backend .
+# ============================================================
+
+FROM python:3.11-slim
+
+# 时区设置（容器内所有进程统一使用 UTC）
+ENV TZ=UTC
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 系统依赖
+# - curl: 健康检查
+# - build-essential / gcc / pkg-config: 编译 Python C 扩展（chromadb、bcrypt 等）
+# - libffi-dev: cffi 依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        build-essential \
+        gcc \
+        pkg-config \
+        libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 先复制依赖文件，利用 Docker 层缓存
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制后端源代码
+COPY backend/ .
+
+# 创建运行时目录
+# - chroma_data: ChromaDB 向量存储（通过 docker-compose 挂卷持久化）
+# - uploads: 用户上传文件（通过 docker-compose 挂卷持久化）
+RUN mkdir -p /app/chroma_data /app/uploads
+
+# FastAPI 端口（API 文档 / 健康检查 / 直接访问时使用）
+EXPOSE 8000
+
+# 默认启动 FastAPI（docker-compose 中各服务可覆盖 command）
+# --host 0.0.0.0: 容器内监听所有网卡
+# --workers 4: 多进程处理并发请求
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

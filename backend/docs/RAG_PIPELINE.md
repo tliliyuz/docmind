@@ -2,7 +2,7 @@
 
 | 属性 | 值          |
 |:---|:-----------|
-| 文档版本 | v1.2       |
+| 文档版本 | v1.0       |
 | 最后更新 | 2026-06-16 |
 
 本文档描述 DocMind 问答管线（RAG Pipeline）的完整设计，涵盖多路检索、Prompt 组装、问题重写、意图识别、句级修辞过滤、Evidence Review 门控、Evidence Highlight、三层证据审计、Trace 链路追踪、SSE 事件流等核心模块。
