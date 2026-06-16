@@ -351,7 +351,7 @@ class TestFilterChunkSentences:
         content = "示例：用户提问。测试用例：验证回答。TODO: 优化。"
         result, stats = filter_chunk_sentences(content)
         # 回退到原始内容
-        assert len(result) > 0
+        assert len(result) == len(content)  # 全部引用句回退到原始内容，长度不变
         assert stats.total_sentences == 3
         assert stats.assertive_count == 0
         assert stats.referential_count == 3

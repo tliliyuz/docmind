@@ -9,7 +9,7 @@
 - U7.85 sources 事件数据结构
 - U7.86 finish 事件数据结构
 
-覆盖 app/core/sse.py 和 chat_service._build_sources()
+覆盖 app/core/sse.py 和 chat_service.build_sources()
 """
 
 import asyncio
@@ -239,12 +239,12 @@ class TestStreamWithHeartbeat:
 
 
 class TestBuildSources:
-    """测试 sources 事件数据结构（使用生产函数 _build_sources 避免逻辑重复）"""
+    """测试 sources 事件数据结构（使用公开函数 build_sources 避免逻辑重复）"""
 
     def test_sources数据结构完整(self):
         """U7.85 — sources 事件 chunks 应包含 chunk_index/doc_id/doc_name/content/score/page/preview_text/highlight_start/highlight_end"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
-        from app.services.chat_service import _build_sources
+        from app.services.chat_service import build_sources
 
         results = [
             RetrievalResult(
@@ -261,7 +261,7 @@ class TestBuildSources:
         reranked_output = RetrievalOutput(results=results, total=2)
         doc_map = {1: "文档A.pdf", 2: "文档B.md"}
 
-        sources = _build_sources(reranked_output.results, doc_map)
+        sources = build_sources(reranked_output.results, doc_map)
 
         assert len(sources) == 2
 
@@ -288,7 +288,7 @@ class TestBuildSources:
         """Evidence 定位：match_sentences 后生成 preview_text + highlight_start/end"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
         from app.rag.sentence_matcher import match_sentences
-        from app.services.chat_service import _build_sources
+        from app.services.chat_service import build_sources
 
         content = "公司报销制度规定：差旅报销需提交差旅申请单和交通票据。报销金额上限为每次5000元。"
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9)]
@@ -296,7 +296,7 @@ class TestBuildSources:
 
         # Evidence 定位：句级 BM25 → matched_sentence
         matched = match_sentences(reranked_output, "差旅报销需要提交什么材料")
-        sources = _build_sources(matched.results, {1: "报销制度.md"})
+        sources = build_sources(matched.results, {1: "报销制度.md"})
 
         assert sources[0].preview_text is not None
         assert sources[0].preview_range is not None
@@ -311,14 +311,14 @@ class TestBuildSources:
     def test_智能预览降级(self):
         """无 matched_sentence 时 preview/highlight 为 None（前端降级展示 content 前 200 字符）"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
-        from app.services.chat_service import _build_sources
+        from app.services.chat_service import build_sources
 
         content = "x" * 300
         results = [RetrievalResult(doc_id=1, chunk_index=0, content=content, score=0.9)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
         # 不调用 match_sentences → matched_sentence 为 None → preview/highlight 为 None
-        sources = _build_sources(reranked_output.results, {1: "x.txt"})
+        sources = build_sources(reranked_output.results, {1: "x.txt"})
 
         assert sources[0].preview_text is None
         assert sources[0].preview_range is None
@@ -330,12 +330,12 @@ class TestBuildSources:
     def test_doc_map缺失时doc_name为空(self):
         """doc_map 中找不到 doc_id 时 doc_name 应为空字符串"""
         from app.rag.retriever import RetrievalResult, RetrievalOutput
-        from app.services.chat_service import _build_sources
+        from app.services.chat_service import build_sources
 
         results = [RetrievalResult(doc_id=99, chunk_index=0, content="内容", score=0.5)]
         reranked_output = RetrievalOutput(results=results, total=1)
 
-        sources = _build_sources(reranked_output.results, {})  # 空 doc_map
+        sources = build_sources(reranked_output.results, {})  # 空 doc_map
 
         assert sources[0].doc_name == ""
 

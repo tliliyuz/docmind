@@ -553,7 +553,7 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
     skip_retrieval = (intent == Intent.CASUAL)
 
     # 2. 问题重写（仅 KNOWLEDGE 路径，仅检测到歧义时）
-    if not skip_retrieval and _needs_rewrite(question, history_messages):
+    if not skip_retrieval and needs_rewrite(question, history_messages):
         question = await rewrite_query(question, history_messages)
 
     # 3. 多路检索
@@ -605,9 +605,9 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
   ↓
 [parser.py] DOCX 标题样式 → Markdown # 标记
   ↓ full_text（含 # 标题）
-[chunker.py] _detect_sections() → 扫描 #/##/### 标题
+[chunker.py] detect_sections() → 扫描 #/##/### 标题
   ↓ sections: [(offset, level, title), ...]
-[chunker.py] _resolve_section(offset, sections) → (section_title, section_path)
+[chunker.py] resolve_section(offset, sections) → (section_title, section_path)
   ↓ 写入 ChunkResult.section_title / section_path
 [tasks.py] 写入 Chunk.metadata_ JSON → {"page": N, "section_title": "...", "section_path": "..."}
   ↓ 写入 ChromaDB metadata（5 字段）
@@ -652,7 +652,7 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
 detect_section_numbers(question) → ["3.2"]
     ↓
 对每个 chunk 的 section_info:
-    _match_section_numbers(section_title, section_path, ["3.2"])
+    match_section_numbers(section_title, section_path, ["3.2"])
       → "3.2" in "§3.2 限流配置" → True
     ↓
 BM25 分数加权：

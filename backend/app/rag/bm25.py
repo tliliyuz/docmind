@@ -74,8 +74,11 @@ def _tokenize(text: str) -> list[str]:
     return jieba.lcut(text)
 
 
-def _cn_to_int(cn: str) -> int:
-    """中文字数字 → 整数（如 '四'→4, '十二'→12, '一百零三'→103）。"""
+def cn_to_int(cn: str) -> int:
+    """中文字数字 → 整数（如 '四'→4, '十二'→12, '一百零三'→103）。
+
+    纯计算逻辑，包含多位数、进位、零的处理等边界条件。
+    """
     result = 0
     current = 0
     for ch in cn:
@@ -125,7 +128,7 @@ def detect_section_numbers(question: str) -> list[str]:
     # 中文章节（第四章, 第三节）
     for m in _CN_CHAPTER_PATTERN.finditer(question):
         try:
-            num = str(_cn_to_int(m.group(1)))
+            num = str(cn_to_int(m.group(1)))
             numbers.append(num)
         except (ValueError, KeyError):
             pass
@@ -148,14 +151,14 @@ def detect_section_numbers(question: str) -> list[str]:
     return result
 
 
-def _match_section_numbers(
+def match_section_numbers(
     section_title: str | None,
     section_path: str | None,
     target_numbers: list[str],
 ) -> bool:
     """检查章节元数据是否匹配目标章节号。
 
-    匹配策略：
+    匹配策略（§8.8 章节号增强核心业务规则）：
     - 完整匹配：section_title 包含目标编号（如 "4.7" 匹配 "§4.7 限流"）
     - 层级匹配：section_path 中任一层级包含目标编号
     - 单个数字匹配：短编号（如 "4"）同时匹配 section_title 中以该数字开头的标题
@@ -286,7 +289,7 @@ class BM25Retriever:
                 boost = settings.BM25_SECTION_BOOST_FACTOR
                 for i in range(len(scores)):
                     si = section_info_list[i] if i < len(section_info_list) else {}
-                    if _match_section_numbers(
+                    if match_section_numbers(
                         si.get("section_title") or None,
                         si.get("section_path") or None,
                         section_numbers,

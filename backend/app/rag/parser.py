@@ -152,7 +152,7 @@ def _docx_heading_to_markdown(paragraph) -> str | None:
     """检测 Word 段落是否为标题样式，返回对应的 Markdown # 前缀文本。
 
     对齐 ROADMAP.md §8.7：将 DOCX 标题样式转换为 Markdown 标记，
-    使 chunker.py 的 _detect_sections() 可跨 MD/DOCX 统一检测。
+    使 chunker.py 的 detect_sections() 可跨 MD/DOCX 统一检测。
 
     防御性设计：MagicMock 等非真实对象会导致属性访问异常，
     此时返回 None 降级为普通文本提取。

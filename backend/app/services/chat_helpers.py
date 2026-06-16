@@ -29,7 +29,7 @@ _CITATION_PATTERN = re.compile(r'\[来源(\d+)\]')
 TITLE_TRUNCATE_LENGTH = 12
 
 
-def _generate_title(question: str) -> str:
+def generate_title(question: str) -> str:
     """自动生成会话标题：截取用户问题前 N 字，去除标点。
 
     对齐 ARCHITECTURE.md §5.1 / ROADMAP.md Decision #24。
@@ -39,7 +39,7 @@ def _generate_title(question: str) -> str:
     return title.strip() or "新对话"
 
 
-async def _generate_title_llm(question: str) -> str:
+async def generate_title_llm(question: str) -> str:
     """LLM 生成会话标题，失败时回退到前 12 字截断。
 
     对齐 ROADMAP.md §6.1 任务 3：替换「前 12 字截断」方案。
@@ -63,10 +63,10 @@ async def _generate_title_llm(question: str) -> str:
         logger.warning("LLM 标题生成失败，回退到截断方案")
 
     # 回退：前 12 字截断（保留原逻辑）
-    return _generate_title(question)
+    return generate_title(question)
 
 
-async def _load_history(
+async def load_history(
     db: AsyncSession,
     conversation_id: int,
     max_tokens: int = settings.HISTORY_BUDGET,
@@ -126,7 +126,7 @@ async def _load_history(
     return result
 
 
-def _extract_citation_indices(text: str) -> set[str]:
+def extract_citation_indices(text: str) -> set[str]:
     """从 LLM 回答中提取所有 [来源N] 的编号 N，去重返回。
 
     用于 sources 引用过滤：仅发送 LLM 实际引用的 chunk，
@@ -144,7 +144,7 @@ def _extract_citation_indices(text: str) -> set[str]:
     return set(_CITATION_PATTERN.findall(text))
 
 
-def _build_sources(
+def build_sources(
     chunks: list,
     doc_map: dict[int, str],
 ) -> list[ChatSourceChunk]:
@@ -201,7 +201,7 @@ def _build_sources(
     return sources
 
 
-def _build_sources_event_data(
+def build_sources_event_data(
     sources: list[ChatSourceChunk],
     audit_result: EvidenceAuditResult | None = None,
 ) -> dict:

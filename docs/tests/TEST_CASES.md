@@ -343,7 +343,10 @@
 | P3-U7.36 | RRF-排名相同处理 | `rrf_fusion()` | 不同 chunk 在同一路中 rank 相同（罕见） | 使用平均 rank 或文档 ID 作为 tiebreaker | ✅ | 2026-05-30 | — |
 | P3-U7.37 | RRF-k 值可配置 | `rrf_fusion()` | k=10 / k=60 / k=120 | k 越小排名影响越大，k=60 为默认平衡值 | ✅ | 2026-05-30 | — |
 
-### 5.5 后端 — NoopReranker 测试 ❌ 已移除
+### 5.5 后端 — NoopReranker 测试（历史记录，已移除）
+
+> **NoopReranker 类已于 Phase 5.5 删除**，以下 5 个用例随之下线，保留于此仅作审计追溯。
+> DashScopeReranker 集成测试（P5.5-RR.1-P5.5-RR.22）已覆盖降级回退路径。
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -720,24 +723,24 @@
 > 测试文件：`tests/unit/rag/test_query_rewriter.py`（已实现，27 用例全部通过）。详细设计见 RAG_PIPELINE.md §4。
 > **触发策略 v2**：仅检查明确歧义信号词（13 个），不使用短问题阈值。
 
-**触发判断 `_needs_rewrite` 测试**
+**触发判断 `needs_rewrite` 测试**
 
 | ID | 测试用例 | 被测函数 | 输入 | 预期输出 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P4-U8.20 | 无历史-跳过 | `_needs_rewrite` | question="它需要几个人参加？", history=[] | `False` | ✅ | 2026-06-08 | 无参考上下文 |
-| P4-U8.21 | 有历史+含代词-触发 | `_needs_rewrite` | question="它需要几个人参加？", history=[...] | `True` | ✅ | 2026-06-08 | 「它」为歧义信号词 |
-| P4-U8.22 | 有历史+短问题但无信号词-跳过 | `_needs_rewrite` | question="不通过的话怎么办？", history=[...] | `False` | ✅ | 2026-06-08 | 无歧义信号词，v2 短问题本身不触发 |
-| P4-U8.23 | 有历史+含「这个」-触发 | `_needs_rewrite` | question="这个怎么处理？", history=[...] | `True` | ✅ | 2026-06-08 | 「这个」为歧义信号词 |
-| P4-U8.24 | 有历史+含「那」-触发 | `_needs_rewrite` | question="那请假呢？", history=[...] | `True` | ✅ | 2026-06-08 | 「那」+「呢」均为歧义信号 |
-| P4-U8.25 | 有历史+独立完整问题-跳过 | `_needs_rewrite` | question="新员工入职流程具体包含哪些步骤？", history=[...] | `False` | ✅ | 2026-06-08 | 无歧义信号词 |
-| P4-U8.26 | 有历史+含「刚才」-触发 | `_needs_rewrite` | question="刚才说的 VPN，忘记密码怎么办？", history=[...] | `True` | ✅ | 2026-06-08 | v2：「刚才」为新增信号词 |
-| P4-U8.27 | 有历史+含「呢」-触发 | `_needs_rewrite` | question="具体多少钱呢？", history=[...] | `True` | ✅ | 2026-06-08 | 「呢」为歧义信号词 |
-| P4-U8.28 | 有历史+含「他们」-触发 | `_needs_rewrite` | question="他们的分工是什么？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
-| P4-U8.29 | 有历史+含「这些」-触发 | `_needs_rewrite` | question="这些材料有模板吗？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
-| P4-U8.30 | 有历史+含「那些」-触发 | `_needs_rewrite` | question="那些福利需要申请吗？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
-| P4-U8.31 | 有历史+含「上面」-触发 | `_needs_rewrite` | question="上面提到的迟到怎么处理？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
-| P4-U8.32 | 有历史+含「前面说的」-触发 | `_needs_rewrite` | question="前面说的内部培训费用谁出？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
-| P4-U8.33 | 有历史+含「刚才」-触发 | `_needs_rewrite` | question="刚才说的客户端在哪里下载？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| P4-U8.20 | 无历史-跳过 | `needs_rewrite` | question="它需要几个人参加？", history=[] | `False` | ✅ | 2026-06-08 | 无参考上下文 |
+| P4-U8.21 | 有历史+含代词-触发 | `needs_rewrite` | question="它需要几个人参加？", history=[...] | `True` | ✅ | 2026-06-08 | 「它」为歧义信号词 |
+| P4-U8.22 | 有历史+短问题但无信号词-跳过 | `needs_rewrite` | question="不通过的话怎么办？", history=[...] | `False` | ✅ | 2026-06-08 | 无歧义信号词，v2 短问题本身不触发 |
+| P4-U8.23 | 有历史+含「这个」-触发 | `needs_rewrite` | question="这个怎么处理？", history=[...] | `True` | ✅ | 2026-06-08 | 「这个」为歧义信号词 |
+| P4-U8.24 | 有历史+含「那」-触发 | `needs_rewrite` | question="那请假呢？", history=[...] | `True` | ✅ | 2026-06-08 | 「那」+「呢」均为歧义信号 |
+| P4-U8.25 | 有历史+独立完整问题-跳过 | `needs_rewrite` | question="新员工入职流程具体包含哪些步骤？", history=[...] | `False` | ✅ | 2026-06-08 | 无歧义信号词 |
+| P4-U8.26 | 有历史+含「刚才」-触发 | `needs_rewrite` | question="刚才说的 VPN，忘记密码怎么办？", history=[...] | `True` | ✅ | 2026-06-08 | v2：「刚才」为新增信号词 |
+| P4-U8.27 | 有历史+含「呢」-触发 | `needs_rewrite` | question="具体多少钱呢？", history=[...] | `True` | ✅ | 2026-06-08 | 「呢」为歧义信号词 |
+| P4-U8.28 | 有历史+含「他们」-触发 | `needs_rewrite` | question="他们的分工是什么？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| P4-U8.29 | 有历史+含「这些」-触发 | `needs_rewrite` | question="这些材料有模板吗？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| P4-U8.30 | 有历史+含「那些」-触发 | `needs_rewrite` | question="那些福利需要申请吗？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| P4-U8.31 | 有历史+含「上面」-触发 | `needs_rewrite` | question="上面提到的迟到怎么处理？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| P4-U8.32 | 有历史+含「前面说的」-触发 | `needs_rewrite` | question="前面说的内部培训费用谁出？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
+| P4-U8.33 | 有历史+含「刚才」-触发 | `needs_rewrite` | question="刚才说的客户端在哪里下载？", history=[...] | `True` | ✅ | 2026-06-08 | v2 新增信号词 |
 
 **Rewrite 正确性测试**
 
@@ -1214,7 +1217,7 @@
 
 | 优先级 | 功能 | 来源 | 简要测试方向 |
 |:---|:---|:---|:---|
-| P0 | DashScope Rerank API | Phase 3 | Reranker 结果排序正确性 / top_k 截取 / API 异常处理 |
+| P0 | ~~DashScope Rerank API~~ ✅ 已完成（Phase 5.5） | Phase 3 | Reranker 结果排序正确性 / top_k 截取 / API 异常处理（22 个测试用例 P5.5-RR.1-P5.5-RR.22 已全部通过） |
 | P1 | 结构感知分块 | Phase 2 | Markdown 标题层级保留 / 跨标题边界不截断 |
 | P1 | LLM 摘要压缩 | Phase 4 | 摘要 token 控制 / 关键信息不丢失 |
 | P2 | WebSocket 实时推送 | Phase 2 | 连接建立/断开/重连 / 状态变更事件 |
@@ -1243,7 +1246,7 @@
 | `schemas/knowledge_base.py` | ≥ 85% | ✅ 100% | visibility 字段校验 10 用例（P25-U9.1-P25-U9.8），Phase 2.5 |
 | `services/knowledge_base_service.py` | ≥ 80% | ✅ 33 用例 | `test_kb_service.py` 全覆盖：`_get_real_chunk_counts`(4) + `create_kb`(3) + `get_kb`(8) + `list_kbs`(3) + `list_public_kbs`(2) + `update_kb`(8) + `delete_kb`(3) + `check_kb_active`(2) |
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
-| `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`_validate_file`(7) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
+| `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`validate_file`(12) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例；适配 BaseVectorStore 抽象，AsyncMock 替代 ChromaDB Mock） |
 | `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2：BM25 检索 + 三级缓存（进程内→Redis→MySQL）+ async Redis（31 用例，含 7 个真实 jieba 集成测试 + 进程内缓存 + 异步缓存清除） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |

@@ -1,7 +1,7 @@
 """问答业务逻辑 — 检索 → RRF → Rerank → Prompt → LLM SSE 流式输出
 
 对齐 ARCHITECTURE.md §5.1 / ROADMAP.md §6.1：
-- 多轮对话上下文：_load_history() 加载历史消息注入 LLM messages
+- 多轮对话上下文：load_history() 加载历史消息注入 LLM messages
 - Token 预算四池子分拆：System 2000 / History 6000 / Retrieval 10000 / Question 2000
 - 轻量闲谈检测：问候/致谢/告别等跳过检索，直接 LLM 回复
 - 会话标题 LLM 生成：finish 先返回截断标题，SSE 流结束后异步调用 LLM 更新
@@ -48,7 +48,7 @@ from app.rag.knowledge_pipeline import (
 )
 from app.rag.trace_recorder import TraceRecorder
 from app.schemas.chat import SelectableKBItem, SelectableKBResponse
-from app.services.chat_helpers import _load_history
+from app.services.chat_helpers import load_history
 from app.services.sse_stream import (
     _generate_meta_response,
     _generate_reject_response,
@@ -140,7 +140,7 @@ async def _validate_and_prepare(
             raise ConversationAccessDeniedException()
         is_first_turn = (conv.message_count == 0)  # 在插入用户消息前判定
         # 加载历史消息（在保存用户消息之前！避免当前消息被重复注入）
-        history_messages = await _load_history(db, conv.id)
+        history_messages = await load_history(db, conv.id)
     else:
         conv = Conversation(uuid=str(uuid4()), user_id=user_id, kb_id=real_kb_id)
         db.add(conv)
@@ -386,10 +386,10 @@ async def get_selectable_kbs(
 # Re-exports：保持向后兼容，所有现有 from app.services.chat_service import ... 路径继续有效
 # ============================================================
 from app.services.chat_helpers import (  # noqa: E402, F401
-    _build_sources,
-    _build_sources_event_data,
-    _extract_citation_indices,
-    _generate_title,
-    _generate_title_llm,
-    _load_history,
+    build_sources,
+    build_sources_event_data,
+    extract_citation_indices,
+    generate_title,
+    generate_title_llm,
+    load_history,
 )

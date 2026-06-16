@@ -292,7 +292,7 @@ class TestRateLimitMiddlewareIntegration:
         await app(scope, receive, send)
 
         # WebSocket 请求直接放行，不经过限流逻辑
-        assert len(messages) > 0
+        assert len(messages) == 2  # http.response.start + http.response.body
 
     @pytest.mark.asyncio
     async def test_限流Lua脚本调用参数正确(self):

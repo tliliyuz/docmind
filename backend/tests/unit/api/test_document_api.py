@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core.exceptions import (
+    ConversationNotFoundException,
     DocumentNameExistsException,
     DocumentNotFoundException,
     DocumentProcessingError,
@@ -41,7 +42,15 @@ DOC_UUID_999 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 def _uuid_to_id_side_effect(db, model_class, uuid_str):
     """模拟 resolve_uuid_to_id：UUID 字符串 → integer ID"""
-    from app.core.uuid_helpers import _get_not_found_exception
+    from app.models.knowledge_base import KnowledgeBase
+    from app.models.document import Document
+    from app.models.conversation import Conversation
+
+    _EXCEPTION_MAP = {
+        KnowledgeBase: KnowledgeBaseNotFoundException,
+        Document: DocumentNotFoundException,
+        Conversation: ConversationNotFoundException,
+    }
     _map = {
         KB_UUID: 1,
         KB_UUID_999: 999,
@@ -50,7 +59,8 @@ def _uuid_to_id_side_effect(db, model_class, uuid_str):
         DOC_UUID_999: 999,
     }
     if uuid_str not in _map:
-        raise _get_not_found_exception(model_class)(uuid_str)
+        exc_cls = _EXCEPTION_MAP.get(model_class, KnowledgeBaseNotFoundException)
+        raise exc_cls(uuid_str)
     return _map[uuid_str]
 
 

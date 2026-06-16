@@ -8,10 +8,10 @@ from app.rag.chunker import (
     ChunkingResult,
     chunk_document,
     estimate_tokens,
-    _build_page_offset_map,
-    _resolve_page_number,
-    _detect_sections,
-    _resolve_section,
+    build_page_offset_map,
+    resolve_page_number,
+    detect_sections,
+    resolve_section,
 )
 from app.rag.parser import ParsedPage
 
@@ -85,14 +85,14 @@ class TestEstimateTokens:
 
 
 class TestBuildPageOffsetMap:
-    """_build_page_offset_map 页码偏移映射测试"""
+    """build_page_offset_map 页码偏移映射测试"""
 
     def test_正常页面构建偏移映射(self):
         pages = [
             ParsedPage(1, "第一页内容"),
             ParsedPage(2, "第二页内容"),
         ]
-        offset_map = _build_page_offset_map(pages)
+        offset_map = build_page_offset_map(pages)
         assert len(offset_map) == 2
         # 第1页从偏移0开始
         assert offset_map[0] == (0, 1)
@@ -105,7 +105,7 @@ class TestBuildPageOffsetMap:
             ParsedPage(2, "", success=False, error="失败"),
             ParsedPage(3, "第三页"),
         ]
-        offset_map = _build_page_offset_map(pages)
+        offset_map = build_page_offset_map(pages)
         assert len(offset_map) == 2
         assert offset_map[0] == (0, 1)
         assert offset_map[1] == (len("OK") + 2, 3)
@@ -115,41 +115,41 @@ class TestBuildPageOffsetMap:
             ParsedPage(1, ""),
             ParsedPage(2, "有内容"),
         ]
-        offset_map = _build_page_offset_map(pages)
+        offset_map = build_page_offset_map(pages)
         # 第1页 content 为空，被跳过；仅第2页进入映射
         assert len(offset_map) == 1
         assert offset_map[0][1] == 2
 
     def test_空页面列表(self):
-        assert _build_page_offset_map([]) == []
+        assert build_page_offset_map([]) == []
 
 
 class TestResolvePageNumber:
-    """_resolve_page_number 页码定位测试"""
+    """resolve_page_number 页码定位测试"""
 
     def test_定位到首页(self):
         offset_map = [(0, 1), (10, 2), (20, 3)]
         # start_offset=3 落在偏移 0-10 区间，属第1页
-        assert _resolve_page_number(3, offset_map) == 1
+        assert resolve_page_number(3, offset_map) == 1
 
     def test_定位到中间页(self):
         offset_map = [(0, 1), (5, 2), (10, 3)]
         # start_offset=6 落在偏移 5-10 区间，属第2页
-        page_num = _resolve_page_number(6, offset_map)
+        page_num = resolve_page_number(6, offset_map)
         assert page_num == 2
 
     def test_定位到末页(self):
         offset_map = [(0, 1), (10, 2)]
         # start_offset=12 落在偏移 10+ 区间，属第2页
-        page_num = _resolve_page_number(12, offset_map)
+        page_num = resolve_page_number(12, offset_map)
         assert page_num == 2
 
     def test_空偏移映射_返回None(self):
-        assert _resolve_page_number(0, []) is None
+        assert resolve_page_number(0, []) is None
 
     def test_start_offset为负1_返回None(self):
         offset_map = [(0, 1)]
-        assert _resolve_page_number(-1, offset_map) is None
+        assert resolve_page_number(-1, offset_map) is None
 
 
 class TestChunkDocument:
@@ -313,19 +313,19 @@ class TestChunkDocument:
 
 
 class TestDetectSections:
-    """_detect_sections() — Markdown 标题提取"""
+    """detect_sections() — Markdown 标题提取"""
 
     def test_空文本(self):
-        assert _detect_sections("") == []
-        assert _detect_sections(None) == []  # type: ignore
+        assert detect_sections("") == []
+        assert detect_sections(None) == []  # type: ignore
 
     def test_无标题文本(self):
-        sections = _detect_sections("这是普通文本，没有任何标题。\n还是普通文本。")
+        sections = detect_sections("这是普通文本，没有任何标题。\n还是普通文本。")
         assert sections == []
 
     def test_单个一级标题(self):
         text = "# 概述\n这是内容。"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert len(sections) == 1
         offset, level, title = sections[0]
         assert level == 1
@@ -333,7 +333,7 @@ class TestDetectSections:
 
     def test_多级标题(self):
         text = "# 第一章\n内容...\n## 1.1 背景\n更多内容\n### 1.1.1 细节\n详细内容"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert len(sections) == 3
         assert sections[0] == (0, 1, "第一章")
         assert sections[1][2] == "1.1 背景"
@@ -343,7 +343,7 @@ class TestDetectSections:
 
     def test_六级标题(self):
         text = "###### 最小标题\n内容"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert len(sections) == 1
         assert sections[0][1] == 6
         assert sections[0][2] == "最小标题"
@@ -351,31 +351,31 @@ class TestDetectSections:
     def test_忽略超过六级(self):
         """####### 不是标准 Markdown ATX 标题，不匹配"""
         text = "####### 七级不是标题\n内容"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert sections == []
 
     def test_空标题文本被跳过(self):
         """# 后面无内容不产生 section"""
         text = "# \n内容"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert sections == []
 
     def test_标题带前后空白(self):
         text = "##   带空格标题   \n内容"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert len(sections) == 1
         assert sections[0][2] == "带空格标题"
 
     def test_代码块中的井号不是标题(self):
         """行内代码块 # 不是标题（正则要求行首）"""
         text = "在代码中 `# 注释` 不是标题\n## 这是标题\n内容"
-        sections = _detect_sections(text)
+        sections = detect_sections(text)
         assert len(sections) == 1
         assert sections[0][2] == "这是标题"
 
 
 class TestResolveSection:
-    """_resolve_section() — 偏移量反查章节"""
+    """resolve_section() — 偏移量反查章节"""
 
     def _make_sections(self) -> list[tuple[int, int, str]]:
         """构建模拟 section 列表"""
@@ -387,38 +387,38 @@ class TestResolveSection:
         ]
 
     def test_无sections返回None(self):
-        assert _resolve_section(100, []) == (None, None)
+        assert resolve_section(100, []) == (None, None)
 
     def test_无效偏移量返回None(self):
-        assert _resolve_section(-1, self._make_sections()) == (None, None)
+        assert resolve_section(-1, self._make_sections()) == (None, None)
 
     def test_偏移量在第一标题前返回None(self):
         """第一个标题之前的内容不属于任何章节"""
         sections = [(50, 1, "概述")]
-        assert _resolve_section(10, sections) == (None, None)
+        assert resolve_section(10, sections) == (None, None)
 
     def test_偏移量在第一个标题上(self):
         sections = self._make_sections()
-        section_title, section_path = _resolve_section(0, sections)
+        section_title, section_path = resolve_section(0, sections)
         assert section_title == "概述"
         assert section_path == "概述"
 
     def test_偏移量匹配第一个子标题(self):
         sections = self._make_sections()
-        section_title, section_path = _resolve_section(10, sections)
+        section_title, section_path = resolve_section(10, sections)
         assert section_title == "环境配置"
         assert section_path == "概述 > 环境配置"
 
     def test_偏移量匹配二级子标题(self):
         sections = self._make_sections()
-        section_title, section_path = _resolve_section(30, sections)
+        section_title, section_path = resolve_section(30, sections)
         assert section_title == "数据库"
         assert section_path == "概述 > 环境配置 > 数据库"
 
     def test_同级标题替换(self):
         """同级或更高级标题出现时，旧同级被弹出"""
         sections = self._make_sections()
-        section_title, section_path = _resolve_section(50, sections)
+        section_title, section_path = resolve_section(50, sections)
         assert section_title == "部署"
         # 部署是 level 2，弹出 level 2 的「环境配置」和 level 3 的「数据库」
         assert section_path == "概述 > 部署"
@@ -426,7 +426,7 @@ class TestResolveSection:
     def test_标题间的内容归属上一个标题(self):
         """两个标题之间的偏移量应归属于第一个标题"""
         sections = [(0, 1, "开始"), (100, 2, "详细")]
-        section_title, section_path = _resolve_section(50, sections)
+        section_title, section_path = resolve_section(50, sections)
         assert section_title == "开始"
         assert section_path == "开始"
 

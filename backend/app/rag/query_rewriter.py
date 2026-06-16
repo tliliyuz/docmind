@@ -1,7 +1,7 @@
 """Query Rewrite — 多轮对话问题重写模块
 
 对齐 ARCHITECTURE.md §5.1.5：
-- _needs_rewrite(): 轻量歧义检测，仅在含代词/指示词等歧义信号时触发
+- needs_rewrite(): 轻量歧义检测，仅在含代词/指示词等歧义信号时触发
 - rewrite_query(): LLM 上下文补全改写，失败时降级返回原始 question
 - 仅取最近 2 轮（4 条消息）作为改写上下文
 - 改写结果不持久化，仅用于检索阶段
@@ -58,10 +58,10 @@ class RewriteResult:
 _QUOTE_CHARS = "\"'\"“”‘’"
 
 
-def _needs_rewrite(question: str, history: list[dict[str, str]] | None) -> bool:
+def needs_rewrite(question: str, history: list[dict[str, str]] | None) -> bool:
     """判断是否需要 Query Rewrite。
 
-    仅当同时满足以下条件时返回 True：
+    纯函数，零外部依赖。仅当同时满足以下条件时返回 True：
     1. 存在历史对话（有可参考的上下文）
     2. 当前问题含明确的歧义信号词（代词/指示词/上下文引用）
 

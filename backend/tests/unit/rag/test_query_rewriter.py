@@ -1,7 +1,7 @@
 """Query Rewrite 单元测试 — 触发判断 / Rewrite 正确性 / 降级
 
 对齐 TEST_CASES.md §6.2.2：
-- U8.20–U8.33  触发判断 _needs_rewrite() 14 用例
+- U8.20–U8.33  触发判断 needs_rewrite() 14 用例
 - U8.30–U8.33  Rewrite 正确性 rewrite_query() 4 用例（注意：ID 与触发判断新用例共享 U8.30-U8.33）
 - U8.40–U8.43  降级行为 4 用例
 
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.rag.query_rewriter import (
-    _needs_rewrite,
+    needs_rewrite,
     rewrite_query,
     RewriteResult,
     AMBIGUOUS_SIGNALS,
@@ -37,22 +37,20 @@ def _make_history(messages: list[tuple[str, str]]) -> list[dict[str, str]]:
     return [{"role": role, "content": content} for role, content in messages]
 
 
-# ===== 触发判断 _needs_rewrite() =====
+# ===== 触发判断 needs_rewrite() =====
 
 class TestNeedsRewrite:
     """触发判断测试（U8.20–U8.33）
 
-    **技术债务**：直接测试私有函数 `_needs_rewrite()`，违反 CLAUDE.md「禁止直接测试
-    `_` 前缀的私有方法」规范。保留现有测试（纯逻辑函数单元测试有工程价值，
-    信号词判断的 14 个边界用例通过 rewrite_query() 测试需要 mock LLM 开销过大），
-    后续应在 rewrite_query() 集成测试中增加代表性触发/跳过用例。
+    needs_rewrite() 是公开纯函数，零外部依赖，直接单元测试。
+    信号词列表 AMBIGUOUS_SIGNALS 为歧义检测的业务规则配置。
     """
 
     # --- 无历史 ---
 
     def test_U820_无历史_跳过(self):
         """无历史时即使含代词也跳过 — 无参考上下文无法消解"""
-        result = _needs_rewrite("它需要几个人参加？", history=[])
+        result = needs_rewrite("它需要几个人参加？", history=[])
         assert result is False
 
     # --- 原始信号词（v1 保留） ---
@@ -63,7 +61,7 @@ class TestNeedsRewrite:
             ("user", "代码评审的标准是什么？"),
             ("assistant", "代码评审需要至少2人参加……"),
         ])
-        result = _needs_rewrite("它需要几个人参加？", history=history)
+        result = needs_rewrite("它需要几个人参加？", history=history)
         assert result is True
 
     def test_U822_有历史_短问题但无信号词_跳过(self):
@@ -73,7 +71,7 @@ class TestNeedsRewrite:
             ("assistant", "代码评审标准包括……"),
         ])
         # "不通过的话怎么办？" — 无任何歧义信号词，不应触发
-        result = _needs_rewrite("不通过的话怎么办？", history=history)
+        result = needs_rewrite("不通过的话怎么办？", history=history)
         assert result is False
 
     def test_U823_有历史_指示词触发(self):
@@ -82,7 +80,7 @@ class TestNeedsRewrite:
             ("user", "怎么配置 VPN？"),
             ("assistant", "VPN 配置需要……"),
         ])
-        result = _needs_rewrite("这个怎么处理？", history=history)
+        result = needs_rewrite("这个怎么处理？", history=history)
         assert result is True
 
     def test_U824_有历史_多重歧义信号触发(self):
@@ -91,7 +89,7 @@ class TestNeedsRewrite:
             ("user", "年假怎么申请？"),
             ("assistant", "年假需要在 OA 系统提交……"),
         ])
-        result = _needs_rewrite("那请假呢？", history=history)
+        result = needs_rewrite("那请假呢？", history=history)
         assert result is True
 
     def test_U825_有历史_独立完整问题_跳过(self):
@@ -102,7 +100,7 @@ class TestNeedsRewrite:
         ])
         # 无歧义信号词
         question = "新员工入职流程具体包含哪些步骤？"
-        result = _needs_rewrite(question, history=history)
+        result = needs_rewrite(question, history=history)
         assert result is False
 
     def test_U826_有历史_含关键词完整问题_跳过(self):
@@ -114,7 +112,7 @@ class TestNeedsRewrite:
         # "刚才说的" 已加入 AMBIGUOUS_SIGNALS，但完整问题是「刚才说的 VPN，忘记密码怎么办？」
         # 含「刚才」→ 触发（"刚才" 在信号列表中）
         # 注意：此行为与 v1 不同 —— v2 中 "刚才" 是信号词
-        result = _needs_rewrite("刚才说的 VPN，忘记密码怎么办？", history=history)
+        result = needs_rewrite("刚才说的 VPN，忘记密码怎么办？", history=history)
         assert result is True  # 含「刚才」信号词
 
     def test_U827_有历史_含呢字_触发(self):
@@ -124,7 +122,7 @@ class TestNeedsRewrite:
             ("assistant", "培训费用为每人 500 元……"),
         ])
         # "具体多少钱呢？" 含「呢」→ 触发
-        result = _needs_rewrite("具体多少钱呢？", history=history)
+        result = needs_rewrite("具体多少钱呢？", history=history)
         assert result is True
 
     # --- 新增信号词（v2 扩展） ---
@@ -135,7 +133,7 @@ class TestNeedsRewrite:
             ("user", "项目组有哪些成员？"),
             ("assistant", "项目组包括张三、李四、王五……"),
         ])
-        result = _needs_rewrite("他们的分工是什么？", history=history)
+        result = needs_rewrite("他们的分工是什么？", history=history)
         assert result is True
 
     def test_U829_有历史_含这些_触发(self):
@@ -144,7 +142,7 @@ class TestNeedsRewrite:
             ("user", "报销需要哪些材料？"),
             ("assistant", "需要发票、审批单、出差报告……"),
         ])
-        result = _needs_rewrite("这些材料有模板吗？", history=history)
+        result = needs_rewrite("这些材料有模板吗？", history=history)
         assert result is True
 
     def test_U830_有历史_含那些_触发(self):
@@ -153,7 +151,7 @@ class TestNeedsRewrite:
             ("user", "公司有哪些福利？"),
             ("assistant", "五险一金、餐补、交通补贴……"),
         ])
-        result = _needs_rewrite("那些福利需要申请吗？", history=history)
+        result = needs_rewrite("那些福利需要申请吗？", history=history)
         assert result is True
 
     def test_U831_有历史_含上面_触发(self):
@@ -162,7 +160,7 @@ class TestNeedsRewrite:
             ("user", "考勤制度是怎样的？"),
             ("assistant", "考勤制度规定每天 9:00-18:00……"),
         ])
-        result = _needs_rewrite("上面提到的迟到怎么处理？", history=history)
+        result = needs_rewrite("上面提到的迟到怎么处理？", history=history)
         assert result is True
 
     def test_U832_有历史_含前面说的_触发(self):
@@ -171,7 +169,7 @@ class TestNeedsRewrite:
             ("user", "公司的培训政策是怎样的？"),
             ("assistant", "培训分为内部和外部……"),
         ])
-        result = _needs_rewrite("前面说的内部培训费用谁出？", history=history)
+        result = needs_rewrite("前面说的内部培训费用谁出？", history=history)
         assert result is True
 
     def test_U833_有历史_含刚才_触发(self):
@@ -180,8 +178,42 @@ class TestNeedsRewrite:
             ("user", "怎么连接公司 VPN？"),
             ("assistant", "需要下载客户端并配置……"),
         ])
-        result = _needs_rewrite("刚才说的客户端在哪里下载？", history=history)
+        result = needs_rewrite("刚才说的客户端在哪里下载？", history=history)
         assert result is True
+
+    # --- 参数化 + 边界 ---
+
+    @pytest.mark.parametrize("signal_word", AMBIGUOUS_SIGNALS)
+    def test_参数化_所有信号词触发(self, signal_word):
+        """每个歧义信号词单独验证：有历史 + 含信号词 → 触发 rewrite"""
+        history = _make_history([
+            ("user", "公司 VPN 怎么配置？"),
+            ("assistant", "VPN 需要下载客户端……"),
+        ])
+        question = f"请问{signal_word}怎么处理？"
+        result = needs_rewrite(question, history=history)
+        assert result is True, f"信号词 '{signal_word}' 应触发 rewrite，但返回了 False"
+
+    @pytest.mark.parametrize("question", [
+        "新员工入职流程具体包含哪些步骤？",
+        "病假需要提供医院证明吗？",
+        "年假怎么申请？",
+        "公司 VPN 密码忘了怎么办",
+        "报销需要哪些材料？",
+    ])
+    def test_无信号词的完整问题不触发(self, question):
+        """不含任何歧义信号词的独立完整问题 → 不触发 rewrite"""
+        history = _make_history([
+            ("user", "公司有哪些福利？"),
+            ("assistant", "五险一金、餐补、交通补贴……"),
+        ])
+        result = needs_rewrite(question, history=history)
+        assert result is False, f"'{question}' 含歧义信号词，不应触发 rewrite"
+
+    def test_none_history不触发(self):
+        """history=None → 无可用上下文，不触发 rewrite"""
+        result = needs_rewrite("它需要几个人参加？", history=None)
+        assert result is False
 
 
 # ===== Rewrite 正确性 =====

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import settings
 from app.core.llm import LLMResult
 from app.rag.intent import Intent, IntentResult, classify_intent
 from app.rag.retriever import RetrievalOutput
@@ -46,8 +47,7 @@ async def test_classify_knowledge_policy_question():
         result = await classify_intent("报销需要提交哪些材料？")
         assert result.intent == Intent.KNOWLEDGE
         assert result.method == "llm_flash"
-        assert isinstance(result.metadata["model"], str)
-        assert len(result.metadata["model"]) > 0
+        assert result.metadata["model"] == settings.LLM_FLASH_MODEL
         mock_llm.assert_called_once()
         # 验证 deep_thinking=False + max_tokens=10
         call_kwargs = mock_llm.call_args
@@ -138,152 +138,7 @@ async def test_fallback_on_invalid_label():
         assert result.method == "regex"
 
 
-# ==================== 路由逻辑（2 用例，集成测试） ====================
-# 技术债务：直接测试 _validate_and_prepare() 私有函数，违反 CLAUDE.md「禁止直接测试
-# `_` 前缀的私有方法」规范。保留现有测试（验证 META/CASUAL 路由分支有工程价值），
-# 后续应通过 chat() 公共 API 的 SSE 输出间接覆盖路由逻辑。
-
-
-@pytest.mark.asyncio
-async def test_meta_routing_raises_exception_before_retrieval():
-    """U-I09: META 意图 → _validate_and_prepare() 抛出 MetaQuestionException，不进入检索流程
-
-    验证 META 路径在 validate 阶段即中断，携带 conv 和 is_first_turn 信息，
-    由上层 SSE 处理器生成固定响应（本测试仅覆盖异常抛出，不覆盖 SSE 输出）。
-    """
-    from app.core.exceptions import MetaQuestionException
-    from app.services.chat_service import chat
-
-    mock_conv = MagicMock()
-    mock_conv.id = 1
-    mock_conv.uuid = _TEST_CONV_UUID
-    mock_conv.message_count = 0
-    mock_conv.user_id = 1
-
-    mock_kb = MagicMock()
-    mock_kb.id = 1
-    mock_kb.status = "active"
-    mock_kb.visibility = "private"
-    mock_kb.user_id = 1
-
-    mock_db = AsyncMock()
-    mock_db.get = AsyncMock(return_value=mock_kb)
-
-    mock_user_msg = MagicMock(id=10, role="user", content="你能做什么？")
-
-    async def _mock_resolve_uuid(db, model, uuid_str):
-        """模拟 UUID→ID 转换"""
-        if uuid_str == _TEST_KB_UUID:
-            return 1
-        return None
-
-    with patch("app.services.chat_service.classify_intent", new_callable=AsyncMock) as mock_classify, \
-         patch("app.services.chat_service.Conversation", return_value=mock_conv), \
-         patch("app.services.chat_service.Message", return_value=mock_user_msg), \
-         patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
-               side_effect=_mock_resolve_uuid):
-        mock_classify.return_value = IntentResult(
-            intent=Intent.META, method="regex",
-            metadata={"model": None, "confidence": None},
-        )
-
-        # _validate_and_prepare 应抛出 MetaQuestionException
-        with pytest.raises(MetaQuestionException) as exc_info:
-            from app.services.chat_service import _validate_and_prepare
-            await _validate_and_prepare(
-                db=mock_db, user_id=1, role="user",
-                conversation_id=None, kb_id=_TEST_KB_UUID, question="你能做什么？",
-            )
-
-        # 验证异常携带 conv 信息
-        assert exc_info.value.conv == mock_conv
-        assert exc_info.value.is_first_turn is True
-
-
-@pytest.mark.asyncio
-async def test_casual_routing_skips_retrieval():
-    """U-I10: CASUAL 意图 → 跳过检索，使用 CASUAL_SYSTEM_PROMPT
-
-    验证 CASUAL 路径下不调用向量检索和 BM25 检索。
-    """
-    from app.services.chat_service import _validate_and_prepare
-    from app.rag.knowledge_pipeline import CASUAL_SYSTEM_PROMPT
-
-    mock_conv = MagicMock()
-    mock_conv.id = 1
-    mock_conv.uuid = _TEST_CONV_UUID
-    mock_conv.user_id = 1
-    mock_conv.message_count = 0
-    mock_conv.title = "新对话"
-
-    mock_kb = MagicMock()
-    mock_kb.id = 1
-    mock_kb.status = "active"
-    mock_kb.visibility = "private"
-    mock_kb.user_id = 1
-
-    mock_db = AsyncMock()
-
-    def get_side_effect(model, pk):
-        if model.__name__ == "KnowledgeBase":
-            return mock_kb
-        if model.__name__ == "Conversation":
-            return mock_conv
-        return None
-
-    mock_db.get = AsyncMock(side_effect=get_side_effect)
-
-    # 历史查询返回空
-    history_result = MagicMock()
-    history_result.scalars.return_value.all.return_value = []
-    # 文档名查询返回空
-    doc_name_result = MagicMock()
-    doc_name_result.scalars.return_value.all.return_value = []
-
-    mock_db.execute = AsyncMock(side_effect=[history_result, doc_name_result])
-
-    async def _mock_resolve_uuid(db, model, uuid_str):
-        """模拟 UUID→ID 转换"""
-        if uuid_str == _TEST_KB_UUID:
-            return 1
-        return None
-
-    with patch("app.services.chat_service.classify_intent", new_callable=AsyncMock) as mock_classify, \
-         patch("app.services.chat_service.Conversation", return_value=mock_conv), \
-         patch("app.services.chat_service.Message") as MockMessage, \
-         patch("app.services.chat_service._pipeline") as mock_pipeline, \
-         patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
-               side_effect=_mock_resolve_uuid):
-
-        mock_classify.return_value = IntentResult(
-            intent=Intent.CASUAL, method="regex",
-            metadata={"model": None, "confidence": None},
-        )
-        MockMessage.return_value = MagicMock(id=10, role="user", content="你好")
-
-        # Mock _pipeline.execute_casual 返回 KnowledgePipelineResult
-        from app.rag.knowledge_pipeline import KnowledgePipelineResult
-        from app.rag.prompt_builder import PromptBuildResult
-        mock_pipeline.execute_casual = AsyncMock(return_value=KnowledgePipelineResult(
-            reranked_output=RetrievalOutput(),
-            prompt_result=PromptBuildResult(
-                system_prompt=CASUAL_SYSTEM_PROMPT,
-                user_prompt="你好",
-                used_chunks=[],
-                total_context_tokens=0,
-                chunks_count=0,
-                history_messages=[],
-            ),
-            doc_map={},
-        ))
-
-        conv, is_first_turn, pipeline_result = await _validate_and_prepare(
-            db=mock_db, user_id=1, role="user",
-            conversation_id=None, kb_id=_TEST_KB_UUID, question="你好",
-        )
-
-        # CASUAL 路径：prompt 使用 CASUAL_SYSTEM_PROMPT
-        assert pipeline_result.prompt_result.system_prompt == CASUAL_SYSTEM_PROMPT
-        assert pipeline_result.prompt_result.used_chunks == []
-        assert pipeline_result.prompt_result.chunks_count == 0
-
+# ==================== 路由逻辑 ====================
+# META/CASUAL 路由逻辑通过 chat() 公共 API 的 SSE 集成测试间接覆盖
+# （见 tests/unit/services/test_chat_service.py TestChatNormalFlow 等）。
+# _validate_and_prepare() 为 chat() 内部私有方法，禁止直接测试。

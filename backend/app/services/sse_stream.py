@@ -28,11 +28,11 @@ from app.rag.trace_recorder import TraceRecorder
 from app.services.chat_helpers import (
     _NOT_FOUND_KEYWORDS,
     _CITATION_PATTERN,
-    _build_sources,
-    _build_sources_event_data,
-    _extract_citation_indices,
-    _generate_title,
-    _generate_title_llm,
+    build_sources,
+    build_sources_event_data,
+    extract_citation_indices,
+    generate_title,
+    generate_title_llm,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ async def _generate_sse_stream(
         _error_chunks = prompt_result.used_chunks or reranked_output.results
         if _error_chunks:
             # LLM 失败时无 assistant_content，preview 降级为 None
-            sources = _build_sources(_error_chunks, doc_map)
+            sources = build_sources(_error_chunks, doc_map)
             yield format_sse_event("sources", {"chunks": [s.model_dump() for s in sources]})
 
         error_code = "E4002"
@@ -226,7 +226,7 @@ async def _generate_sse_stream(
     logger.info(
         "SOURCES_DIAG used_chunks=%d cited=%s has_citation=%s not_found=%s answer_head=%s",
         len(prompt_result.used_chunks) if prompt_result.used_chunks else 0,
-        _extract_citation_indices(_answer_stripped) if _answer_stripped else set(),
+        extract_citation_indices(_answer_stripped) if _answer_stripped else set(),
         _has_citation,
         _not_found,
         _answer_head,
@@ -239,14 +239,14 @@ async def _generate_sse_stream(
 
     if reranked_output.results and not _not_found:
         _send_chunks = prompt_result.used_chunks or reranked_output.results
-        _cited_indices = _extract_citation_indices(_answer_stripped)
+        _cited_indices = extract_citation_indices(_answer_stripped)
         if _cited_indices:
             _cited_with_orig_index = [
                 (i + 1, c) for i, c in enumerate(_send_chunks)
                 if str(i + 1) in _cited_indices
             ]
             if _cited_with_orig_index:
-                sources = _build_sources(
+                sources = build_sources(
                     [c for _, c in _cited_with_orig_index],
                     doc_map,
                 )
@@ -254,7 +254,7 @@ async def _generate_sse_stream(
                     sources[j].chunk_index = orig_idx
                 yield format_sse_event(
                     "sources",
-                    _build_sources_event_data(sources, _audit_result),
+                    build_sources_event_data(sources, _audit_result),
                 )
         else:
             # 回退：LLM 未引用 [来源N] 但检索有结果 → 发送全部 used_chunks
@@ -263,10 +263,10 @@ async def _generate_sse_stream(
                 "SOURCES_FALLBACK: LLM 未引用 [来源N]，回退发送全部 used_chunks (%d 个)",
                 len(_send_chunks),
             )
-            sources = _build_sources(_send_chunks, doc_map)
+            sources = build_sources(_send_chunks, doc_map)
             yield format_sse_event(
                 "sources",
-                _build_sources_event_data(sources, _audit_result),
+                build_sources_event_data(sources, _audit_result),
             )
 
     t_sources_end = time.perf_counter()  # 引用构建结束
@@ -312,7 +312,7 @@ async def _generate_sse_stream(
 
         async def _update_title_async():
             try:
-                llm_title = await _generate_title_llm(question)
+                llm_title = await generate_title_llm(question)
                 async with async_session() as s2:
                     try:
                         conv_in = await s2.get(Conversation, conv.id)
@@ -382,7 +382,7 @@ async def _persist_message(
             message_id = assistant_msg.id or 0
 
             if is_first_turn:
-                title = _generate_title(question)
+                title = generate_title(question)
                 conv_in.title = title
 
             if recorder:

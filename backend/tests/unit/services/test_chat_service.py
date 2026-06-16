@@ -130,7 +130,8 @@ def _mock_db_with_conversation(db, conv, kb=None, doc_count=1, user_msg=None, as
 
 @contextmanager
 def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
-                         token_estimate=50, with_conversation=True, with_messages=True):
+                         token_estimate=50, with_conversation=True, with_messages=True,
+                         doc_count=1):
     """共享的 chat pipeline mock 上下文管理器。
 
     消除各测试方法中重复的 ~10 行 patch() 样板代码。
@@ -161,7 +162,7 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
 
     # 使用 mock_conv 统一 db.get 和 mock_session.get 的返回值，
     # 确保 _validate_and_prepare 和 generator 对 message_count/title 的修改落在同一对象上
-    _mock_db_with_conversation(db, mock_conv)
+    _mock_db_with_conversation(db, mock_conv, doc_count=doc_count)
 
     mock_user_msg = MagicMock(id=10, role="user", content="测试问题")
     mock_assistant_msg = MagicMock(
@@ -299,36 +300,31 @@ async def _consume_sse(response):
 
 
 class TestGenerateTitle:
-    """测试 _generate_title 标题生成
-
-    **技术债务**：直接测试私有函数 `_generate_title()`，违反 CLAUDE.md「禁止直接测试
-    `_` 前缀的私有方法」规范。保留现有测试（纯逻辑函数单元测试有工程价值），
-    后续应通过 `chat()` 公共 API 的 SSE 输出间接覆盖标题生成逻辑。
-    """
+    """测试 generate_title 标题生成（纯逻辑公开函数）"""
 
     def test_正常截取前12字(self):
         """截取问题前 12 字作为标题"""
-        from app.services.chat_service import _generate_title
-        title = _generate_title("这是一段超过十二个字符的用户问题内容")
+        from app.services.chat_service import generate_title
+        title = generate_title("这是一段超过十二个字符的用户问题内容")
         assert title == "这是一段超过十二个字符的"  # 18 字符取前 12
 
     def test_去除标点符号(self):
         """标题应去除标点符号"""
-        from app.services.chat_service import _generate_title
-        title = _generate_title("你好！请问这个问题怎么解决？")
+        from app.services.chat_service import generate_title
+        title = generate_title("你好！请问这个问题怎么解决？")
         assert "！" not in title
         assert "？" not in title
 
     def test_全标点时返回新对话(self):
         """全标点内容去除后为空，应返回 '新对话'"""
-        from app.services.chat_service import _generate_title
-        title = _generate_title("！？。，、；：""''【】")
+        from app.services.chat_service import generate_title
+        title = generate_title("！？。，、；：""''【】")
         assert title == "新对话"
 
     def test_去除首尾空格(self):
         """标题应去除首尾空格"""
-        from app.services.chat_service import _generate_title
-        title = _generate_title("  问题内容  ")
+        from app.services.chat_service import generate_title
+        title = generate_title("  问题内容  ")
         assert title == "问题内容"
 
 
@@ -501,24 +497,12 @@ class TestChatKBEmpty:
         conv.user_id = 1
         conv.message_count = 0
 
-        kb, _, _ = _mock_db_with_conversation(db, conv, doc_count=0)
-
-        mock_pipeline = MagicMock()
-        mock_pipeline.execute_knowledge = AsyncMock(
-            side_effect=KnowledgeBaseEmptyException(1)
-        )
-
-        with patch("app.services.chat_service._pipeline", mock_pipeline), \
-             patch("app.services.chat_service.stream_with_heartbeat", side_effect=lambda g, **kw: g), \
-             patch("app.services.chat_service.classify_intent", new_callable=AsyncMock,
-                   return_value=IntentResult(
-                       intent=Intent.KNOWLEDGE, method="llm_flash",
-                       metadata={"model": "deepseek-v4-flash", "confidence": None},
-                   )), \
-             patch("app.services.chat_service.Conversation", return_value=conv), \
-             patch("app.services.chat_service.Message", return_value=MagicMock(id=10, role="user", content="测试问题")), \
-             patch("app.core.uuid_helpers.resolve_uuid_to_id", new_callable=AsyncMock,
-                   return_value=1):
+        with _mock_chat_pipeline(db, conv, doc_count=0) as mocks:
+            # 覆盖 execute_knowledge：KB 空检查在 _validate_and_prepare 中已触发，
+            # 此处作为兜底确保 pipeline 层也会正确抛出
+            mocks['pipeline'].execute_knowledge = AsyncMock(
+                side_effect=KnowledgeBaseEmptyException(1)
+            )
             with pytest.raises(KnowledgeBaseEmptyException):
                 await chat(
                     db=db, user_id=1, role="user",
@@ -626,7 +610,7 @@ class TestChatTitleGeneration:
         with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
                                   llm_chunks=_make_llm_chunks(["回答"])) as mocks:
             # Mock LLM 标题生成，避免真实调用
-            with patch("app.services.sse_stream._generate_title_llm",
+            with patch("app.services.sse_stream.generate_title_llm",
                        new_callable=AsyncMock, return_value="测试问题标题生成") as mock_title_llm:
                 response = await chat(
                     db=db, user_id=1, role="user",
@@ -1051,40 +1035,35 @@ class TestChatSourcesSuppression:
 
 
 class TestExtractCitationIndices:
-    """U7.63d — _extract_citation_indices 单元测试
-
-    **技术债务**：直接测试私有函数 `_extract_citation_indices()`，违反 CLAUDE.md「禁止直接测试
-    `_` 前缀的私有方法」规范。保留现有测试（纯逻辑函数单元测试有工程价值），
-    后续应通过 `chat()` 公共 API 的 SSE 输出间接覆盖引用编号提取逻辑。
-    """
+    """U7.63d — extract_citation_indices 单元测试（纯逻辑公开函数）"""
 
     def test_单个引用编号提取(self):
-        from app.services.chat_service import _extract_citation_indices
-        result = _extract_citation_indices("根据文档[来源1]，报销需要提交申请单。")
+        from app.services.chat_service import extract_citation_indices
+        result = extract_citation_indices("根据文档[来源1]，报销需要提交申请单。")
         assert result == {"1"}
 
     def test_多个引用编号提取(self):
-        from app.services.chat_service import _extract_citation_indices
-        result = _extract_citation_indices(
+        from app.services.chat_service import extract_citation_indices
+        result = extract_citation_indices(
             "入职需要提交材料[来源1]，并参加培训[来源3]。"
             "系统权限由IT部门开通[来源1]。"
         )
         assert result == {"1", "3"}
 
     def test_无引用返回空集合(self):
-        from app.services.chat_service import _extract_citation_indices
-        result = _extract_citation_indices("根据文档内容，员工请假需要提前三天申请。")
+        from app.services.chat_service import extract_citation_indices
+        result = extract_citation_indices("根据文档内容，员工请假需要提前三天申请。")
         assert result == set()
 
     def test_空字符串返回空集合(self):
-        from app.services.chat_service import _extract_citation_indices
-        result = _extract_citation_indices("")
+        from app.services.chat_service import extract_citation_indices
+        result = extract_citation_indices("")
         assert result == set()
 
     def test_包含未找到关键词但有引用(self):
         """回归：后文含'未找到'但有 [来源N] 引用时，仍能提取引用编号"""
-        from app.services.chat_service import _extract_citation_indices
-        result = _extract_citation_indices(
+        from app.services.chat_service import extract_citation_indices
+        result = extract_citation_indices(
             "根据文档，请假需要医院证明[来源1]。"
             "但是关于提前几天，文档中未找到相关信息。"
         )

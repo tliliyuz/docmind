@@ -68,8 +68,14 @@ MAGIC_BYTES = {
 }
 
 
-def _validate_file(file: UploadFile) -> None:
-    """校验文件类型和大小，不通过时抛对应异常"""
+def validate_file(file: UploadFile) -> None:
+    """校验文件类型和大小，不通过时抛对应异常
+
+    安全关键路径，包含三条独立规则：
+    1. 扩展名白名单校验（ALLOWED_EXTENSIONS）
+    2. 文件大小限制校验（UPLOAD_MAX_SIZE）
+    3. 魔数字节校验（MAGIC_BYTES，防止扩展名伪装）
+    """
     if file.filename is None:
         raise UnsupportedFileFormatException("unknown")
 
@@ -134,7 +140,7 @@ async def upload_document(
     force: bool = False,
 ) -> DocumentUploadResponse:
     """上传单个文档，支持 force 覆盖模式"""
-    _validate_file(file)
+    validate_file(file)
     await _check_kb_ownership(db, kb_id, user_id, role, owner_only=True)
 
     filename = file.filename

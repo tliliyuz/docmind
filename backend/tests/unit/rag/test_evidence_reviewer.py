@@ -163,13 +163,13 @@ class TestSentenceDetail:
         output = _make_output(chunks)
         stats_map = {1: FilterStats(total_sentences=2, assertive_count=1, referential_count=1)}
         result = review_evidence(output, stats_map, include_sentence_detail=True)
-        assert len(result.sentence_review) > 0
+        assert len(result.sentence_review) == 2  # 2 个句子：1 陈述 + 1 引用
         # 验证基本结构
         for item in result.sentence_review:
             assert isinstance(item, SentenceReviewItem)
-            assert item.chunk_index in (1,)
+            assert item.chunk_index == 1  # 来源 chunk 索引固定
             assert item.role in ("assertive", "referential")
-            assert len(item.text) > 0
+            assert item.text in content  # 句子文本必须是源内容的一部分
 
 
 class TestDegradation:

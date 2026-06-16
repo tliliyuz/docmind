@@ -1,4 +1,4 @@
-"""会话标题 LLM 生成单元测试 — _generate_title_llm()
+"""会话标题 LLM 生成单元测试 — generate_title_llm()
 
 对齐 TEST_CASES.md §6.3：
 - T1.1  LLM 正常生成标题
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from app.services.chat_service import _generate_title_llm, _generate_title
+from app.services.chat_service import generate_title_llm, generate_title
 
 
 class TestGenerateTitleLLM:
@@ -25,7 +25,7 @@ class TestGenerateTitleLLM:
 
         with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
-            title = await _generate_title_llm("差旅费报销需要哪些材料？")
+            title = await generate_title_llm("差旅费报销需要哪些材料？")
 
         assert title == "差旅费报销流程咨询"
 
@@ -37,7 +37,7 @@ class TestGenerateTitleLLM:
 
         with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
-            title = await _generate_title_llm("报销流程是怎样的？")
+            title = await generate_title_llm("报销流程是怎样的？")
 
         assert title == "报销流程问答"
         assert '"' not in title
@@ -48,7 +48,7 @@ class TestGenerateTitleLLM:
         """LLM 调用失败，回退到截断方案"""
         with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.side_effect = Exception("LLM 不可用")
-            title = await _generate_title_llm("差旅费报销需要哪些材料？")
+            title = await generate_title_llm("差旅费报销需要哪些材料？")
 
         # 应回退到 _generate_title 的截断逻辑
         assert isinstance(title, str)
@@ -62,7 +62,7 @@ class TestGenerateTitleLLM:
 
         with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
-            title = await _generate_title_llm("差旅费报销需要哪些材料？")
+            title = await generate_title_llm("差旅费报销需要哪些材料？")
 
         # 空内容视为无效，回退
         assert isinstance(title, str)
@@ -76,7 +76,7 @@ class TestGenerateTitleLLM:
 
         with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
-            title = await _generate_title_llm("测试问题")
+            title = await generate_title_llm("测试问题")
 
         assert len(title) <= 20
 
@@ -85,7 +85,7 @@ class TestGenerateTitleLLM:
         """回退结果与 _generate_title 一致"""
         with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.side_effect = Exception("LLM 不可用")
-            title = await _generate_title_llm("差旅费报销需要哪些材料？")
+            title = await generate_title_llm("差旅费报销需要哪些材料？")
 
-        expected = _generate_title("差旅费报销需要哪些材料？")
+        expected = generate_title("差旅费报销需要哪些材料？")
         assert title == expected

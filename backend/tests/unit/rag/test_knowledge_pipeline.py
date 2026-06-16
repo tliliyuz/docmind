@@ -131,7 +131,7 @@ class TestExecuteKnowledge:
         names_result.all.return_value = [row]
         db.execute = AsyncMock(side_effect=[count_result, names_result])
 
-        with patch("app.rag.knowledge_pipeline._needs_rewrite", return_value=False), \
+        with patch("app.rag.knowledge_pipeline.needs_rewrite", return_value=False), \
              patch("app.rag.knowledge_pipeline.rrf_fusion", return_value=retrieval_output), \
              patch("app.rag.knowledge_pipeline.match_sentences", return_value=retrieval_output), \
              patch("app.rag.knowledge_pipeline.build_prompt") as mock_build:
@@ -216,7 +216,7 @@ class TestExecuteKnowledge:
         mock_rewrite.rewritten = "改写后的问题"
         mock_rewrite.metadata = {"model": "test-model", "input_tokens": 10, "output_tokens": 5}
 
-        with patch("app.rag.knowledge_pipeline._needs_rewrite", return_value=True), \
+        with patch("app.rag.knowledge_pipeline.needs_rewrite", return_value=True), \
              patch("app.rag.knowledge_pipeline.rewrite_query", new_callable=AsyncMock,
                    return_value=mock_rewrite), \
              patch("app.rag.knowledge_pipeline.rrf_fusion", return_value=retrieval_output), \

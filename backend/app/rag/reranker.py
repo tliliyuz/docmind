@@ -184,7 +184,7 @@ class DashScopeReranker(BaseReranker):
 
                     if response.status_code == 200:
                         data = response.json()
-                        return self._parse_rerank_response(data, len(documents))
+                        return self.parse_rerank_response(data, len(documents))
 
                     last_error = f"HTTP {response.status_code}: {_safe_truncate(response.text)}"
                     logger.warning(
@@ -208,7 +208,7 @@ class DashScopeReranker(BaseReranker):
         )
 
     @staticmethod
-    def _parse_rerank_response(data: dict, doc_count: int) -> list[int]:
+    def parse_rerank_response(data: dict, doc_count: int) -> list[int]:
         """解析 DashScope Rerank API 响应，提取排序后的索引列表。
 
         Args:

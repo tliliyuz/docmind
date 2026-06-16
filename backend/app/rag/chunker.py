@@ -9,8 +9,8 @@
 - Token 估算: int(len(content) / 1.5)，不引入 tiktoken
 
 对齐 ROADMAP.md §8.7（Chunk 元数据增强）:
-- _detect_sections(): Markdown #/##/### 正则提取标题层级
-- _resolve_section(): 根据字符偏移量反查当前章节
+- detect_sections(): Markdown #/##/### 正则提取标题层级
+- resolve_section(): 根据字符偏移量反查当前章节
 """
 
 import logging
@@ -87,10 +87,10 @@ def chunk_document(
     logger.info(f"文档分块完成: {len(chunk_texts)} 块")
 
     # 构建页码偏移映射，用于回溯每块的来源页码
-    page_offset_map = _build_page_offset_map(pages) if pages else []
+    page_offset_map = build_page_offset_map(pages) if pages else []
 
     # 章节检测（§8.7）：扫描 Markdown # 标题（DOCX 已由 parser 转换）
-    sections = _detect_sections(text)
+    sections = detect_sections(text)
     if sections:
         logger.info("检测到 %d 个章节标题", len(sections))
 
@@ -101,8 +101,8 @@ def chunk_document(
         start_offset = text.find(chunk_text, search_start)
         if start_offset != -1:
             search_start = start_offset + len(chunk_text)
-        page_number = _resolve_page_number(start_offset, page_offset_map)
-        section_title, section_path = _resolve_section(start_offset, sections)
+        page_number = resolve_page_number(start_offset, page_offset_map)
+        section_title, section_path = resolve_section(start_offset, sections)
         estimated_tokens = estimate_tokens(chunk_text)
         chunks.append(ChunkResult(
             content=chunk_text,
@@ -122,11 +122,13 @@ _PAGE_SEPARATOR = "\n\n"
 _PAGE_SEPARATOR_LEN = len(_PAGE_SEPARATOR)  # = 2
 
 
-def _build_page_offset_map(pages: list[ParsedPage]) -> list[tuple[int, int]]:
+def build_page_offset_map(pages: list[ParsedPage]) -> list[tuple[int, int]]:
     """构建 (字符偏移量, 页码) 映射列表，按偏移量升序。
 
-    重建 full_text 拼接逻辑：每页 content 后跟 _PAGE_SEPARATOR 分隔符。
+    纯函数。重建 full_text 拼接逻辑：每页 content 后跟 _PAGE_SEPARATOR 分隔符。
     偏移量计算必须与 parser.py 中 ParsedResult.full_text 的拼接方式一致。
+
+    验证要点：ParsedPage → 偏移元组的正确转换，特别是 "\\n\\n" 分隔符长度计算。
     """
     offset_map: list[tuple[int, int]] = []
     pos = 0
@@ -137,11 +139,14 @@ def _build_page_offset_map(pages: list[ParsedPage]) -> list[tuple[int, int]]:
     return offset_map
 
 
-def _resolve_page_number(
+def resolve_page_number(
     start_offset: int,
     offset_map: list[tuple[int, int]],
 ) -> int | None:
-    """通过字符偏移量在偏移映射中反查来源页码。"""
+    """通过字符偏移量在偏移映射中反查来源页码。
+
+    纯函数。边界验证：首块、末块、跨页块、空映射。
+    """
     if not offset_map or start_offset == -1:
         return None
 
@@ -155,11 +160,13 @@ def _resolve_page_number(
     return page_number
 
 
-def _detect_sections(text: str) -> list[tuple[int, int, str]]:
+def detect_sections(text: str) -> list[tuple[int, int, str]]:
     """从文本中提取 Markdown 标题层级，返回 (偏移量, 层级, 标题文本) 列表。
 
-    对齐 ROADMAP.md §8.7：Markdown 通过 #/##/### 正则提取标题，
+    纯函数。对齐 ROADMAP.md §8.7：Markdown 通过 #/##/### 正则提取标题，
     DOCX 标题样式已由 parser.py 转换为 # 标记，因此可跨格式统一检测。
+
+    验证要点：ATX 标题层级、非标题行过滤、空标题过滤。
 
     层级规则：
     - # → level 1
@@ -185,19 +192,21 @@ def _detect_sections(text: str) -> list[tuple[int, int, str]]:
     return sections
 
 
-def _resolve_section(
+def resolve_section(
     start_offset: int,
     sections: list[tuple[int, int, str]],
 ) -> tuple[str | None, str | None]:
     """根据字符偏移量反查当前所属章节。
 
-    对齐 ROADMAP.md §8.7：类似 _resolve_page_number() 的回溯逻辑，
+    纯函数。对齐 ROADMAP.md §8.7：类似 resolve_page_number() 的回溯逻辑，
     找到当前偏移量之前最近的一个 heading → 即为当前 section_title，
     结合 heading 层级栈构建 section_path。
 
+    验证要点：同级替换、子嵌套、空输入。
+
     Args:
         start_offset: chunk 在全文中的起始偏移量
-        sections: _detect_sections() 返回的 section 列表
+        sections: detect_sections() 返回的 section 列表
 
     Returns:
         (section_title, section_path) — section_title 为当前节标题，

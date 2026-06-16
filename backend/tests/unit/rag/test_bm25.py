@@ -20,8 +20,8 @@ from app.rag.bm25 import (
     _build_cache_key,
     _tokenize,
     detect_section_numbers,
-    _match_section_numbers,
-    _cn_to_int,
+    match_section_numbers,
+    cn_to_int,
     invalidate_bm25_cache,
     invalidate_bm25_cache_async,
     _local_cache,
@@ -92,10 +92,9 @@ def clear_local_cache():
 
 
 # ==================== 辅助函数测试 ====================
-# 技术债务：直接测试私有函数 _build_cache_key()、_tokenize()、_local_cache，
-# 违反 CLAUDE.md「禁止直接测试 `_` 前缀的私有方法」规范。保留现有测试
-# （纯逻辑函数单元测试有工程价值），后续应通过 BM25Retriever.search()
-# 公共 API 间接覆盖缓存 key 构建、分词、进程内缓存命中/过期逻辑。
+# _build_cache_key / _tokenize / _local_cache 均为薄包装或全局状态操作，
+# 保持私有，通过 BM25Retriever.search() 公共 API 集成测试覆盖。
+# cn_to_int / match_section_numbers 已提升为公开函数，直接单元测试。
 
 
 class TestBuildCacheKey:
@@ -674,22 +673,54 @@ class TestBM25RetrieverWithRealJieba:
 
 
 class TestCnToInt:
-    """_cn_to_int() — 中文数字 → 整数"""
+    """cn_to_int() — 中文数字 → 整数"""
 
     def test_单个数字(self):
-        assert _cn_to_int("一") == 1
-        assert _cn_to_int("四") == 4
-        assert _cn_to_int("九") == 9
-        assert _cn_to_int("十") == 10
+        assert cn_to_int("一") == 1
+        assert cn_to_int("四") == 4
+        assert cn_to_int("九") == 9
+        assert cn_to_int("十") == 10
 
     def test_两位数(self):
-        assert _cn_to_int("十二") == 12
-        assert _cn_to_int("二十") == 20
-        assert _cn_to_int("三十五") == 35
+        assert cn_to_int("十二") == 12
+        assert cn_to_int("二十") == 20
+        assert cn_to_int("三十五") == 35
 
     def test_三位数(self):
-        assert _cn_to_int("一百零三") == 103
-        assert _cn_to_int("三百五十") == 350
+        assert cn_to_int("一百零三") == 103
+        assert cn_to_int("三百五十") == 350
+
+    @pytest.mark.parametrize("cn,expected", [
+        ("一", 1),
+        ("二", 2),
+        ("三", 3),
+        ("四", 4),
+        ("五", 5),
+        ("六", 6),
+        ("七", 7),
+        ("八", 8),
+        ("九", 9),
+        ("十", 10),
+        ("十一", 11),
+        ("十二", 12),
+        ("二十", 20),
+        ("二十一", 21),
+        ("三十五", 35),
+        ("九十九", 99),
+        ("一百", 100),
+        ("一百零三", 103),
+        ("二百五十", 250),
+        ("九百九十九", 999),
+        ("一千零一", 1001),
+    ])
+    def test_参数化_中文数字转整数(self, cn, expected):
+        """参数化验证从简单到复杂的各种中文数字"""
+        assert cn_to_int(cn) == expected
+
+    @pytest.mark.parametrize("cn", ["", " ", "abc", "123"])
+    def test_无效输入不抛异常(self, cn):
+        """非中文数字输入 → 返回 0，不抛异常"""
+        assert cn_to_int(cn) == 0
 
 
 class TestDetectSectionNumbers:
@@ -757,33 +788,56 @@ class TestDetectSectionNumbers:
 
 
 class TestMatchSectionNumbers:
-    """_match_section_numbers() — 章节元数据匹配"""
+    """match_section_numbers() — 章节元数据匹配"""
 
     def test_空目标列表返回False(self):
-        assert _match_section_numbers("§3.2", "概述 > §3.2", []) is False
+        assert match_section_numbers("§3.2", "概述 > §3.2", []) is False
 
     def test_空元数据返回False(self):
-        assert _match_section_numbers(None, None, ["3.2"]) is False
-        assert _match_section_numbers("", "", ["3.2"]) is False
+        assert match_section_numbers(None, None, ["3.2"]) is False
+        assert match_section_numbers("", "", ["3.2"]) is False
 
     def test_section_title精确匹配(self):
-        assert _match_section_numbers("§3.2 限流配置", None, ["3.2"]) is True
+        assert match_section_numbers("§3.2 限流配置", None, ["3.2"]) is True
 
     def test_section_path匹配(self):
-        assert _match_section_numbers(
+        assert match_section_numbers(
             None, "架构 > §3 基础设施 > §3.2 限流", ["3.2"],
         ) is True
 
     def test_层级匹配_单个数字(self):
         """单数字 "4" 可匹配 section_title 中以 "4 " 开头的标题"""
-        assert _match_section_numbers("4 数据库设计", None, ["4"]) is True
+        assert match_section_numbers("4 数据库设计", None, ["4"]) is True
 
     def test_不匹配_无关章节号(self):
-        assert _match_section_numbers("§3.2 限流", None, ["5.1"]) is False
+        assert match_section_numbers("§3.2 限流", None, ["5.1"]) is False
 
     def test_多章节号任一匹配(self):
         """多个目标章节号，只要有一个匹配即 True"""
-        assert _match_section_numbers("§3.2 限流", None, ["5.1", "3.2"]) is True
+        assert match_section_numbers("§3.2 限流", None, ["5.1", "3.2"]) is True
+
+    # --- 参数化匹配策略 ---
+
+    @pytest.mark.parametrize("section_title,section_path,target,expected", [
+        # 完整匹配
+        ("§3.2 限流配置", None, ["3.2"], True),
+        ("§4.7 超时策略", None, ["4.7"], True),
+        ("§8.2.1 安全审计", None, ["8.2.1"], True),
+        # 层级匹配（section_path）
+        (None, "架构 > §3 基础设施 > §3.2 限流", ["3.2"], True),
+        (None, "API > §6 SSE > §6.1 事件格式", ["6.1"], True),
+        # 短编号匹配（单数字匹配标题首部）
+        ("4 数据库设计", None, ["4"], True),
+        ("12 部署指南", None, ["12"], True),
+        # 否定案例
+        ("§3.2 限流", None, ["5.1"], False),
+        ("§4.7 超时", None, ["4.8"], False),
+        (None, None, ["3.2"], False),
+        ("", "", ["3.2"], False),
+    ])
+    def test_参数化_章节匹配策略(self, section_title, section_path, target, expected):
+        """参数化验证完整匹配、层级匹配、短编号匹配及否定案例"""
+        assert match_section_numbers(section_title, section_path, target) is expected
 
 
 class TestBM25SectionBoost:

@@ -57,7 +57,7 @@ class TestRerankerInterface:
 
 
 class TestDashScopeRerankerParseResponse:
-    """_parse_rerank_response() 静态方法测试"""
+    """parse_rerank_response() 公开静态方法测试"""
 
     def test_正常解析降序排列结果(self):
         """API 返回 3 条结果，按 relevance_score 降序，提取 index 列表"""
@@ -72,7 +72,7 @@ class TestDashScopeRerankerParseResponse:
             "usage": {"total_tokens": 150},
         }
 
-        indices = DashScopeReranker._parse_rerank_response(data, doc_count=3)
+        indices = DashScopeReranker.parse_rerank_response(data, doc_count=3)
 
         assert indices == [0, 2, 1]
 
@@ -88,7 +88,7 @@ class TestDashScopeRerankerParseResponse:
             "usage": {"total_tokens": 200},
         }
 
-        indices = DashScopeReranker._parse_rerank_response(data, doc_count=5)
+        indices = DashScopeReranker.parse_rerank_response(data, doc_count=5)
 
         assert indices == [3, 0]
 
@@ -103,7 +103,7 @@ class TestDashScopeRerankerParseResponse:
             "usage": {"total_tokens": 50},
         }
 
-        indices = DashScopeReranker._parse_rerank_response(data, doc_count=1)
+        indices = DashScopeReranker.parse_rerank_response(data, doc_count=1)
 
         assert indices == [0]
 
@@ -114,7 +114,7 @@ class TestDashScopeRerankerParseResponse:
             "usage": {"total_tokens": 10},
         }
 
-        indices = DashScopeReranker._parse_rerank_response(data, doc_count=3)
+        indices = DashScopeReranker.parse_rerank_response(data, doc_count=3)
 
         assert indices == [0, 1, 2]
 
@@ -125,7 +125,7 @@ class TestDashScopeRerankerParseResponse:
             "usage": {"total_tokens": 10},
         }
 
-        indices = DashScopeReranker._parse_rerank_response(data, doc_count=3)
+        indices = DashScopeReranker.parse_rerank_response(data, doc_count=3)
 
         assert indices == [0, 1, 2]
 
@@ -140,7 +140,7 @@ class TestDashScopeRerankerParseResponse:
         }
 
         with pytest.raises(ValueError, match="缺少 index 字段"):
-            DashScopeReranker._parse_rerank_response(data, doc_count=3)
+            DashScopeReranker.parse_rerank_response(data, doc_count=3)
 
     def test_index越界抛异常(self):
         """index >= doc_count → ValueError"""
@@ -153,7 +153,7 @@ class TestDashScopeRerankerParseResponse:
         }
 
         with pytest.raises(ValueError, match="索引越界"):
-            DashScopeReranker._parse_rerank_response(data, doc_count=3)
+            DashScopeReranker.parse_rerank_response(data, doc_count=3)
 
     def test_负index抛异常(self):
         """index < 0 → ValueError"""
@@ -166,7 +166,7 @@ class TestDashScopeRerankerParseResponse:
         }
 
         with pytest.raises(ValueError, match="索引越界"):
-            DashScopeReranker._parse_rerank_response(data, doc_count=3)
+            DashScopeReranker.parse_rerank_response(data, doc_count=3)
 
 
 # ==================== DashScopeReranker 集成测试（Mock API） ====================

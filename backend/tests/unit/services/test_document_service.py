@@ -30,7 +30,7 @@ from app.services.document_service import (
     ALLOWED_EXTENSIONS,
     _build_document_response,
     _check_kb_ownership,
-    _validate_file,
+    validate_file,
     delete_document,
     get_document,
     get_document_chunks,
@@ -112,10 +112,9 @@ def mock_db():
 
 
 # ============================================================
-# _validate_file
-# 技术债务：直接测试私有函数 _validate_file()，违反 CLAUDE.md「禁止直接测试
-# `_` 前缀的私有方法」规范。保留现有测试（纯校验逻辑有工程价值），
-# 后续应通过 upload_document() 公共 API 间接覆盖文件校验逻辑。
+# validate_file
+# 文件校验是安全关键路径，包含扩展名白名单、魔数字节校验、大小限制
+# 三条独立规则。validate_file() 已提升为公开函数，直接单元测试。
 # ============================================================
 
 
@@ -123,37 +122,78 @@ class TestValidateFile:
     def test_允许的扩展名不抛异常(self):
         for ext in ["pdf", "docx", "md", "txt"]:
             f = _make_upload_file(f"doc.{ext}")
-            _validate_file(f)  # 不抛异常
+            validate_file(f)  # 不抛异常
 
     def test_大写扩展名也接受(self):
         f = _make_upload_file("DOC.PDF")
-        _validate_file(f)  # 不抛异常
+        validate_file(f)  # 不抛异常
 
     def test_不支持格式抛异常(self):
         f = _make_upload_file("virus.exe")
         with pytest.raises(UnsupportedFileFormatException) as exc:
-            _validate_file(f)
+            validate_file(f)
         assert exc.value.error_code == "E2002"
 
     def test_无扩展名抛异常(self):
         f = _make_upload_file("noextension")
         with pytest.raises(UnsupportedFileFormatException):
-            _validate_file(f)
+            validate_file(f)
 
     def test_文件名为None抛异常(self):
         f = _make_upload_file(None)
         with pytest.raises(UnsupportedFileFormatException):
-            _validate_file(f)
+            validate_file(f)
 
     def test_超大文件抛异常(self):
         f = _make_upload_file("big.pdf", size=settings.UPLOAD_MAX_SIZE + 1)
         with pytest.raises(FileSizeExceededException) as exc:
-            _validate_file(f)
+            validate_file(f)
         assert exc.value.error_code == "E2003"
 
     def test_文件size为None不检查大小(self):
         f = _make_upload_file("doc.pdf", size=None)
-        _validate_file(f)  # 不抛异常
+        validate_file(f)  # 不抛异常
+
+    def test_魔数不匹配抛异常(self):
+        """扩展名 .pdf 但文件头不是 %PDF → 拒绝（防扩展名伪装）"""
+        f = _make_upload_file("fake.pdf")
+        f.file = MagicMock()
+        f.file.read = MagicMock(return_value=b"THIS IS NOT A PDF")
+        f.file.seek = MagicMock()
+        with pytest.raises(UnsupportedFileFormatException):
+            validate_file(f)
+
+    def test_魔数匹配不抛异常(self):
+        """扩展名 .pdf 且文件头为 %PDF → 通过（read(4) 返回恰好 4 字节）"""
+        f = _make_upload_file("real.pdf")
+        f.file = MagicMock()
+        f.file.read = MagicMock(return_value=b"%PDF")
+        f.file.seek = MagicMock()
+        validate_file(f)  # 不抛异常
+
+    def test_docx魔数匹配通过(self):
+        """扩展名 .docx 且文件头为 PK\\x03\\x04 → 通过"""
+        f = _make_upload_file("real.docx")
+        f.file = MagicMock()
+        f.file.read = MagicMock(return_value=b"PK\x03\x04")
+        f.file.seek = MagicMock()
+        validate_file(f)  # 不抛异常
+
+    def test_md无魔数校验直接通过(self):
+        """md/txt 无魔数定义，不进行二进制校验"""
+        f = _make_upload_file("readme.md")
+        f.file = MagicMock()
+        f.file.read = MagicMock(return_value=b"# README")
+        f.file.seek = MagicMock()
+        validate_file(f)  # 不抛异常
+
+    def test_魔数读取异常时放行(self):
+        """文件头读取失败（如空文件/特殊流）→ 不抛异常，交后续阶段处理"""
+        f = _make_upload_file("doc.pdf")
+        f.file = MagicMock()
+        f.file.read = MagicMock(side_effect=OSError("无法读取"))
+        f.file.seek = MagicMock()
+        validate_file(f)  # 不抛异常
 
 
 # ============================================================
