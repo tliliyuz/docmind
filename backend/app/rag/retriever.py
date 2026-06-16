@@ -25,6 +25,9 @@ class RetrievalResult:
 
     matched_sentence / matched_sentence_score 由 sentence_matcher 在检索后填充，
     用于 Evidence Highlight（句级 BM25 定位），透传到 Prompt 组装和 Sources 预览。
+
+    section_title / section_path 从 ChromaDB metadata 回填（§8.7），
+    用于 Prompt 章节信息展示 + 章节号 BM25 boost 匹配。
     """
     doc_id: int
     chunk_index: int
@@ -32,6 +35,8 @@ class RetrievalResult:
     score: float
     page: int | None = None
     doc_name: str = ""
+    section_title: str | None = None
+    section_path: str | None = None
     matched_sentence: str | None = None
     matched_sentence_score: float | None = None
 
@@ -143,11 +148,19 @@ class VectorRetriever:
             doc_id = int(meta.get("doc_id", 0))
             chunk_index = int(meta.get("chunk_index", 0))
 
+            # 提取章节元数据（§8.7 Chunk 元数据增强）
+            section_title = meta.get("section_title") or None
+            section_path = meta.get("section_path") or None
+            page = int(meta.get("page", 0)) if meta.get("page") is not None else None
+
             results.append(RetrievalResult(
                 doc_id=doc_id,
                 chunk_index=chunk_index,
                 content=result_docs[i] or "",
                 score=score,
+                page=page,
+                section_title=section_title,
+                section_path=section_path,
             ))
 
         logger.info("向量检索完成: %d 条结果", len(results))

@@ -7,9 +7,14 @@
 - chunk_overlap: 150 chars（≈50 tokens）
 - keep_separator: True（中文场景保留语义完整性）
 - Token 估算: int(len(content) / 1.5)，不引入 tiktoken
+
+对齐 ROADMAP.md §8.7（Chunk 元数据增强）:
+- _detect_sections(): Markdown #/##/### 正则提取标题层级
+- _resolve_section(): 根据字符偏移量反查当前章节
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -25,6 +30,10 @@ logger = logging.getLogger(__name__)
 # 因此中文/英文标点展开为独立字符，才能在每个标点处正确断句。
 CHUNK_SEPARATORS = ["\n\n", "\n", "。", "！", "？", ".", "!", "?", " ", ""]
 
+# Markdown ATX 标题正则（行首 # 开头，支持 # 至 ######）
+# 使用 [^\S\n] 替代 \s：排除换行符，避免将 "# \n内容" 误判为标题
+_MD_HEADING_PATTERN = re.compile(r'^(#{1,6})[^\S\n]+(.+)$', re.MULTILINE)
+
 
 @dataclass
 class ChunkResult:
@@ -33,6 +42,8 @@ class ChunkResult:
     chunk_index: int
     page_number: int | None
     estimated_tokens: int
+    section_title: str | None = None   # 当前所属章节标题（如 "§6.1 SSE 事件格式"）
+    section_path: str | None = None    # 章节路径（如 "RAG Pipeline > §6. SSE 事件流"）
 
 
 @dataclass
@@ -78,6 +89,11 @@ def chunk_document(
     # 构建页码偏移映射，用于回溯每块的来源页码
     page_offset_map = _build_page_offset_map(pages) if pages else []
 
+    # 章节检测（§8.7）：扫描 Markdown # 标题（DOCX 已由 parser 转换）
+    sections = _detect_sections(text)
+    if sections:
+        logger.info("检测到 %d 个章节标题", len(sections))
+
     # 通过累进搜索定位每块在全文中的偏移量，避免重复片段歧义
     chunks: list[ChunkResult] = []
     search_start = 0
@@ -86,12 +102,15 @@ def chunk_document(
         if start_offset != -1:
             search_start = start_offset + len(chunk_text)
         page_number = _resolve_page_number(start_offset, page_offset_map)
+        section_title, section_path = _resolve_section(start_offset, sections)
         estimated_tokens = estimate_tokens(chunk_text)
         chunks.append(ChunkResult(
             content=chunk_text,
             chunk_index=i,
             page_number=page_number,
             estimated_tokens=estimated_tokens,
+            section_title=section_title,
+            section_path=section_path,
         ))
 
     return ChunkingResult(chunks=chunks, total_chunks=len(chunks))
@@ -134,6 +153,80 @@ def _resolve_page_number(
             break
 
     return page_number
+
+
+def _detect_sections(text: str) -> list[tuple[int, int, str]]:
+    """从文本中提取 Markdown 标题层级，返回 (偏移量, 层级, 标题文本) 列表。
+
+    对齐 ROADMAP.md §8.7：Markdown 通过 #/##/### 正则提取标题，
+    DOCX 标题样式已由 parser.py 转换为 # 标记，因此可跨格式统一检测。
+
+    层级规则：
+    - # → level 1
+    - ## → level 2
+    - 以此类推，最多六级
+
+    Args:
+        text: 文档全文
+
+    Returns:
+        按字符偏移量升序排列的 section 列表
+    """
+    if not text:
+        return []
+
+    sections: list[tuple[int, int, str]] = []
+    for m in _MD_HEADING_PATTERN.finditer(text):
+        level = len(m.group(1))  # 1-6
+        title = m.group(2).strip()
+        if title:
+            sections.append((m.start(), level, title))
+
+    return sections
+
+
+def _resolve_section(
+    start_offset: int,
+    sections: list[tuple[int, int, str]],
+) -> tuple[str | None, str | None]:
+    """根据字符偏移量反查当前所属章节。
+
+    对齐 ROADMAP.md §8.7：类似 _resolve_page_number() 的回溯逻辑，
+    找到当前偏移量之前最近的一个 heading → 即为当前 section_title，
+    结合 heading 层级栈构建 section_path。
+
+    Args:
+        start_offset: chunk 在全文中的起始偏移量
+        sections: _detect_sections() 返回的 section 列表
+
+    Returns:
+        (section_title, section_path) — section_title 为当前节标题，
+        section_path 为从顶层到当前节的完整路径
+    """
+    if not sections or start_offset == -1:
+        return None, None
+
+    # 回溯偏移量之前经过的所有 heading，维护层级栈
+    level_stack: list[tuple[int, str]] = []  # [(level, title), ...]
+    section_title: str | None = None
+
+    for offset, level, title in sections:
+        if offset > start_offset:
+            break
+        # 弹出 >= 当前层级的旧标题（同级或更高层级替换，低层级为子节）
+        while level_stack and level_stack[-1][0] >= level:
+            level_stack.pop()
+        level_stack.append((level, title))
+        section_title = title
+
+    if section_title is None:
+        return None, None
+
+    # 构建路径：父标题 > 子标题
+    path_parts = [t for _, t in level_stack]
+    section_path = " > ".join(path_parts) if len(path_parts) > 1 else path_parts[0] if path_parts else None
+
+    return section_title, section_path
 
 
 def estimate_tokens(text: str) -> int:

@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 
 from app.config import settings
 from app.core.redis_client import get_redis
@@ -103,20 +103,27 @@ async def _load_doc(db, doc_id: int) -> _LoadDocResult:
 
 
 async def _load_chunk_rows(db, doc_id: int) -> list[dict[str, Any]]:
-    """从 MySQL 加载文档的全部 chunks（按 chunk_index 排序），返回提取后的数据列表"""
+    """从 MySQL 加载文档的全部 chunks（按 chunk_index 排序），返回提取后的数据列表。
+
+    对齐 ROADMAP.md §8.7：提取 metadata_ JSON 中的 section_title / section_path，
+    供 metas_batch 写入 ChromaDB metadata。
+    """
     result = await db.execute(
         select(Chunk).where(Chunk.doc_id == doc_id).order_by(Chunk.chunk_index)
     )
     chunks_db = result.scalars().all()
-    return [
-        {
+    rows: list[dict[str, Any]] = []
+    for c in chunks_db:
+        meta = c.metadata_ or {}
+        rows.append({
             "id": c.id,
             "chunk_index": c.chunk_index,
             "content": c.content,
             "chroma_id": c.chroma_id,
-        }
-        for c in chunks_db
-    ]
+            "section_title": meta.get("section_title", ""),
+            "section_path": meta.get("section_path", ""),
+        })
+    return rows
 
 
 async def _ingest_document_async(doc_id: int) -> dict:
@@ -278,6 +285,15 @@ async def _ingest_document_async(doc_id: int) -> dict:
                 await db.execute(delete(Chunk).where(Chunk.doc_id == doc_id))
 
                 for c in chunking_result.chunks:
+                    # 构建 metadata_（对齐 ROADMAP.md §8.7：含 page + section_title + section_path）
+                    meta: dict[str, object] = {}
+                    if c.page_number is not None:
+                        meta["page"] = c.page_number
+                    if c.section_title is not None:
+                        meta["section_title"] = c.section_title
+                    if c.section_path is not None:
+                        meta["section_path"] = c.section_path
+
                     chunk = Chunk(
                         doc_id=doc_id,
                         kb_id=kb_id,
@@ -285,7 +301,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
                         content=c.content,
                         chunk_index=c.chunk_index,
                         token_count=c.estimated_tokens,
-                        metadata_={"page": c.page_number} if c.page_number else None,
+                        metadata_=meta if meta else None,
                     )
                     db.add(chunk)
 
@@ -407,6 +423,8 @@ async def _ingest_document_async(doc_id: int) -> dict:
                         "kb_id": int(kb_id),
                         "doc_id": int(doc_id),
                         "chunk_index": int(chunk_rows[i]["chunk_index"]),
+                        "section_title": chunk_rows[i].get("section_title", ""),
+                        "section_path": chunk_rows[i].get("section_path", ""),
                     }
                     for i in range(chroma_start, chroma_end)
                 ]
@@ -652,21 +670,31 @@ async def _delete_kb_async(kb_id: int) -> dict:
                 except Exception as e:
                     logger.warning("知识库 %d 文档 %d 磁盘文件删除失败（非致命）: %s", kb_id, doc_id, e)
 
-        # 5. 批量备份孤儿会话的 kb_id / kb_name（在物理删除 KB 之前）
+        # 5. 批量备份孤儿会话的 kb_id / kb_name / kb_uuid（在物理删除 KB 之前）
+        #    使用 raw SQL 避免 SQLAlchemy ORM update() 的列映射歧义
         async with async_session() as db:
             kb = await db.get(KnowledgeBase, kb_id)
             if kb is not None:
-                await db.execute(
-                    update(Conversation)
-                    .where(Conversation.kb_id == kb_id)
-                    .values(
-                        original_kb_id=kb_id,
-                        original_kb_name=kb.name,
-                        original_kb_uuid=kb.uuid,
-                    )
+                result = await db.execute(
+                    text(
+                        "UPDATE conversations "
+                        "SET original_kb_id = :orig_kb_id, "
+                        "    original_kb_name = :orig_kb_name, "
+                        "    original_kb_uuid = :orig_kb_uuid "
+                        "WHERE kb_id = :kb_id"
+                    ),
+                    {
+                        "orig_kb_id": kb_id,
+                        "orig_kb_name": kb.name,
+                        "orig_kb_uuid": kb.uuid,
+                        "kb_id": kb_id,
+                    },
                 )
                 await db.commit()
-                logger.info("知识库 %d 关联会话已批量备份 original_kb_id/original_kb_uuid", kb_id)
+                logger.info(
+                    "知识库 %d（name=%s uuid=%s）关联会话已批量备份 original_kb_*，影响 %d 行",
+                    kb_id, kb.name, kb.uuid, result.rowcount,
+                )
 
         # 6. 物理删除 KB（FK CASCADE 自动清理 documents + chunks，conversations.kb_id SET NULL）
         async with async_session() as db:

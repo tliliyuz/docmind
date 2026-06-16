@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     BM25_MIN_SCORE: float = -5.0
     BM25_CACHE_TTL: int = 300
     BM25_LOCAL_CACHE_TTL: int = 60  # 进程内 BM25 缓存 TTL（秒）
+    BM25_SECTION_BOOST_FACTOR: float = 2.0  # §8.8 章节号匹配时 BM25 分数加权倍率
 
     # ── RRF ──
     RRF_K: int = 60
@@ -136,10 +137,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT_PER_MINUTE: int = 120 # 其他接口
     RATE_LIMIT_WINDOW_SECONDS: int = 60      # 窗口大小（秒）
 
-    # ── 诊断开关（多轮对话退化归因排查）──
-    P0_STRICT_MODE: bool = False            # True=严格「陈述知识 vs 引用知识」Prompt；False=旧版宽松 Prompt
-    SENTENCE_ROLE_FILTER: bool = True        # True=启用句级修辞过滤；False=跳过（不调用 filter_chunk_sentences）
-    DASHSCOPE_RERANK: bool = True            # True=使用 DashScope Rerank 精排；False=降级为 NoopReranker
 
     @property
     def mysql_url(self) -> str:

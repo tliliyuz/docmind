@@ -5,16 +5,25 @@
 - < 20% 失败 → 继续（记录 warning）
 - 20%~50% 失败 → partial_failed
 - > 50% 失败 → failed
+
+对齐 ROADMAP.md §8.7（Chunk 元数据增强）：
+- DOCX 标题样式自动转换为 Markdown # 标记，使 chunker 的标题检测跨格式统一
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from docx import Document as DocxDocument
+from docx.enum.style import WD_STYLE_TYPE
 from PyPDF2 import PdfReader
 
 logger = logging.getLogger(__name__)
+
+# Word 内置标题样式名映射 -> Markdown 标题层级
+_WORD_HEADING_PATTERN = re.compile(r'^Heading\s*(\d+)', re.IGNORECASE)
+_WORD_TITLE_PATTERNS = re.compile(r'^(Title|Subtitle)$', re.IGNORECASE)
 
 
 @dataclass
@@ -139,8 +148,79 @@ def _parse_pdf(file_path: str) -> ParseResult:
     return ParseResult(pages=pages, total_pages=total, failed_pages=failed)
 
 
+def _docx_heading_to_markdown(paragraph) -> str | None:
+    """检测 Word 段落是否为标题样式，返回对应的 Markdown # 前缀文本。
+
+    对齐 ROADMAP.md §8.7：将 DOCX 标题样式转换为 Markdown 标记，
+    使 chunker.py 的 _detect_sections() 可跨 MD/DOCX 统一检测。
+
+    防御性设计：MagicMock 等非真实对象会导致属性访问异常，
+    此时返回 None 降级为普通文本提取。
+
+    Args:
+        paragraph: python-docx Paragraph 对象
+
+    Returns:
+        带 # 前缀的标题文本，或 None（非标题段落/异常）
+    """
+    try:
+        style = paragraph.style
+        if style is None:
+            return None
+
+        text = paragraph.text
+        if not text or not text.strip():
+            return None
+
+        # 检查段落样式（优先）
+        style_name = style.name or ""
+        m = _WORD_HEADING_PATTERN.match(style_name)
+        if m:
+            level = int(m.group(1))
+            if 1 <= level <= 6:
+                return f"{'#' * level} {text.strip()}"
+
+        # Title/Subtitle → # / ##
+        if _WORD_TITLE_PATTERNS.match(style_name):
+            if style_name.lower() == "title":
+                return f"# {text.strip()}"
+            else:
+                return f"## {text.strip()}"
+
+        # 检查大纲级别（Word 内置段落属性 outline_level，如 outlineLvl）
+        try:
+            outline_lvl = paragraph.paragraph_format.outline_level
+            if outline_lvl is not None and 0 <= outline_lvl <= 5:
+                return f"{'#' * (outline_lvl + 1)} {text.strip()}"
+        except (AttributeError, ValueError, TypeError):
+            pass
+
+        # 检查段落样式类型是否为 HEADING
+        if style.type == WD_STYLE_TYPE.PARAGRAPH and hasattr(style, 'base_style'):
+            try:
+                base = style.base_style
+                if base is not None:
+                    base_name = base.name or ""
+                    m2 = _WORD_HEADING_PATTERN.match(base_name)
+                    if m2:
+                        level = int(m2.group(1))
+                        if 1 <= level <= 6:
+                            return f"{'#' * level} {text.strip()}"
+            except (AttributeError, ValueError, TypeError):
+                pass
+
+        return None
+    except (AttributeError, TypeError, ValueError):
+        # MagicMock 等非真实对象 → 降至普通文本
+        return None
+
+
 def _parse_docx(file_path: str) -> ParseResult:
-    """使用 python-docx 解析 DOCX，逐段提取并容错（对齐 PDF 逐页容错粒度）"""
+    """使用 python-docx 解析 DOCX，逐段提取并容错（对齐 PDF 逐页容错粒度）。
+
+    DOCX 标题样式自动转换为 Markdown # 标记，使 chunker.py 的章节检测
+    跨 MD/DOCX 格式统一工作（对齐 ROADMAP.md §8.7）。
+    """
     try:
         doc = DocxDocument(file_path)
     except Exception as e:
@@ -162,9 +242,14 @@ def _parse_docx(file_path: str) -> ParseResult:
 
     for i, p in enumerate(doc.paragraphs):
         try:
-            text = p.text
-            if text and text.strip():
-                pages.append(ParsedPage(page_number=i + 1, content=text.strip()))
+            # 检测标题样式，转换为 Markdown 标记（§8.7）
+            heading_text = _docx_heading_to_markdown(p)
+            if heading_text is not None:
+                pages.append(ParsedPage(page_number=i + 1, content=heading_text))
+            else:
+                text = p.text
+                if text and text.strip():
+                    pages.append(ParsedPage(page_number=i + 1, content=text.strip()))
         except Exception as e:
             logger.warning(f"DOCX 第{i+1}段解析失败: {e}")
             pages.append(ParsedPage(

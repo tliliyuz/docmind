@@ -1,4 +1,4 @@
-"""智能分块模块单元测试 — 覆盖数据类、估算函数、偏移映射、页码定位、核心分块逻辑"""
+"""智能分块模块单元测试 — 覆盖数据类、估算函数、偏移映射、页码定位、核心分块逻辑、§8.7 章节检测"""
 
 import pytest
 
@@ -10,6 +10,8 @@ from app.rag.chunker import (
     estimate_tokens,
     _build_page_offset_map,
     _resolve_page_number,
+    _detect_sections,
+    _resolve_section,
 )
 from app.rag.parser import ParsedPage
 
@@ -305,3 +307,172 @@ class TestChunkDocument:
         text = ("中文内容。English follows. 继续中文！Next English! " * 50)
         result = chunk_document(text)
         assert result.total_chunks >= 1
+
+
+# ==================== §8.7 章节检测测试 ====================
+
+
+class TestDetectSections:
+    """_detect_sections() — Markdown 标题提取"""
+
+    def test_空文本(self):
+        assert _detect_sections("") == []
+        assert _detect_sections(None) == []  # type: ignore
+
+    def test_无标题文本(self):
+        sections = _detect_sections("这是普通文本，没有任何标题。\n还是普通文本。")
+        assert sections == []
+
+    def test_单个一级标题(self):
+        text = "# 概述\n这是内容。"
+        sections = _detect_sections(text)
+        assert len(sections) == 1
+        offset, level, title = sections[0]
+        assert level == 1
+        assert title == "概述"
+
+    def test_多级标题(self):
+        text = "# 第一章\n内容...\n## 1.1 背景\n更多内容\n### 1.1.1 细节\n详细内容"
+        sections = _detect_sections(text)
+        assert len(sections) == 3
+        assert sections[0] == (0, 1, "第一章")
+        assert sections[1][2] == "1.1 背景"
+        assert sections[1][1] == 2
+        assert sections[2][2] == "1.1.1 细节"
+        assert sections[2][1] == 3
+
+    def test_六级标题(self):
+        text = "###### 最小标题\n内容"
+        sections = _detect_sections(text)
+        assert len(sections) == 1
+        assert sections[0][1] == 6
+        assert sections[0][2] == "最小标题"
+
+    def test_忽略超过六级(self):
+        """####### 不是标准 Markdown ATX 标题，不匹配"""
+        text = "####### 七级不是标题\n内容"
+        sections = _detect_sections(text)
+        assert sections == []
+
+    def test_空标题文本被跳过(self):
+        """# 后面无内容不产生 section"""
+        text = "# \n内容"
+        sections = _detect_sections(text)
+        assert sections == []
+
+    def test_标题带前后空白(self):
+        text = "##   带空格标题   \n内容"
+        sections = _detect_sections(text)
+        assert len(sections) == 1
+        assert sections[0][2] == "带空格标题"
+
+    def test_代码块中的井号不是标题(self):
+        """行内代码块 # 不是标题（正则要求行首）"""
+        text = "在代码中 `# 注释` 不是标题\n## 这是标题\n内容"
+        sections = _detect_sections(text)
+        assert len(sections) == 1
+        assert sections[0][2] == "这是标题"
+
+
+class TestResolveSection:
+    """_resolve_section() — 偏移量反查章节"""
+
+    def _make_sections(self) -> list[tuple[int, int, str]]:
+        """构建模拟 section 列表"""
+        return [
+            (0, 1, "概述"),
+            (10, 2, "环境配置"),
+            (30, 3, "数据库"),
+            (50, 2, "部署"),
+        ]
+
+    def test_无sections返回None(self):
+        assert _resolve_section(100, []) == (None, None)
+
+    def test_无效偏移量返回None(self):
+        assert _resolve_section(-1, self._make_sections()) == (None, None)
+
+    def test_偏移量在第一标题前返回None(self):
+        """第一个标题之前的内容不属于任何章节"""
+        sections = [(50, 1, "概述")]
+        assert _resolve_section(10, sections) == (None, None)
+
+    def test_偏移量在第一个标题上(self):
+        sections = self._make_sections()
+        section_title, section_path = _resolve_section(0, sections)
+        assert section_title == "概述"
+        assert section_path == "概述"
+
+    def test_偏移量匹配第一个子标题(self):
+        sections = self._make_sections()
+        section_title, section_path = _resolve_section(10, sections)
+        assert section_title == "环境配置"
+        assert section_path == "概述 > 环境配置"
+
+    def test_偏移量匹配二级子标题(self):
+        sections = self._make_sections()
+        section_title, section_path = _resolve_section(30, sections)
+        assert section_title == "数据库"
+        assert section_path == "概述 > 环境配置 > 数据库"
+
+    def test_同级标题替换(self):
+        """同级或更高级标题出现时，旧同级被弹出"""
+        sections = self._make_sections()
+        section_title, section_path = _resolve_section(50, sections)
+        assert section_title == "部署"
+        # 部署是 level 2，弹出 level 2 的「环境配置」和 level 3 的「数据库」
+        assert section_path == "概述 > 部署"
+
+    def test_标题间的内容归属上一个标题(self):
+        """两个标题之间的偏移量应归属于第一个标题"""
+        sections = [(0, 1, "开始"), (100, 2, "详细")]
+        section_title, section_path = _resolve_section(50, sections)
+        assert section_title == "开始"
+        assert section_path == "开始"
+
+
+class TestChunkDocumentWithSections:
+    """chunk_document() 集成 §8.7 章节信息"""
+
+    def test_markdown文档分块含章节信息(self):
+        text = """# 入职指南
+
+新员工入职流程包括以下步骤：第一步，填写个人信息表。第二步，提交相关证明材料。第三步，参加入职培训。
+
+## 报销制度
+
+公司报销制度如下：差旅费按实际支出报销，需提供发票。日常办公用品按月预算控制。
+
+## 假期政策
+
+年假每年十五天，病假需提供医院证明。婚假为三天，需提前一周申请。"""
+        result = chunk_document(text)
+        assert result.total_chunks >= 1
+
+        # 检查每个 chunk 的 section_title / section_path
+        chunks_with_sections = [c for c in result.chunks if c.section_title]
+        assert len(chunks_with_sections) >= 1
+
+    def test_无标题文档_章节信息为None(self):
+        text = "这是一段没有任何标题的文本。" * 100
+        result = chunk_document(text)
+        for chunk in result.chunks:
+            assert chunk.section_title is None
+            assert chunk.section_path is None
+
+    def test_ChunkResult包含章节字段(self):
+        chunk = ChunkResult(
+            content="测试",
+            chunk_index=0,
+            page_number=1,
+            estimated_tokens=10,
+            section_title="§3.2 限流",
+            section_path="架构 > §3 基础设施 > §3.2 限流",
+        )
+        assert chunk.section_title == "§3.2 限流"
+        assert chunk.section_path == "架构 > §3 基础设施 > §3.2 限流"
+
+    def test_ChunkResult章节字段默认为None(self):
+        chunk = ChunkResult(content="测试", chunk_index=0, page_number=None, estimated_tokens=5)
+        assert chunk.section_title is None
+        assert chunk.section_path is None

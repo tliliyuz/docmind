@@ -206,3 +206,80 @@ class TestVectorRetrieverSearch:
         assert isinstance(result.chunk_index, int)
         assert result.doc_id == 1
         assert result.chunk_index == 0
+
+    # === §8.7 章节元数据回填测试 ===
+
+    @pytest.mark.asyncio
+    async def test_metadata含章节字段_正确回填(self):
+        """ChromaDB metadata 含 section_title/section_path 时写入 RetrievalResult"""
+        mock_store = AsyncMock()
+        mock_store.search.return_value = make_mock_chroma_results(
+            ids=[["doc_1_chunk_0"]],
+            documents=[["SSE 事件格式详解"]],
+            distances=[[0.2]],
+            metadatas=[[{
+                "kb_id": 1, "doc_id": 1, "chunk_index": 0,
+                "section_title": "§6.1 SSE 事件完整格式",
+                "section_path": "RAG Pipeline > §6 SSE 事件流",
+                "page": 3,
+            }]]
+        )
+        retriever = VectorRetriever(vector_store=mock_store)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            output = await retriever.search("SSE 事件", kb_id=1)
+
+        assert len(output.results) == 1
+        r = output.results[0]
+        assert r.section_title == "§6.1 SSE 事件完整格式"
+        assert r.section_path == "RAG Pipeline > §6 SSE 事件流"
+        assert r.page == 3
+
+    @pytest.mark.asyncio
+    async def test_metadata无章节字段_默认为None(self):
+        """ChromaDB metadata 无 section_title/section_path 时字段为 None"""
+        mock_store = AsyncMock()
+        mock_store.search.return_value = make_mock_chroma_results(
+            ids=[["doc_1_chunk_0"]],
+            documents=[["普通内容"]],
+            distances=[[0.5]],
+            metadatas=[[{"kb_id": 1, "doc_id": 1, "chunk_index": 0}]]
+        )
+        retriever = VectorRetriever(vector_store=mock_store)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            output = await retriever.search("问题", kb_id=1)
+
+        assert len(output.results) == 1
+        r = output.results[0]
+        assert r.section_title is None
+        assert r.section_path is None
+        assert r.page is None
+
+    @pytest.mark.asyncio
+    async def test_metadata空章节字段_正确处理(self):
+        """section_title/section_path 为空字符串时返回 None"""
+        mock_store = AsyncMock()
+        mock_store.search.return_value = make_mock_chroma_results(
+            ids=[["doc_1_chunk_0"]],
+            documents=[["内容"]],
+            distances=[[0.3]],
+            metadatas=[[{
+                "kb_id": 1, "doc_id": 1, "chunk_index": 0,
+                "section_title": "",
+                "section_path": "",
+            }]]
+        )
+        retriever = VectorRetriever(vector_store=mock_store)
+
+        with patch("app.rag.retriever.embed_chunks", new_callable=AsyncMock) as mock_embed:
+            mock_embed.return_value = make_mock_embed_result()
+            output = await retriever.search("问题", kb_id=1)
+
+        assert len(output.results) == 1
+        r = output.results[0]
+        # 空字符串 → None（通过 `or None` 处理）
+        assert r.section_title is None
+        assert r.section_path is None

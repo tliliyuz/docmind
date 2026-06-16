@@ -56,7 +56,7 @@ class TestFormatChunkReference:
     """测试 chunk 格式化"""
 
     def test_完整信息(self):
-        """有文档名和页码"""
+        """有文档名和页码 — §8.7 章节信息格式"""
         chunk = RetrievalResult(
             doc_id=1,
             chunk_index=0,
@@ -67,8 +67,8 @@ class TestFormatChunkReference:
         )
         result = _format_chunk_reference(chunk, 1)
         assert "[来源1]" in result
-        assert "（文档: 测试文档.pdf）" in result
-        assert "（页码: 3）" in result
+        assert "文档: 测试文档.pdf" in result
+        assert "页码: 3" in result
         assert "测试内容" in result
 
     def test_无文档名(self):
@@ -114,6 +114,71 @@ class TestFormatChunkReference:
         assert "测试内容" in result
         assert "（文档:" not in result
         assert "（页码:" not in result
+
+    # === §8.7 章节信息格式化 ===
+
+    def test_含章节信息(self):
+        """有 section_title 和 section_path，优先展示 section_path"""
+        chunk = RetrievalResult(
+            doc_id=1,
+            chunk_index=0,
+            content="SSE 事件格式详解",
+            score=0.9,
+            doc_name="API.md",
+            section_title="§6.1 SSE 事件完整格式",
+            section_path="RAG Pipeline > §6 SSE 事件流",
+        )
+        result = _format_chunk_reference(chunk, 1)
+        assert "[来源1]" in result
+        assert "文档: API.md" in result
+        assert "章节: RAG Pipeline > §6 SSE 事件流" in result
+        # section_path 优先于 section_title
+        assert "SSE 事件格式详解" in result
+
+    def test_仅section_title_回退展示(self):
+        """无 section_path 时，展示 section_title"""
+        chunk = RetrievalResult(
+            doc_id=1,
+            chunk_index=0,
+            content="限流配置说明",
+            score=0.9,
+            doc_name="ARCHITECTURE.md",
+            section_title="§13.2 限流策略",
+            section_path=None,
+        )
+        result = _format_chunk_reference(chunk, 1)
+        assert "章节: §13.2 限流策略" in result
+
+    def test_含章节无文档名页码(self):
+        """有章节但无文档名和页码"""
+        chunk = RetrievalResult(
+            doc_id=1,
+            chunk_index=0,
+            content="核心内容",
+            score=0.9,
+            section_path="概述 > 快速开始",
+        )
+        result = _format_chunk_reference(chunk, 1)
+        assert "章节: 概述 > 快速开始" in result
+        assert "文档:" not in result
+        assert "页码:" not in result
+
+    def test_章节信息与文档名页码同时存在(self):
+        """全量字段：文档名 + 章节 + 页码"""
+        chunk = RetrievalResult(
+            doc_id=1,
+            chunk_index=0,
+            content="完整信息",
+            score=0.9,
+            doc_name="API.md",
+            page=3,
+            section_path="API > §6 SSE > §6.1",
+        )
+        result = _format_chunk_reference(chunk, 1)
+        # 三个字段都应该存在，以 " | " 分隔
+        assert "文档: API.md" in result
+        assert "章节: API > §6 SSE > §6.1" in result
+        assert "页码: 3" in result
 
 
 class TestBuildPrompt:
