@@ -63,6 +63,15 @@ const MOCK_TRACE = {
     status: 'success',
   },
   rerank: { method: 'noop', duration_ms: 5, metadata: { reranker: 'NoopReranker' }, status: 'success' },
+  evidence_review: {
+    summary: { decision: 'ALLOW', assertive_count: 3, referential_count: 2, rejected_count: 0 },
+    chunk_decisions: [
+      { chunk_index: 0, doc_id: 'doc-1', role: 'ASSERTIVE', filtered_sentence_count: 5, assertive_sentence_count: 3, referential_sentence_count: 2, reason: null },
+    ],
+    sentence_review: [],
+    duration_ms: 150,
+    status: 'success',
+  },
   generate: { model: 'deepseek-v4', ttft_ms: 320, duration_ms: 1800, status: 'success' },
   error_message: null,
   created_at: '2026-06-12T10:30:00+00:00',
@@ -203,12 +212,12 @@ describe('TraceDetail', () => {
 
   // C9.9 — TraceDetail 阶段卡片
   describe('C9.9 TraceDetail 阶段卡片', () => {
-    it('渲染 5 个阶段卡片（Intent/Rewrite/Retrieve/Rerank/Generate）', async () => {
+    it('渲染 6 个阶段卡片（Intent/Rewrite/Retrieve/Rerank/Evidence/Generate）', async () => {
       mockSuccessResponse()
       const wrapper = getComponent()
       await flushPromises()
       const cards = wrapper.findAll('.stage-card')
-      expect(cards).toHaveLength(5)
+      expect(cards).toHaveLength(6)
     })
 
     it('每个阶段卡片显示阶段名称', async () => {
@@ -216,7 +225,7 @@ describe('TraceDetail', () => {
       const wrapper = getComponent()
       await flushPromises()
       const names = wrapper.findAll('.stage-name').map(el => el.text())
-      expect(names).toEqual(['Intent', 'Rewrite', 'Retrieve', 'Rerank', 'Generate'])
+      expect(names).toEqual(['Intent', 'Rewrite', 'Retrieve', 'Rerank', 'Evidence', 'Generate'])
     })
 
     it('每个阶段卡片显示耗时', async () => {
@@ -224,19 +233,20 @@ describe('TraceDetail', () => {
       const wrapper = getComponent()
       await flushPromises()
       const durations = wrapper.findAll('.stage-duration').map(el => el.text())
-      // Intent: 1200ms=1.2s, Rewrite: 800ms, Retrieve: 760ms, Rerank: 5ms, Generate: 1800ms=1.8s
+      // Intent: 1200ms=1.2s, Rewrite: 800ms, Retrieve: 760ms, Rerank: 5ms, Evidence: 150ms, Generate: 1800ms=1.8s
       expect(durations[0]).toBe('1.2s')
       expect(durations[1]).toBe('800ms')
       expect(durations[2]).toBe('760ms')
       expect(durations[3]).toBe('5ms')
-      expect(durations[4]).toBe('1.8s')
+      expect(durations[4]).toBe('150ms')
+      expect(durations[5]).toBe('1.8s')
     })
 
     it('Generate 阶段显示模型名称', async () => {
       mockSuccessResponse()
       const wrapper = getComponent()
       await flushPromises()
-      const generateCard = wrapper.findAll('.stage-card')[4]
+      const generateCard = wrapper.findAll('.stage-card')[5]
       const metaItems = generateCard.findAll('.stage-meta-item')
       const modelMeta = metaItems.find(el => el.text().includes('deepseek-v4'))
       expect(modelMeta).toBeTruthy()
@@ -246,7 +256,7 @@ describe('TraceDetail', () => {
       mockSuccessResponse()
       const wrapper = getComponent()
       await flushPromises()
-      const generateCard = wrapper.findAll('.stage-card')[4]
+      const generateCard = wrapper.findAll('.stage-card')[5]
       const metaItems = generateCard.findAll('.stage-meta-item')
       const ttftMeta = metaItems.find(el => el.text().includes('TTFT'))
       expect(ttftMeta).toBeTruthy()
@@ -257,7 +267,7 @@ describe('TraceDetail', () => {
       mockSuccessResponse(MOCK_TRACE_ERROR)
       const wrapper = getComponent()
       await flushPromises()
-      const generateCard = wrapper.findAll('.stage-card')[4]
+      const generateCard = wrapper.findAll('.stage-card')[5]
       expect(generateCard.classes()).toContain('has-error')
     })
   })

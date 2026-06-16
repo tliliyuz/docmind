@@ -200,7 +200,7 @@ const stages = computed(() => {
     { key: 'rewrite', label: 'Rewrite', data: trace.value.rewrite },
     { key: 'retrieve', label: 'Retrieve', data: trace.value.retrieve },
     { key: 'rerank', label: 'Rerank', data: trace.value.rerank },
-    { key: 'evidence_review', label: '证据审查', data: trace.value.evidence_review },
+    { key: 'evidence_review', label: 'Evidence', data: trace.value.evidence_review },
     { key: 'generate', label: 'Generate', data: trace.value.generate },
   ]
 })
