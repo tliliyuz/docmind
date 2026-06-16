@@ -321,7 +321,7 @@ onMounted(loadList)
 .filename-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
 }
 
 .doc-filename {
@@ -340,7 +340,7 @@ onMounted(loadList)
 .kb-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
 }
 
 .kb-link {
@@ -350,7 +350,7 @@ onMounted(loadList)
 
 .kb-visibility-badge {
   display: inline-block;
-  padding: 0 6px;
+  padding: 0 var(--dm-space-1_5);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-3xs);
   font-weight: var(--dm-weight-medium);
@@ -373,7 +373,7 @@ onMounted(loadList)
   font-weight: var(--dm-weight-semibold);
   color: var(--dm-text-tertiary);
   background: var(--dm-bg-page);
-  padding: 2px 6px;
+  padding: 2px var(--dm-space-1_5);
   border-radius: var(--dm-radius-xs);
 }
 
@@ -382,8 +382,8 @@ onMounted(loadList)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--dm-space-8);
+  height: var(--dm-space-8);
   border: none;
   background: transparent;
   color: var(--dm-text-tertiary);
@@ -411,7 +411,7 @@ onMounted(loadList)
 /* 文档状态标签 */
 .doc-status-tag {
   display: inline-block;
-  padding: 2px 6px;
+  padding: 2px var(--dm-space-1_5);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);

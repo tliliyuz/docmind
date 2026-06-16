@@ -775,8 +775,8 @@ onUnmounted(() => {
 }
 
 .back-btn {
-  width: 36px;
-  height: 36px;
+  width: var(--dm-space-9);
+  height: var(--dm-space-9);
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-xs);
   background: var(--dm-bg-card);
@@ -840,8 +840,8 @@ onUnmounted(() => {
 
 /* 幽灵按钮 */
 .ghost-btn {
-  height: 32px;
-  padding: 0 14px;
+  height: var(--dm-space-8);
+  padding: 0 var(--dm-space-3_5);
   background: var(--dm-primary-light);
   color: var(--dm-primary);
   border: none;
@@ -891,8 +891,8 @@ onUnmounted(() => {
 }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
+  width: var(--dm-space-12);
+  height: var(--dm-space-12);
   border-radius: var(--dm-radius-sm);
   display: flex;
   align-items: center;
@@ -969,7 +969,7 @@ onUnmounted(() => {
 
 .progress-bar {
   width: 100%;
-  height: 6px;
+  height: var(--dm-space-1_5);
   background: var(--dm-border-light);
   border-radius: 3px;
   overflow: hidden;
@@ -1028,7 +1028,7 @@ onUnmounted(() => {
 .doc-filename {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--dm-space-2);
   color: var(--dm-text-primary);
   font-weight: var(--dm-weight-medium);
 }
@@ -1056,20 +1056,20 @@ onUnmounted(() => {
   font-weight: var(--dm-weight-semibold);
   color: var(--dm-text-secondary);
   background: var(--dm-primary-light);
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-xs);
 }
 
 /* 状态标签 — 复用 UIDESIGN §4.8 */
 .status-tag {
-  padding: 4px 10px;
+  padding: var(--dm-space-1) var(--dm-space-2_5);
   border-radius: var(--dm-radius-xs);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-semibold);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--dm-space-1);
 }
 
 .status-tag.uploaded,
@@ -1186,7 +1186,7 @@ onUnmounted(() => {
   font-weight: var(--dm-weight-semibold);
   color: var(--dm-primary);
   background: var(--dm-primary-light);
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-xs);
 }
 
@@ -1212,8 +1212,8 @@ onUnmounted(() => {
 .filter-input-st  { width: 130px; }
 .table-full       { width: 100%; }
 .search-icon      { color: var(--dm-text-tertiary); }
-.icon-gap-sm      { margin-right: 4px; }
-.icon-gap-md      { margin-right: 6px; }
+.icon-gap-sm      { margin-right: var(--dm-space-1); }
+.icon-gap-md      { margin-right: var(--dm-space-1_5); }
 .text-tertiary    { color: var(--dm-text-tertiary); }
-.section-gap      { margin-top: 16px; }
+.section-gap      { margin-top: var(--dm-space-4); }
 </style>

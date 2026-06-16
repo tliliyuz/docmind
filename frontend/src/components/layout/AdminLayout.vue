@@ -136,8 +136,8 @@ const isUsersActive = computed(() => {
 }
 
 .admin-logo-icon {
-  width: 36px;
-  height: 36px;
+  width: var(--dm-space-9);
+  height: var(--dm-space-9);
   background: var(--dm-primary);
   border-radius: var(--dm-radius-sm);
   display: flex;
@@ -176,7 +176,7 @@ const isUsersActive = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--dm-space-3);
-  padding: 12px 14px;
+  padding: var(--dm-space-3) var(--dm-space-3_5);
   border-radius: var(--dm-radius-sm);
   cursor: pointer;
   transition: all var(--dm-transition-fast);
@@ -214,7 +214,7 @@ const isUsersActive = computed(() => {
   align-items: center;
   justify-content: center;
   gap: var(--dm-space-2);
-  padding: 10px 14px;
+  padding: var(--dm-space-2_5) var(--dm-space-3_5);
   border-radius: var(--dm-radius-sm);
   cursor: pointer;
   transition: all var(--dm-transition-fast);
@@ -262,6 +262,6 @@ const isUsersActive = computed(() => {
 .admin-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--dm-space-6) 28px;
+  padding: var(--dm-space-6) var(--dm-space-7);
 }
 </style>

@@ -155,7 +155,7 @@ defineExpose({ setText, focus })
   width: 100%;
   min-height: 52px;
   max-height: 200px;
-  padding: 14px 16px 0;
+  padding: var(--dm-space-3_5) var(--dm-space-4) 0;
   border: none;
   outline: none;
   resize: none;
@@ -179,14 +179,14 @@ defineExpose({ setText, focus })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px 10px;
+  padding: var(--dm-space-2) var(--dm-space-3) var(--dm-space-2_5);
 }
 
 .deep-think-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: var(--dm-space-1_5);
+  padding: var(--dm-space-1) var(--dm-space-2_5);
   border-radius: var(--dm-radius-sm);
   cursor: pointer;
   font-size: var(--dm-text-2xs);
@@ -229,7 +229,7 @@ defineExpose({ setText, focus })
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
   border: none;
   border-radius: var(--dm-radius-sm);
   cursor: pointer;
@@ -238,8 +238,8 @@ defineExpose({ setText, focus })
 }
 
 .send-btn {
-  width: 36px;
-  height: 36px;
+  width: var(--dm-space-9);
+  height: var(--dm-space-9);
   background: var(--dm-text-primary);
   color: white;
 }
@@ -255,8 +255,8 @@ defineExpose({ setText, focus })
 }
 
 .stop-btn {
-  height: 32px;
-  padding: 0 12px;
+  height: var(--dm-space-8);
+  padding: 0 var(--dm-space-3);
   background: var(--dm-danger-light);
   color: var(--dm-danger);
   font-size: var(--dm-text-xs);

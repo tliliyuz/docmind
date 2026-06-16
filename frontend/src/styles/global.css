@@ -16,6 +16,7 @@
     --dm-success-light: #ECFDF5;
     --dm-warning-light: #FFFBEB;
     --dm-danger-light: #FEF2F2;
+    --dm-danger-border: rgba(239, 68, 68, 0.2);  /* --dm-danger 20% 透明度，用于分隔线/边框 */
     --dm-info-light: #EFF6FF;
 
     /* ===== Evidence 高亮标记（RAG 引用片段，需比 --dm-warning-light 更醒目） ===== */
@@ -104,13 +105,19 @@
 
     /* ===== 间距 ===== */
     --dm-space-1: 4px;
+    --dm-space-1_5: 6px;
     --dm-space-2: 8px;
+    --dm-space-2_5: 10px;
     --dm-space-3: 12px;
+    --dm-space-3_5: 14px;
     --dm-space-4: 16px;
     --dm-space-5: 20px;
     --dm-space-6: 24px;
+    --dm-space-7: 28px;
     --dm-space-8: 32px;
+    --dm-space-9: 36px;
     --dm-space-10: 40px;
+    --dm-space-11: 44px;
     --dm-space-12: 48px;
 
     /* ===== 圆角 ===== */
@@ -194,7 +201,7 @@ body {
 
 /* ===== 滚动条 ===== */
 ::-webkit-scrollbar {
-    width: 6px;
+    width: var(--dm-space-1_5);
 }
 ::-webkit-scrollbar-track {
     background: transparent;
@@ -212,8 +219,8 @@ body {
 /* 标准输入框 */
 .form-input {
     width: 100%;
-    height: 44px;
-    padding: 0 14px;
+    height: var(--dm-space-11);
+    padding: 0 var(--dm-space-3_5);
     border: 1px solid var(--dm-border);
     border-radius: var(--dm-radius-md);
     font-size: var(--dm-text-body);
@@ -240,7 +247,7 @@ body {
 
 .input-group .prefix-icon {
     position: absolute;
-    left: 14px;
+    left: var(--dm-space-3_5);
     top: 50%;
     transform: translateY(-50%);
     color: var(--dm-text-tertiary);

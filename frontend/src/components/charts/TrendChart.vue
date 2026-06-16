@@ -22,6 +22,7 @@ import {
   getLegendConfig,
   getXAxisConfig,
   getYAxisConfig,
+  hexToRgba,
 } from '@/constants/charts'
 
 const props = defineProps({
@@ -48,7 +49,7 @@ function renderChart() {
         const lines = params.map(
           (p) => `${p.marker} ${p.seriesName}: <b>${p.value}</b> 次`
         )
-        return `<div style="font-size:13px">${params[0].axisValue}</div>` + lines.join('<br/>')
+        return `<div style="font-size:var(--dm-text-xs)">${params[0].axisValue}</div>` + lines.join('<br/>')
       },
     },
     legend: {
@@ -78,8 +79,8 @@ function renderChart() {
             type: 'linear',
             x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(16, 185, 129, 0.15)' },
-              { offset: 1, color: 'rgba(16, 185, 129, 0)' },
+              { offset: 0, color: hexToRgba(colors.success, 0.15) },
+              { offset: 1, color: hexToRgba(colors.success, 0) },
             ],
           },
         },
@@ -98,8 +99,8 @@ function renderChart() {
             type: 'linear',
             x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(239, 68, 68, 0.15)' },
-              { offset: 1, color: 'rgba(239, 68, 68, 0)' },
+              { offset: 0, color: hexToRgba(colors.danger, 0.15) },
+              { offset: 1, color: hexToRgba(colors.danger, 0) },
             ],
           },
         },

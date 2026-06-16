@@ -65,7 +65,7 @@ const pageTitle = computed(() => {
 .content-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: var(--dm-space-6) 28px;
+  padding: var(--dm-space-6) var(--dm-space-7);
 }
 
 /* 聊天页内部自行管理滚动，父容器不产生滚动条 */

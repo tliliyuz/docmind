@@ -14,7 +14,7 @@ export function getChartColors() {
   const get = (name) => style.getPropertyValue(name).trim() || null
 
   return {
-    // 系列色（对齐语义色 Design Token）
+    // 系列色（对齐语义色 Design Token，回退值匹配 UIDESIGN.md 默认值）
     success: get('--dm-success') || '#10B981',
     danger: get('--dm-danger') || '#EF4444',
     info: get('--dm-info') || '#3B82F6',
@@ -30,7 +30,7 @@ export function getChartColors() {
     p95: get('--dm-warning') || '#F59E0B',
     p99: get('--dm-danger') || '#EF4444',
 
-    // 中性色
+    // 中性色（回退值匹配 Design Token 默认值）
     textSecondary: get('--dm-text-secondary') || '#737373',
     textTertiary: get('--dm-text-tertiary') || '#A3A3A3',
     border: get('--dm-border') || '#E0E0E0',
@@ -130,4 +130,19 @@ export function formatTokens(val) {
   if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M'
   if (val >= 1000) return (val / 1000).toFixed(1) + 'K'
   return String(val)
+}
+
+/**
+ * 将 hex 颜色转换为 rgba 字符串
+ * 用于 ECharts 渐变 areaStyle，从 Design Token 颜色派生
+ * @param {string} hex - hex 颜色值（如 '#10B981'）
+ * @param {number} alpha - 透明度（0-1）
+ * @returns {string} rgba 字符串
+ */
+export function hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }

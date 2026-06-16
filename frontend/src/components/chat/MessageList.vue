@@ -110,8 +110,8 @@ defineExpose({ scrollToBottom })
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: var(--dm-space-1_5);
+  padding: var(--dm-space-2) var(--dm-space-4);
   background: var(--dm-bg-card);
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-xl);

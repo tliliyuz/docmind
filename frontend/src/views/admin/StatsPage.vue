@@ -228,8 +228,8 @@ function formatStorage(bytes) {
 }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
+  width: var(--dm-space-12);
+  height: var(--dm-space-12);
   border-radius: var(--dm-radius-sm);
   display: flex;
   align-items: center;

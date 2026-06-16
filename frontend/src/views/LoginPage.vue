@@ -191,7 +191,7 @@ async function handleSubmit() {
   display: flex;
   background: var(--dm-border-light);
   border-radius: var(--dm-radius-sm);
-  padding: 4px;
+  padding: var(--dm-space-1);
   margin-bottom: var(--dm-space-5);
 }
 
@@ -203,7 +203,7 @@ async function handleSubmit() {
   font-size: var(--dm-text-body);
   color: var(--dm-text-secondary);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--dm-space-1_5);
   transition: all var(--dm-transition-fast);
 }
 
@@ -254,8 +254,8 @@ async function handleSubmit() {
 .error-msg {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: var(--dm-space-1_5);
+  padding: var(--dm-space-2_5) var(--dm-space-3_5);
   background: var(--dm-danger-light);
   color: var(--dm-danger);
   font-size: var(--dm-text-xs);

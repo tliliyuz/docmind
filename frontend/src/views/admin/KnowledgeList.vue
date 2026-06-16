@@ -421,8 +421,8 @@ onMounted(loadList)
 .visibility-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--dm-space-1);
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -441,7 +441,7 @@ onMounted(loadList)
 /* 状态标签 */
 .status-tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -469,8 +469,8 @@ onMounted(loadList)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--dm-space-8);
+  height: var(--dm-space-8);
   border: none;
   background: transparent;
   color: var(--dm-text-tertiary);
@@ -530,6 +530,6 @@ onMounted(loadList)
 
 /* 通用工具类 */
 .search-icon { color: var(--dm-text-tertiary); }
-.icon-gap-sm { margin-right: 4px; }
+.icon-gap-sm { margin-right: var(--dm-space-1); }
 .text-tertiary { color: var(--dm-text-tertiary); }
 </style>

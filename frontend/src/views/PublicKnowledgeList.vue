@@ -232,8 +232,8 @@ onMounted(() => {
 .visibility-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--dm-space-1);
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-xs);
   font-size: var(--dm-text-3xs);
   font-weight: var(--dm-weight-semibold);
@@ -247,8 +247,8 @@ onMounted(() => {
 .owner-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--dm-space-1);
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-xs);
   font-size: var(--dm-text-3xs);
   font-weight: var(--dm-weight-medium);
@@ -258,8 +258,8 @@ onMounted(() => {
 
 /* 部门图标 */
 .kb-icon {
-  width: 44px;
-  height: 44px;
+  width: var(--dm-space-11);
+  height: var(--dm-space-11);
   border-radius: var(--dm-radius-sm);
   display: flex;
   align-items: center;
@@ -296,7 +296,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--dm-space-4);
-  padding-top: 14px;
+  padding-top: var(--dm-space-3_5);
   margin-top: auto;
   border-top: 1px solid var(--dm-border-light);
 }
@@ -304,7 +304,7 @@ onMounted(() => {
 .card-meta-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
   font-size: var(--dm-text-2xs);
   color: var(--dm-text-tertiary);
 }

@@ -683,10 +683,10 @@ async function handleChangePassword() {
 /* 折叠切换按钮 */
 .collapse-toggle-btn {
   position: absolute;
-  top: 14px;
-  right: 12px;
-  width: 28px;
-  height: 28px;
+  top: var(--dm-space-3_5);
+  right: var(--dm-space-3);
+  width: var(--dm-space-7);
+  height: var(--dm-space-7);
   border: none;
   background: transparent;
   color: var(--dm-text-tertiary);
@@ -752,7 +752,7 @@ async function handleChangePassword() {
 .new-chat-btn {
   width: 100%;
   height: 38px;
-  padding: 0 14px;
+  padding: 0 var(--dm-space-3_5);
   background: var(--dm-bg-card);
   color: var(--dm-text-primary);
   border: 1px solid var(--dm-border);
@@ -841,7 +841,7 @@ async function handleChangePassword() {
 }
 
 .conv-list-empty .empty-icon {
-  font-size: 24px;
+  font-size: var(--dm-text-xl);
   opacity: 0.4;
 }
 
@@ -861,12 +861,12 @@ async function handleChangePassword() {
 }
 
 .conv-item {
-  padding: 10px 12px;
+  padding: var(--dm-space-2_5) var(--dm-space-3);
   border-radius: var(--dm-radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--dm-space-2_5);
   margin-bottom: 2px;
   transition: background var(--dm-transition-fast);
   position: relative;
@@ -888,7 +888,7 @@ async function handleChangePassword() {
 /* 收起态：居中仅图标，不可点击，仅展示用途 */
 .conv-item-collapsed {
   justify-content: center;
-  padding: 10px 0;
+  padding: var(--dm-space-2_5) 0;
   cursor: default;
 }
 
@@ -897,8 +897,8 @@ async function handleChangePassword() {
 }
 
 .conv-icon {
-  width: 28px;
-  height: 28px;
+  width: var(--dm-space-7);
+  height: var(--dm-space-7);
   background: var(--dm-bg-chat);
   border-radius: var(--dm-radius-sm);
   display: flex;
@@ -944,8 +944,8 @@ async function handleChangePassword() {
 
 .conv-edit-input {
   width: 100%;
-  height: 24px;
-  padding: 0 6px;
+  height: var(--dm-space-6);
+  padding: 0 var(--dm-space-1_5);
   border: 1px solid var(--dm-primary);
   border-radius: var(--dm-radius-xs);
   font-size: var(--dm-text-xs);
@@ -966,8 +966,8 @@ async function handleChangePassword() {
 }
 
 .conv-actions button {
-  width: 24px;
-  height: 24px;
+  width: var(--dm-space-6);
+  height: var(--dm-space-6);
   border: none;
   background: transparent;
   color: var(--dm-text-tertiary);
@@ -996,7 +996,7 @@ async function handleChangePassword() {
   display: flex;
   align-items: center;
   gap: var(--dm-space-3);
-  padding: 12px 14px;
+  padding: var(--dm-space-3) var(--dm-space-3_5);
   border-radius: var(--dm-radius-sm);
   cursor: pointer;
   transition: all var(--dm-transition-fast);
@@ -1025,7 +1025,7 @@ async function handleChangePassword() {
 /* 收起态：导航项仅图标居中 */
 .collapsed .nav-item {
   justify-content: center;
-  padding: 12px 0;
+  padding: var(--dm-space-3) 0;
 }
 
 .collapsed .nav-item i {
@@ -1059,8 +1059,8 @@ async function handleChangePassword() {
 }
 
 .user-avatar {
-  width: 32px;
-  height: 32px;
+  width: var(--dm-space-8);
+  height: var(--dm-space-8);
   border-radius: var(--dm-radius-full);
   background: var(--dm-text-primary);
   display: flex;
@@ -1146,7 +1146,7 @@ async function handleChangePassword() {
   display: flex;
   align-items: center;
   gap: var(--dm-space-3);
-  padding: 12px var(--dm-space-4);
+  padding: var(--dm-space-3) var(--dm-space-4);
   cursor: pointer;
   transition: background var(--dm-transition-fast);
   font-size: var(--dm-text-body);

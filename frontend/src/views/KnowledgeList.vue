@@ -446,8 +446,8 @@ onMounted(() => {
 .visibility-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--dm-space-1);
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-xs);
   font-size: var(--dm-text-3xs);
   font-weight: var(--dm-weight-semibold);
@@ -465,8 +465,8 @@ onMounted(() => {
 
 /* 部门图标 */
 .kb-icon {
-  width: 44px;
-  height: 44px;
+  width: var(--dm-space-11);
+  height: var(--dm-space-11);
   border-radius: var(--dm-radius-sm);
   display: flex;
   align-items: center;
@@ -484,8 +484,8 @@ onMounted(() => {
 
 /* 更多按钮 */
 .kb-more-btn {
-  width: 32px;
-  height: 32px;
+  width: var(--dm-space-8);
+  height: var(--dm-space-8);
   border: none;
   background: transparent;
   color: var(--dm-text-tertiary);
@@ -524,7 +524,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--dm-space-4);
-  padding-top: 14px;
+  padding-top: var(--dm-space-3_5);
   margin-top: auto;
   border-top: 1px solid var(--dm-border-light);
 }
@@ -532,7 +532,7 @@ onMounted(() => {
 .card-meta-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
   font-size: var(--dm-text-2xs);
   color: var(--dm-text-tertiary);
 }
@@ -560,8 +560,8 @@ onMounted(() => {
 }
 
 .new-card-icon {
-  width: 48px;
-  height: 48px;
+  width: var(--dm-space-12);
+  height: var(--dm-space-12);
   background: var(--dm-primary-light);
   border-radius: var(--dm-radius-full);
   display: flex;
@@ -579,9 +579,9 @@ onMounted(() => {
 
 /* 工具类 */
 .search-icon   { color: var(--dm-text-tertiary); }
-.icon-gap-sm   { margin-right: 4px; }
-.icon-gap-md   { margin-right: 8px; }
-.icon-fw       { width: 14px; }
+.icon-gap-sm   { margin-right: var(--dm-space-1); }
+.icon-gap-md   { margin-right: var(--dm-space-2); }
+.icon-fw       { width: var(--dm-space-3_5); }
 .text-tertiary { color: var(--dm-text-tertiary); }
 .text-danger   { color: var(--dm-danger); }
 </style>

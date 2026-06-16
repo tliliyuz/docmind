@@ -337,7 +337,7 @@ function handleQuickQuestion(question) {
 .kb-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
   font-size: var(--dm-text-xs);
   font-weight: var(--dm-weight-semibold);
   color: var(--dm-text-secondary);
@@ -385,7 +385,7 @@ function handleQuickQuestion(question) {
 
 .orphan-banner-btn {
   flex-shrink: 0;
-  padding: 6px 14px;
+  padding: var(--dm-space-1_5) var(--dm-space-3_5);
   border: 1px solid var(--dm-orphan-accent);
   border-radius: var(--dm-radius-sm);
   background: transparent;
@@ -395,7 +395,7 @@ function handleQuickQuestion(question) {
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--dm-space-1_5);
   white-space: nowrap;
   transition: all var(--dm-transition-fast);
 }

@@ -86,8 +86,8 @@ const quickQuestions = [
 }
 
 .quick-card-icon {
-  width: 36px;
-  height: 36px;
+  width: var(--dm-space-9);
+  height: var(--dm-space-9);
   background: var(--dm-primary-light);
   border-radius: var(--dm-radius-sm);
   display: flex;

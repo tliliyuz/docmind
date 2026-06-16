@@ -50,7 +50,7 @@ function renderChart() {
         const lines = params.map(
           (p) => `${p.marker} ${p.seriesName}: <b>${formatMs(p.value)}</b>`
         )
-        return `<div style="font-size:13px">${params[0].axisValue}</div>` + lines.join('<br/>')
+        return `<div style="font-size:var(--dm-text-xs)">${params[0].axisValue}</div>` + lines.join('<br/>')
       },
     },
     legend: {

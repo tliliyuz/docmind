@@ -311,7 +311,7 @@ onMounted(loadDetail)
   display: inline-flex;
   align-items: center;
   gap: var(--dm-space-2);
-  padding: 6px 12px;
+  padding: var(--dm-space-1_5) var(--dm-space-3);
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-sm);
   background: var(--dm-bg-card);
@@ -336,7 +336,7 @@ onMounted(loadDetail)
   font-size: var(--dm-text-xs);
   color: var(--dm-text-primary);
   background: var(--dm-bg-page);
-  padding: 2px 6px;
+  padding: 2px var(--dm-space-1_5);
   border-radius: var(--dm-radius-xs);
   user-select: all;
 }
@@ -415,7 +415,7 @@ onMounted(loadDetail)
 /* 意图/响应标签 */
 .intent-tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -443,7 +443,7 @@ onMounted(loadDetail)
 
 .response-tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -547,14 +547,14 @@ onMounted(loadDetail)
 .stage-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--dm-space-1);
 }
 
 .stage-meta-item {
   font-size: var(--dm-text-3xs);
   color: var(--dm-text-tertiary);
   background: var(--dm-bg-page);
-  padding: 1px 6px;
+  padding: 1px var(--dm-space-1_5);
   border-radius: var(--dm-radius-xs);
 }
 
@@ -567,8 +567,8 @@ onMounted(loadDetail)
 .stage-json-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: var(--dm-space-1);
+  padding: var(--dm-space-1) var(--dm-space-2);
   border: 1px solid var(--dm-border-light);
   border-radius: var(--dm-radius-xs);
   background: transparent;
@@ -611,8 +611,8 @@ onMounted(loadDetail)
 .json-copy-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: var(--dm-space-1);
+  padding: var(--dm-space-1) var(--dm-space-2_5);
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-xs);
   background: var(--dm-bg-card);
@@ -672,7 +672,7 @@ onMounted(loadDetail)
   align-items: center;
   gap: var(--dm-space-2);
   padding: var(--dm-space-3) var(--dm-space-4);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  border-bottom: 1px solid var(--dm-danger-border);
   color: var(--dm-danger);
   font-size: var(--dm-text-sm);
   font-weight: var(--dm-weight-semibold);

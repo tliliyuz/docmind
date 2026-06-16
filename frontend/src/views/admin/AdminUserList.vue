@@ -390,7 +390,7 @@ onMounted(loadList)
 /* 角色标签 */
 .role-tag {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 2px var(--dm-space-2_5);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -409,7 +409,7 @@ onMounted(loadList)
 /* 状态标签 */
 .status-tag {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 2px var(--dm-space-2_5);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -436,8 +436,8 @@ onMounted(loadList)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--dm-space-8);
+  height: var(--dm-space-8);
   border: none;
   background: transparent;
   color: var(--dm-text-tertiary);

@@ -411,8 +411,8 @@ onMounted(loadList)
 }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
+  width: var(--dm-space-12);
+  height: var(--dm-space-12);
   border-radius: var(--dm-radius-sm);
   display: flex;
   align-items: center;
@@ -479,7 +479,7 @@ onMounted(loadList)
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--dm-space-1);
   transition: color var(--dm-transition-fast);
 }
 
@@ -532,7 +532,7 @@ onMounted(loadList)
 /* 意图标签 */
 .intent-tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -556,7 +556,7 @@ onMounted(loadList)
 /* 响应模式标签 */
 .response-tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px var(--dm-space-2);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);

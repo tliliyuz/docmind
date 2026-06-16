@@ -321,7 +321,7 @@ onMounted(loadDetail)
   display: inline-flex;
   align-items: center;
   gap: var(--dm-space-2);
-  padding: 6px 12px;
+  padding: var(--dm-space-1_5) var(--dm-space-3);
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-sm);
   background: var(--dm-bg-card);
@@ -380,7 +380,7 @@ onMounted(loadDetail)
 /* 角色标签 */
 .role-tag {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 2px var(--dm-space-2_5);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -400,7 +400,7 @@ onMounted(loadDetail)
 /* 状态标签 */
 .status-tag {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 2px var(--dm-space-2_5);
   border-radius: var(--dm-radius-sm);
   font-size: var(--dm-text-2xs);
   font-weight: var(--dm-weight-medium);
@@ -445,7 +445,7 @@ onMounted(loadDetail)
 }
 
 .stat-card:hover {
-  box-shadow: var(--dm-shadow-card);
+  box-shadow: var(--dm-shadow-md);
 }
 
 .stat-icon {
@@ -487,7 +487,7 @@ onMounted(loadDetail)
   display: inline-flex;
   align-items: center;
   gap: var(--dm-space-3);
-  padding: 14px 24px;
+  padding: var(--dm-space-3_5) var(--dm-space-6);
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-radius-md);
   background: var(--dm-bg-card);
