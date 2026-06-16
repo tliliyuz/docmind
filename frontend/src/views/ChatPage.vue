@@ -62,6 +62,19 @@
       </button>
     </div>
 
+    <!-- 空知识库警告 Banner -->
+    <div v-if="chatStore.isKbEmpty && !chatStore.isEmpty" class="orphan-banner">
+      <i class="fas fa-inbox orphan-banner-icon"></i>
+      <div class="orphan-banner-text">
+        <span>该会话关联的知识库暂无可检索文档，请先上传文档或选择其他知识库。</span>
+        <span>历史消息仍可查看。</span>
+      </div>
+      <button class="orphan-banner-btn" @click="handleOrphanNewChat">
+        <i class="fas fa-plus"></i>
+        新建对话
+      </button>
+    </div>
+
     <!-- 消息区域：空态 or 消息列表 -->
     <div class="chat-message-area">
       <WelcomeScreen
@@ -80,8 +93,8 @@
     <ChatInput
       ref="chatInputRef"
       :streaming="chatStore.streaming"
-      :placeholder="orphanInputPlaceholder"
-      :disabled="chatStore.isKbOrphaned && !chatStore.isEmpty"
+      :placeholder="disabledInputPlaceholder"
+      :disabled="(chatStore.isKbOrphaned || chatStore.isKbEmpty) && !chatStore.isEmpty"
       @send="handleSend"
       @stop="chatStore.abort()"
     />
@@ -123,13 +136,18 @@ const hasAnyKB = computed(() => {
   return chatStore.selectableKBs.mine.length > 0 || chatStore.selectableKBs.public.length > 0
 })
 
-/** 孤儿会话时的输入框 placeholder */
-const orphanInputPlaceholder = computed(() => {
-  if (!chatStore.isKbOrphaned) return undefined
-  if (chatStore.kbStatus === 'deleted') {
-    return '此会话关联的知识库已删除，无法继续提问'
+/** 输入框禁用时的 placeholder */
+const disabledInputPlaceholder = computed(() => {
+  if (chatStore.isKbOrphaned) {
+    if (chatStore.kbStatus === 'deleted') {
+      return '此会话关联的知识库已删除，无法继续提问'
+    }
+    return '此会话关联的知识库不可访问，无法继续提问'
   }
-  return '此会话关联的知识库不可访问，无法继续提问'
+  if (chatStore.isKbEmpty) {
+    return '此会话关联的知识库暂无可检索文档，无法继续提问'
+  }
+  return undefined
 })
 
 /**
@@ -233,14 +251,26 @@ async function handleOrphanNewChat() {
   }
 }
 
-/** 发送消息 */
-function handleSend({ question, deepThinking }) {
-  if (chatStore.isKbOrphaned && !chatStore.isEmpty) {
-    ElMessage.warning('此会话关联的知识库已不可用，请新建对话')
-    return
+/** 限制消息发送的原因（null 表示可以发送） */
+const sendBlockReason = computed(() => {
+  if (!chatStore.isEmpty) {
+    if (chatStore.isKbOrphaned) {
+      return '此会话关联的知识库已不可用，请新建对话'
+    }
+    if (chatStore.isKbEmpty) {
+      return '此会话关联的知识库暂无可检索文档，请先上传文档或选择其他知识库'
+    }
   }
   if (!chatStore.selectedKBId) {
-    ElMessage.warning('请先选择一个知识库')
+    return '请先选择一个知识库'
+  }
+  return null
+})
+
+/** 发送消息 */
+function handleSend({ question, deepThinking }) {
+  if (sendBlockReason.value) {
+    ElMessage.warning(sendBlockReason.value)
     return
   }
   try {

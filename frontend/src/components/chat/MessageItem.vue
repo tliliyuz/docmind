@@ -92,7 +92,7 @@
       </div>
 
       <!-- 操作栏（仅 assistant 完成后 hover 显示，孤儿会话隐藏重新生成） -->
-      <div v-if="msg.role === 'assistant' && msg.status === 'complete' && !chatStore.isKbOrphaned" class="message-actions">
+      <div v-if="msg.role === 'assistant' && msg.status === 'complete' && !chatStore.isKbOrphaned && !chatStore.isKbEmpty" class="message-actions">
         <button class="action-btn" title="重新生成" @click="$emit('regenerate')">
           <i class="fas fa-redo"></i>
           <span>重新生成</span>

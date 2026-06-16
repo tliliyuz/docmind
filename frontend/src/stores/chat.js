@@ -65,6 +65,14 @@ export const useChatStore = defineStore('chat', () => {
     return kbStatus.value === 'deleted' || kbStatus.value === 'unavailable'
   })
 
+  /** 当前会话关联的 KB 是否为空（存在但无可检索文档） */
+  const isKbEmpty = computed(() => {
+    if (kbStatus.value !== 'active') return false
+    if (!selectedKBId.value) return false
+    const allKBs = [...(selectableKBs.value.mine || []), ...(selectableKBs.value.public || [])]
+    return !allKBs.some(k => k.uuid === selectedKBId.value)
+  })
+
   // ===== 知识库相关 =====
 
   /** 加载可选知识库列表 */
@@ -404,6 +412,7 @@ export const useChatStore = defineStore('chat', () => {
     lastMessage,
     hasStreamingMessage,
     isKbOrphaned,
+    isKbEmpty,
 
     // 方法
     loadSelectableKBs,
