@@ -45,3 +45,4 @@ def _init_worker_resources(**kwargs):
 
 # 注册任务模块（导入即注册 @celery_app.task 装饰的任务）
 import app.ingest.tasks  # noqa: E402, F401
+import app.ingest.delete_tasks  # noqa: E402, F401

@@ -23,7 +23,7 @@ class TestGenerateTitleLLM:
         mock_result = MagicMock()
         mock_result.content = "差旅费报销流程咨询"
 
-        with patch("app.services.chat_service.chat_completion", new_callable=AsyncMock) as mock_llm:
+        with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             title = await _generate_title_llm("差旅费报销需要哪些材料？")
 
@@ -35,7 +35,7 @@ class TestGenerateTitleLLM:
         mock_result = MagicMock()
         mock_result.content = '"报销流程问答"'
 
-        with patch("app.services.chat_service.chat_completion", new_callable=AsyncMock) as mock_llm:
+        with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             title = await _generate_title_llm("报销流程是怎样的？")
 
@@ -46,7 +46,7 @@ class TestGenerateTitleLLM:
     @pytest.mark.asyncio
     async def test_llm_failure_fallback(self):
         """LLM 调用失败，回退到截断方案"""
-        with patch("app.services.chat_service.chat_completion", new_callable=AsyncMock) as mock_llm:
+        with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.side_effect = Exception("LLM 不可用")
             title = await _generate_title_llm("差旅费报销需要哪些材料？")
 
@@ -60,7 +60,7 @@ class TestGenerateTitleLLM:
         mock_result = MagicMock()
         mock_result.content = "   "
 
-        with patch("app.services.chat_service.chat_completion", new_callable=AsyncMock) as mock_llm:
+        with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             title = await _generate_title_llm("差旅费报销需要哪些材料？")
 
@@ -74,7 +74,7 @@ class TestGenerateTitleLLM:
         mock_result = MagicMock()
         mock_result.content = "这是一个非常非常长的对话标题超出了二十个字符的限制范围"
 
-        with patch("app.services.chat_service.chat_completion", new_callable=AsyncMock) as mock_llm:
+        with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_result
             title = await _generate_title_llm("测试问题")
 
@@ -83,7 +83,7 @@ class TestGenerateTitleLLM:
     @pytest.mark.asyncio
     async def test_fallback_matches_truncation(self):
         """回退结果与 _generate_title 一致"""
-        with patch("app.services.chat_service.chat_completion", new_callable=AsyncMock) as mock_llm:
+        with patch("app.services.chat_helpers.chat_completion", new_callable=AsyncMock) as mock_llm:
             mock_llm.side_effect = Exception("LLM 不可用")
             title = await _generate_title_llm("差旅费报销需要哪些材料？")
 

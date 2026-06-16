@@ -14,8 +14,11 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - **DOCX 标题样式→Markdown 标记**：`parser.py` 新增 `_docx_heading_to_markdown()`，将 Word 标题样式（Heading 1-6 / outlineLevel / Title）自动转换为 Markdown `#` 标记，使 chunker 的章节检测跨 MD/DOCX 格式统一工作
 - **Prompt 章节信息展示**：`_format_chunk_reference()` 从 `[来源1]（文档: API.md）` 升级为 `[来源1]（文档: API.md | 章节: API > §6 SSE > §6.1）`
 - 新增 53 个单元测试覆盖 §8.7 / §8.8（chunker 章节检测 16 + BM25 检测/boost 18 + prompt 格式化 4 + retriever 回填 3 + parser 已由现有测试覆盖）
+- **前端 Stores 单元测试**：新增 4 个 Pinia store 测试文件共 81 用例——`authStore.test.js`（21 用例，覆盖 JWT 解析/刷新定时器/并发守卫/登录注册登出/初始化恢复）、`chatStore.test.js`（21 用例，覆盖 SSE 6 事件回调状态机/发送验证/历史加载/重新生成/中断/连接恢复/reset）、`conversationStore.test.js`（18 用例，覆盖分页加载/时间分组/重命名删除/addConversation）、`knowledgeStore.test.js`（21 用例，覆盖 KB CRUD/文档 CRUD/轮询生命周期/isTerminal/getDepartmentStyle/上传）
 
 ### Changed
+- **`chat_service.py` 大文件拆分**：1015 行拆为 3 个模块——`chat_service.py`（~330 行，公开入口 `chat()`/`get_selectable_kbs()` + `_validate_and_prepare()`）+ `sse_stream.py`（~365 行，SSE 流生成器 + 固定响应）+ `chat_helpers.py`（~185 行，历史加载/标题/引用/sources 辅助函数）。通过 re-export 保持所有现有导入路径兼容
+- **`tasks.py` 拆分**：721 行拆出 `delete_tasks.py`（~190 行，文档/知识库异步删除任务）。`celery_app.py` 新增注册导入；`document_service.py`/`knowledge_base_service.py` 导入路径更新至 `delete_tasks`
 - `BM25Retriever._load_and_cache()` 新增加载 `Chunk.metadata_` 列；进程内缓存结构从 4-tuple 扩展为 5-tuple（含 `section_info`）；`_get_bm25_index()` 返回值增加 `section_info`
 - `filter_chunk_sentences()` 返回值从 `str` 改为 `tuple[str, FilterStats]`，影响 `knowledge_pipeline.py` 调用方和 6 个测试用例
 - `KnowledgePipelineResult` 新增 `evidence_review: EvidenceReviewResult | None` 字段
@@ -26,6 +29,13 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - **孤儿会话 Banner 区分 kb_status**：`ChatPage.vue` 孤儿会话警告横幅根据 `kb_status` 动态切换图标（`fa-exclamation-triangle` for deleted / `fa-lock` for unavailable）和配色（橙色/紫色）；`Sidebar.vue` 孤儿会话图标颜色改用标准 Token `--dm-warning` / `--dm-purple`
 - **Design Token 体系完善**：`global.css` / `UIDESIGN.md` 新增 `--dm-purple`、`--dm-purple-light`、`--dm-warning-dark`、`--dm-empty-icon-size`、`--dm-orphan-unavailable-*`、`--dm-json-*` 等 Token；`UIDESIGN.md` 新增 Evidence 高亮标记、孤儿会话横幅 Token 文档
 - `formatRelativeTime()` 提取至 `utils/format.js`，消除 `AdminUserList.vue` / `AdminUserDetail.vue` 间重复
+- **TraceDetail 阶段卡片 Evidence 英文化**：`TraceDetail.vue` 阶段标签 `'证据审查'` → `'Evidence'`，与其他卡片（Intent/Rewrite/Retrieve/Rerank/Generate）风格对齐
+- **docker-compose Backend 端口绑定收窄**：`"8000:8000"` → `"127.0.0.1:8000:8000"`，外部流量走 Nginx 反向代理
+- **SSE 标题生成真正异步化**：`sse_stream.py` 中 `await _generate_title_llm()` 改为 `asyncio.create_task(_update_title_async())`，避免 LLM 标题生成超时时客户端已收到 finish 事件但生成器未关闭
+- **KB 删除向量清理批量优化**：`delete_tasks.py` `_delete_kb_async` 逐文档 `store.delete(where={"doc_id": doc_id})` 改为单次 `store.delete(where={"kb_id": kb_id})`，提升效率并避免中途失败状态不一致
+- **`_load_history` limit 动态计算**：`chat_helpers.py` 硬编码 `.limit(40)` 改为 `max(max_messages * 2, 40)`，适配 `HISTORY_MAX_MESSAGES` 调大场景
+- **`chat_helpers.py` 模块文档注释改写**：面向功能描述而非提取历史，降低内部化措辞
+- **`_not_found` 布尔逻辑简化**：`_answer_head` 前缀检查合并至全文检查，消除冗余分支
 
 ### Removed
 - **移除 A/B 实验调试开关**：删除 `P0_STRICT_MODE`（严格/宽松 Prompt 切换）、`SENTENCE_ROLE_FILTER`（句级修辞过滤开关）、`DASHSCOPE_RERANK`（DashScope/Noop Reranker 切换）三个配置项。固化生产配置为：宽松 Prompt + DashScopeReranker + 句级修辞过滤（始终启用）
@@ -43,6 +53,8 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - **Trace 列表/详情 KB 删除后展示 null**：`list_traces()` / `get_trace_detail()` 仅 LEFT JOIN KnowledgeBase 取 `kb_name`/`kb_uuid`，KB 物理删除后 JOIN 不命中返回 NULL。修复：`kb_name`/`kb_uuid` 改用 `COALESCE(KnowledgeBase.name, Conversation.original_kb_name)` / `COALESCE(KnowledgeBase.uuid, Conversation.original_kb_uuid)`，KB 已删除时自动回退到会话表存储的删除前名称/UUID
 - **代码审查规范修复**：`chat_service.py` 提取 `_persist_fixed_response()` 公共函数，消除 `_generate_meta_response` / `_generate_reject_response` 间 ~50 行重复持久化逻辑；`trace_service.py` / `document_service.py` LIKE 搜索添加 `escape_like()` 转义防通配符注入；`.empty-icon` 8 个文件硬编码 `48px` 统一为 `var(--dm-empty-icon-size)`；`MessageItem.vue` Evidence 高亮从硬编码 `#FFE082` 改为 `var(--dm-evidence-highlight-bg)`；`TraceDetail.vue` JSON 高亮颜色改用 Design Token
 - **文档一致性**：`RAG_PIPELINE.md` 文件名 `bm25_retriever.py`→`bm25.py`；`DATABASE.md` response_mode 枚举补充 REJECT；`API.md` E7xxx 补充 E7001/E7004 错误码；`ADR-008` 标记为已废弃（被 DashScope Rerank 替代）；`TEST_CASES.md` 清理历史占位表述
+- **TraceDetail 测试用例适配 6 阶段**：`MOCK_TRACE` 新增 `evidence_review` 字段；阶段卡片数量断言 `5`→`6`；阶段名称新增 `'Evidence'`；Generate 卡片索引 `[4]`→`[5]`；耗时断言新增 Evidence 阶段
+- **标题异步生成测试适配**：`test_chat_service.py` 增加 `await asyncio.sleep(0)` 等待 `asyncio.create_task` 后台任务完成，并将断言移入 mock 作用域内
 
 ---
 

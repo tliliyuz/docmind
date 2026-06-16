@@ -13,6 +13,7 @@
 覆盖 app/services/chat_service.py
 """
 
+import asyncio
 import json
 from contextlib import ExitStack, contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -185,16 +186,27 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
         mocks['async_session'] = stack.enter_context(
             patch("app.services.chat_service.async_session",
                   return_value=mock_ctx))
+        # sse_stream.py 拆分后有自己的 async_session 导入，需同步 mock
+        stack.enter_context(
+            patch("app.services.sse_stream.async_session",
+                  return_value=mock_ctx))
         mocks['mock_session'] = mock_session
 
         if with_conversation:
             mocks['conv_patch'] = stack.enter_context(
                 patch("app.services.chat_service.Conversation", return_value=mock_conv))
+            # sse_stream.py 拆分后有自己的 Conversation 导入，需同步 mock
+            stack.enter_context(
+                patch("app.services.sse_stream.Conversation", return_value=mock_conv))
 
         if with_messages:
             mocks['msg_patch'] = stack.enter_context(
                 patch("app.services.chat_service.Message",
                       side_effect=[mock_user_msg, mock_assistant_msg]))
+            # sse_stream.py 拆分后有自己的 Message 导入，仅创建 assistant 消息
+            stack.enter_context(
+                patch("app.services.sse_stream.Message",
+                      return_value=mock_assistant_msg))
 
         # Mock _pipeline（KnowledgePipeline 单例，替代原来的独立检索组件 mock）
         mock_pipeline = MagicMock()
@@ -217,9 +229,9 @@ def _mock_chat_pipeline(db, conv, *, retrieval_output=None, llm_chunks=None,
             patch("app.services.chat_service._pipeline", mock_pipeline))
         mocks['pipeline_result'] = _pipeline_result
 
-        mocks['llm'] = stack.enter_context(patch("app.services.chat_service.stream_chat_completion"))
+        mocks['llm'] = stack.enter_context(patch("app.services.sse_stream.stream_chat_completion"))
         mocks['tokens'] = stack.enter_context(
-            patch("app.services.chat_service.estimate_tokens", return_value=token_estimate))
+            patch("app.services.sse_stream.estimate_tokens", return_value=token_estimate))
         mocks['heartbeat'] = stack.enter_context(
             patch("app.services.chat_service.stream_with_heartbeat",
                   side_effect=lambda g, **kw: g))
@@ -614,7 +626,7 @@ class TestChatTitleGeneration:
         with _mock_chat_pipeline(db, conv, retrieval_output=retrieval_output,
                                   llm_chunks=_make_llm_chunks(["回答"])) as mocks:
             # Mock LLM 标题生成，避免真实调用
-            with patch("app.services.chat_service._generate_title_llm",
+            with patch("app.services.sse_stream._generate_title_llm",
                        new_callable=AsyncMock, return_value="测试问题标题生成") as mock_title_llm:
                 response = await chat(
                     db=db, user_id=1, role="user",
@@ -623,11 +635,14 @@ class TestChatTitleGeneration:
                 )
                 events = await _consume_sse(response)
 
-        finish = next(e for e in events if e["event"] == "finish")
-        # finish 事件返回截断标题（不等待 LLM）
-        assert finish["data"]["title"] is not None
-        # conv.title 最终会被 LLM 标题更新
-        assert mocks['conv'].title == "测试问题标题生成"
+                finish = next(e for e in events if e["event"] == "finish")
+                # finish 事件返回截断标题（不等待 LLM 后台任务）
+                assert finish["data"]["title"] is not None
+                # 标题生成已改为 asyncio.create_task 异步执行，需让出事件循环让其完成
+                # 必须在 mock 作用域内 sleep，否则 patch 回收后后台任务调用真实 API
+                await asyncio.sleep(0)
+                # conv.title 由后台任务异步更新
+                assert mocks['conv'].title == "测试问题标题生成"
 
     @pytest.mark.asyncio
     async def test_非首轮不更新标题(self):

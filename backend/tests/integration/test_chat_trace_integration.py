@@ -176,13 +176,21 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
         mocks['async_session'] = stack.enter_context(
             patch("app.services.chat_service.async_session",
                   return_value=mock_ctx))
+        stack.enter_context(
+            patch("app.services.sse_stream.async_session",
+                  return_value=mock_ctx))
         mocks['mock_session'] = mock_session
 
         mocks['conv_patch'] = stack.enter_context(
             patch("app.services.chat_service.Conversation", return_value=mock_conv))
+        stack.enter_context(
+            patch("app.services.sse_stream.Conversation", return_value=mock_conv))
         mocks['msg_patch'] = stack.enter_context(
             patch("app.services.chat_service.Message",
                   side_effect=[mock_user_msg, mock_assistant_msg]))
+        stack.enter_context(
+            patch("app.services.sse_stream.Message",
+                  return_value=mock_assistant_msg))
 
         # Mock _pipeline（KnowledgePipeline 单例）
         from app.rag.knowledge_pipeline import KnowledgePipelineResult
@@ -205,9 +213,9 @@ def _mock_chat_pipeline_for_trace(db, conv, *, retrieval_output=None, llm_chunks
             patch("app.services.chat_service._pipeline", mock_pipeline))
         mocks['pipeline_result'] = _pipeline_result
 
-        mocks['llm'] = stack.enter_context(patch("app.services.chat_service.stream_chat_completion"))
+        mocks['llm'] = stack.enter_context(patch("app.services.sse_stream.stream_chat_completion"))
         mocks['tokens'] = stack.enter_context(
-            patch("app.services.chat_service.estimate_tokens", return_value=50))
+            patch("app.services.sse_stream.estimate_tokens", return_value=50))
         mocks['heartbeat'] = stack.enter_context(
             patch("app.services.chat_service.stream_with_heartbeat",
                   side_effect=lambda g, **kw: g))
@@ -503,6 +511,9 @@ class TestTraceMetaFlow:
             mock_ctx.__aexit__ = AsyncMock(return_value=None)
             stack.enter_context(
                 patch("app.services.chat_service.async_session",
+                      return_value=mock_ctx))
+            stack.enter_context(
+                patch("app.services.sse_stream.async_session",
                       return_value=mock_ctx))
 
             stack.enter_context(

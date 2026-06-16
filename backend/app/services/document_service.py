@@ -41,7 +41,7 @@ from app.schemas.document import (
     DocumentResponse,
     DocumentUploadResponse,
 )
-from app.ingest.tasks import delete_document as delete_doc_task
+from app.ingest.delete_tasks import delete_document as delete_doc_task
 from app.ingest.tasks import ingest_document as ingest_doc_task
 from app.services.admin_service import escape_like
 from app.services.knowledge_base_service import check_kb_active

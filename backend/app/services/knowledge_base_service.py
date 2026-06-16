@@ -11,7 +11,7 @@ from app.core.exceptions import (
     KnowledgeBaseNotFoundException,
 )
 from app.core.permissions import require_kb_readable, require_kb_writable
-from app.ingest.tasks import delete_kb as delete_kb_task
+from app.ingest.delete_tasks import delete_kb as delete_kb_task
 from app.models.chunk import Chunk
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
