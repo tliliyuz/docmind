@@ -531,7 +531,7 @@ LLM 生成完成 → assistant_content 完整文本
 ## 10. 问答核心逻辑（伪代码）
 
 ```python
-# chat_service.py 核心流程
+# chat_service.py（入口 + 校验）+ sse_stream.py（SSE 流生成）核心流程
 async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user):
     # 0. 会话自动创建
     if not conversation_id:
@@ -682,7 +682,9 @@ BM25 分数加权：
 
 | 文件 | 职责 |
 |:---|:---|
-| `backend/app/services/chat_service.py` | 问答核心流程编排 + 证据审计集成 |
+| `backend/app/services/chat_service.py` | 问答入口编排（chat/get_selectable_kbs）+ 校验准备 + re-export 兼容层 |
+| `backend/app/services/chat_helpers.py` | 问答辅助函数（历史加载/标题生成/引用提取/sources 构建） |
+| `backend/app/services/sse_stream.py` | SSE 流生成器 + 固定响应（meta/reject）+ 消息持久化 |
 | `backend/app/rag/query_rewriter.py` | Query Rewrite 触发判断 + LLM 改写 |
 | `backend/app/rag/intent.py` | 意图分类（规则 + Flash 模型） |
 | `backend/app/rag/sentence_matcher.py` | 句级修辞过滤 + Evidence Highlight 句级 BM25 定位 |
@@ -694,6 +696,7 @@ BM25 分数加权：
 | `backend/app/rag/reranker.py` | Rerank（DashScope Rerank API 精排） |
 | `backend/app/rag/prompt_builder.py` | Prompt 组装 |
 | `backend/app/rag/trace_recorder.py` | Trace 上下文管理器 |
+| `backend/app/ingest/delete_tasks.py` | 文档/知识库异步删除 Celery 任务 |
 | `backend/app/core/llm.py` | LLM 调用封装（流式/非流式） |
 
 ---

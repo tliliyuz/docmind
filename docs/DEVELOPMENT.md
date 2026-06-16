@@ -109,7 +109,9 @@ docmind/
 │   │   │   ├── knowledge_base_service.py  # 知识库 CRUD + 删除（共享权限函数 require_kb_*）
 │   │   │   ├── document_service.py    # 文档上传/列表/详情/删除/reprocess
 │   │   │   ├── conversation_service.py # 会话 CRUD + 标题生成
-│   │   │   ├── chat_service.py        # 问答核心流程（委托 KnowledgePipeline 检索+构建，LLM SSE 输出）
+│   │   │   ├── chat_service.py        # 问答入口（chat/get_selectable_kbs）+ 校验准备，re-export 兼容层
+│   │   │   ├── chat_helpers.py        # 问答辅助函数（历史加载/标题生成/引用提取/sources 构建）
+│   │   │   ├── sse_stream.py          # SSE 流生成器 + 固定响应（meta/reject）+ 消息持久化
 │   │   │   ├── admin_service.py       # Admin 统计/知识库/文档/用户管理
 │   │   │   └── trace_service.py       # 链路追踪查询/详情
 │   │   │
@@ -136,7 +138,8 @@ docmind/
 │   │   │   ├── __init__.py
 │   │   │   ├── celery_app.py          # Celery 配置（DB/Redis 集成）
 │   │   │   ├── lock.py                # Celery 幂等锁（Redis SET NX, ingest/delete 共享互斥）
-│   │   │   └── tasks.py               # 入库/删除/KB删除 Celery 任务
+│   │   │   ├── tasks.py               # 入库 Celery 任务（文档解析→分块→嵌入→存储）
+│   │   │   └── delete_tasks.py        # 文档/知识库异步删除 Celery 任务
 │   │   │
 │   │   ├── core/                      # 基础设施
 │   │   │   ├── __init__.py
@@ -284,7 +287,8 @@ docmind/
 │   │   │
 │   │   └── utils/
 │   │       ├── sse.js                 # SSE 事件解析
-│   │       └── markdown.js            # Markdown 渲染
+│   │       ├── markdown.js            # Markdown 渲染
+│   │       └── format.js              # 共享格式化工具（formatDateTime/formatFileSize/formatRelativeTime）
 │   │
 │   └── tests/                         # 前端测试（vitest + @vue/test-utils）
 │       ├── setup.js                   # 全局 Mock & 配置
@@ -314,7 +318,11 @@ docmind/
 │       ├── Charts.test.js
 │       ├── useECharts.test.js
 │       ├── tokenRefresh.test.js
-│       └── UuidAdaptation.test.js
+│       ├── UuidAdaptation.test.js
+│       ├── authStore.test.js          # Auth Store 测试（JWT 解析/刷新/并发守卫）
+│       ├── chatStore.test.js          # Chat Store 测试（SSE 状态机/消息管理）
+│       ├── conversationStore.test.js  # Conversation Store 测试（分页/时间分组/CRUD）
+│       └── knowledgeStore.test.js     # Knowledge Store 测试（KB/Document CRUD/轮询）
 │
 ├── Dockerfile.backend
 ├── Dockerfile.frontend

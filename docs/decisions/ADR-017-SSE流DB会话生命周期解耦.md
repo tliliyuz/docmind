@@ -104,3 +104,7 @@ yield format_sse_event("finish", {
 - `Depends(get_db)` 在 chat 端点中仍然存在（`_validate_and_prepare` 使用），但 session 在 `_validate_and_prepare` 返回前已 commit 全部变更，SSE 期间闲置等待 StreamingResponse 完成。彻底解耦需额外 ADR（将 API 端点改为手动 session 管理），当前方案已解决核心资源泄漏问题
 - generator 内部 `async with async_session()` 创建独立 session，需要从 `app.core.database` 导入
 - 测试需调整：原来 mock 外部传入的 `db`，现在需 mock `async_session()` 上下文管理器
+
+---
+
+> **实现更新（2026-06-16）**：`_generate_sse_stream()` 和 `_generate_meta_response()`（含 `_persist_fixed_response()`）已从 `chat_service.py` 提取到独立的 `sse_stream.py` 模块。`chat_service.py` 通过 re-export 保持向后兼容导入路径。本 ADR 描述的设计决策和 DB 会话解耦方案不变。
