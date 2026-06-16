@@ -6,7 +6,7 @@
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 最后更新 | 2026-06-16 |
 
 > 用途: 面向 Agent 的 CSS 变量与组件样式参考。所有样式基于 Vue 3 + Element Plus 项目。
 
@@ -30,6 +30,7 @@
     --dm-danger: #EF4444;
     --dm-info: #3B82F6;
     --dm-purple: #8b5cf6;
+    --dm-warning-dark: #856404;
 
     /* ===== 语义色浅色背景 ===== */
     --dm-success-light: #ECFDF5;
@@ -49,6 +50,24 @@
     --dm-biz-bg: #FFFBEB;
     --dm-finance-color: #7C3AED;
     --dm-finance-bg: #F5F3FF;
+
+    /* ===== Evidence 高亮标记（RAG 引用片段） ===== */
+    --dm-evidence-highlight-bg: #FFF3B0;
+
+    /* ===== 孤儿会话警告横幅（会话关联 KB 被删除/不可访问时显示） ===== */
+    --dm-orphan-bg: #FFF8E1;
+    --dm-orphan-border: #FFE082;
+    --dm-orphan-accent: #F57F17;
+    --dm-orphan-text: #5D4037;
+    --dm-orphan-hover-bg: #FFF3E0;
+    --dm-orphan-hover-accent: #E65100;
+    --dm-orphan-lock: #6A1B9A;
+
+    /* ===== 孤儿会话不可访问变体（紫色系） ===== */
+    --dm-orphan-unavailable-bg: #F5F3FF;
+    --dm-orphan-unavailable-border: #C4B5FD;
+    --dm-orphan-unavailable-accent: #8B5CF6;
+    --dm-orphan-unavailable-text: #3C1A70;
 
     /* ===== 中性色（黑白灰体系） ===== */
     --dm-bg-page: #F2F2F2;
@@ -128,6 +147,7 @@
     --dm-chat-max-width: 768px;
     --dm-content-max-width: 1200px;
     --dm-input-height: 40px;
+    --dm-empty-icon-size: 48px;
 
     /* ===== 过渡 ===== */
     --dm-transition-fast: 0.15s ease;
@@ -139,6 +159,12 @@
     --dm-text-code: #E5E5E5;
     --dm-code-inline-bg: rgba(0, 0, 0, 0.06);
     --dm-code-inline-font-size: 0.9em;
+
+    /* ===== JSON 代码高亮（深色背景） ===== */
+    --dm-json-string: #A5D6FF;
+    --dm-json-number: #79C0FF;
+    --dm-json-literal: #FF7B72;
+    --dm-json-keyword: #FF7B72;
     --dm-code-copy-btn-bg: rgba(255, 255, 255, 0.1);
     --dm-code-copy-btn-hover-bg: rgba(255, 255, 255, 0.2);
 

@@ -43,46 +43,6 @@
 [证据审计] 三层程序级审计 → 置信度标注                    ← [Phase 5.5 ADR-020]
 ```
 
-### 1.2 Phase 4 实际问答流程
-
-Phase 4 在 Phase 3 单轮链路基础上加入**会话记忆**和**问题重写**，不含意图识别：
-
-```
-用户提问
-	    ↓
-[会话管理] conversation_id=null → 自动创建会话；已有会话 → 加载历史
-	    ↓
-[Rewrite 触发判断] _needs_rewrite(question, history) → 有歧义才触发  ← §4
-	    ├─ 无历史 / 无歧义 → 跳过，使用原始 question
-	    └─ 有歧义 → LLM Rewrite → 成功则使用改写后 query，失败降级
-	    ↓
-[Retrieval] 多路检索（使用改写后或原始 question）→ 向量 + BM25  ← §2
-	    ↓
-[Fusion] RRF 融合排序 → 合并两路结果
-	    ↓
-[Rerank] DashScope Rerank API → 语义精排
-	    ↓
-[句级修辞过滤] filter_chunk_sentences() → 过滤引用性句子，仅保留陈述知识 + 返回 FilterStats 统计  ← §7.1
-	    ↓
-[Evidence Highlight] 句级 BM25 定位 → 每个 chunk 内切句 → BM25Okapi → 记录 best_sentence  ← §7
-	    ↓
-[证据审查] review_evidence() → 逐 chunk 角色分类（ASSERTIVE/REJECTED）+ 门控决策（ALLOW/REJECT）  ← §10
-	  ├─ ALLOW → 继续
-	  └─ REJECT → 跳过 LLM + 审计，直接 SSE 返回「未找到相关信息」
-	    ↓
-[Prompt] 组装 Prompt → 陈述/引用知识判断框架 + 检索结果 + 历史消息 + 用户问题，软上限预算控制  ← §3
-	    ↓
-[LLM] 调用 LLM → 流式 `chat/completions`，解析 content + reasoning_content
-	    ↓
-[证据审计] 三层程序级审计 → 引用存在性 + 来源一致性 + 句级证据回溯 → confidence 标注 + 补填 post_audit  ← §9
-	    ↓
-[SSE] StreamingResponse → 6 事件类型 + 15s 心跳（sources 含 confidence）  ← §5
-	    ↓
-[标题生成] 首轮截取前 12 字 → event: finish 返回 title → 异步 LLM 更新
-```
-
----
-
 ## 2. 多路检索
 
 ### 2.1 向量检索
@@ -729,7 +689,7 @@ BM25 分数加权：
 | `backend/app/rag/evidence_auditor.py` | 三层证据审计（引用存在性 + 来源一致性 + 句级证据回溯） |
 | `backend/app/rag/evidence_reviewer.py` | Evidence Review 门控（chunk 角色分类 + ALLOW/REJECT 决策） |
 | `backend/app/rag/retriever.py` | 向量检索 |
-| `backend/app/rag/bm25_retriever.py` | BM25 关键词检索 + 三级缓存 |
+| `backend/app/rag/bm25.py` | BM25 关键词检索 + 三级缓存 |
 | `backend/app/rag/fusion.py` | RRF 融合排序 |
 | `backend/app/rag/reranker.py` | Rerank（DashScope Rerank API 精排） |
 | `backend/app/rag/prompt_builder.py` | Prompt 组装 |

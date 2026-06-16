@@ -3,7 +3,7 @@
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 最后更新 | 2026-06-16 |
 
 ---
 
@@ -364,7 +364,7 @@ CREATE TABLE traces (
     status VARCHAR(32) NOT NULL COMMENT '状态：success / error / partial',
     intent_type VARCHAR(32) COMMENT '顶层字段：KNOWLEDGE / CASUAL / META',
     intent_method VARCHAR(32) COMMENT '顶层字段：regex / llm_flash / llm_pro',
-    response_mode VARCHAR(32) COMMENT '顶层字段：RAG / DIRECT_LLM / META / CASUAL / FALLBACK',
+    response_mode VARCHAR(32) COMMENT '顶层字段：RAG / DIRECT_LLM / META / CASUAL / FALLBACK / REJECT',
     total_duration_ms INT COMMENT '总耗时（毫秒）',
     intent JSON COMMENT '意图识别阶段详情',
     rewrite JSON COMMENT '问题重写阶段详情',
@@ -396,7 +396,7 @@ CREATE TABLE traces (
 | status | VARCHAR(32) | 状态：success / error / partial |
 | intent_type | VARCHAR(32) | 意图类型（顶层字段，用于聚合统计） |
 | intent_method | VARCHAR(32) | 意图分类方法（顶层字段） |
-| response_mode | VARCHAR(32) | 响应模式（顶层字段，用于聚合统计） |
+| response_mode | VARCHAR(32) | 响应模式（顶层字段，用于聚合统计）。枚举值：RAG / DIRECT_LLM / META / CASUAL / FALLBACK / REJECT |
 | total_duration_ms | INT | 总耗时（毫秒） |
 | intent | JSON | 意图识别阶段详情（span_name/start_time/duration_ms/status/intent_type/method/metadata） |
 | rewrite | JSON | 问题重写阶段详情（span_name/start_time/duration_ms/status/original_question/rewritten_question/metadata） |

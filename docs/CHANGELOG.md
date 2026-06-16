@@ -22,6 +22,10 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - `TraceDetailResponse` 新增 `evidence_review: EvidenceReviewSpan | None` 字段
 - `TraceRecorder.finish()` response_mode 推导逻辑增加 REJECT 分支
 - `config.py` 新增 `BM25_SECTION_BOOST_FACTOR: float = 2.0` 配置项
+- **代码审查规范修复**：`change_user_status` / `reset_user_password` 返回值从裸 `dict` 改为 Pydantic `AdminUserStatusResponse` / `AdminUserResetPasswordResponse`；`_escape_like()` 提升为公共 `escape_like()` 供多 service 复用；`TraceRecorder` 新增 `set_token_usage()` 公共方法替代私有属性穿透；新增 `TraceNotFoundException(E7001)` 异常，Trace 详情不存在时由 service 层抛出；`knowledge_pipeline.py` / `vector_store.py` / `admin.py` / `chat_service.py` 不必要的局部导入移至模块顶部
+- **孤儿会话 Banner 区分 kb_status**：`ChatPage.vue` 孤儿会话警告横幅根据 `kb_status` 动态切换图标（`fa-exclamation-triangle` for deleted / `fa-lock` for unavailable）和配色（橙色/紫色）；`Sidebar.vue` 孤儿会话图标颜色改用标准 Token `--dm-warning` / `--dm-purple`
+- **Design Token 体系完善**：`global.css` / `UIDESIGN.md` 新增 `--dm-purple`、`--dm-purple-light`、`--dm-warning-dark`、`--dm-empty-icon-size`、`--dm-orphan-unavailable-*`、`--dm-json-*` 等 Token；`UIDESIGN.md` 新增 Evidence 高亮标记、孤儿会话横幅 Token 文档
+- `formatRelativeTime()` 提取至 `utils/format.js`，消除 `AdminUserList.vue` / `AdminUserDetail.vue` 间重复
 
 ### Removed
 - **移除 A/B 实验调试开关**：删除 `P0_STRICT_MODE`（严格/宽松 Prompt 切换）、`SENTENCE_ROLE_FILTER`（句级修辞过滤开关）、`DASHSCOPE_RERANK`（DashScope/Noop Reranker 切换）三个配置项。固化生产配置为：宽松 Prompt + DashScopeReranker + 句级修辞过滤（始终启用）
@@ -36,6 +40,9 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - **`list_traces` 测试 mock 数据不完整**：`list_traces()` 内部最多 5 次 `db.execute` 调用（count → status → avg → durations → data），但测试只 mock 了 2 个 side_effect 值。新增 `_make_execute_chain()` 辅助函数，为 total>0 场景自动生成完整 5 个 mock 结果
 - **`test_models.py` KnowledgeBase uuid 缺省值**：`knowledge_bases.uuid` 列仅有 `server_default=text("(UUID())")`，测试用 DB 表未执行迁移导致 INSERT 时缺少默认值。修复：测试显式传入 `uuid=str(uuid4())`
 - **ROADMAP.md §8.5 污染问题回归测试标记**：该回归测试已通过验证，状态从 ⬜ 更新为 ✅
+- **Trace 列表/详情 KB 删除后展示 null**：`list_traces()` / `get_trace_detail()` 仅 LEFT JOIN KnowledgeBase 取 `kb_name`/`kb_uuid`，KB 物理删除后 JOIN 不命中返回 NULL。修复：`kb_name`/`kb_uuid` 改用 `COALESCE(KnowledgeBase.name, Conversation.original_kb_name)` / `COALESCE(KnowledgeBase.uuid, Conversation.original_kb_uuid)`，KB 已删除时自动回退到会话表存储的删除前名称/UUID
+- **代码审查规范修复**：`chat_service.py` 提取 `_persist_fixed_response()` 公共函数，消除 `_generate_meta_response` / `_generate_reject_response` 间 ~50 行重复持久化逻辑；`trace_service.py` / `document_service.py` LIKE 搜索添加 `escape_like()` 转义防通配符注入；`.empty-icon` 8 个文件硬编码 `48px` 统一为 `var(--dm-empty-icon-size)`；`MessageItem.vue` Evidence 高亮从硬编码 `#FFE082` 改为 `var(--dm-evidence-highlight-bg)`；`TraceDetail.vue` JSON 高亮颜色改用 Design Token
+- **文档一致性**：`RAG_PIPELINE.md` 文件名 `bm25_retriever.py`→`bm25.py`；`DATABASE.md` response_mode 枚举补充 REJECT；`API.md` E7xxx 补充 E7001/E7004 错误码；`ADR-008` 标记为已废弃（被 DashScope Rerank 替代）；`TEST_CASES.md` 清理历史占位表述
 
 ---
 
