@@ -11,6 +11,17 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ## [Unreleased] - 2026-06-17
 
+### Fixed
+- **ECharts 统计图表时区边界问题（2026-06-17）**：
+  - 根因：`get_trace_stats()` 使用 MySQL `DATE(created_at)` 按 UTC 日期分组，但用户在中国时区（UTC+8），凌晨 0:00–8:00 的会话 UTC 日期仍为前一天，全部被归入前一天 bucket，导致「今天的数据一条都没有」
+  - **源码（4 文件）**：
+    - `trace_service.py`：`_group_date_expr()` 新增 `tz_offset_minutes` 参数，通过 `DATE_ADD(created_at, INTERVAL N MINUTE)` 将时间戳平移后再提取日期，等效按目标时区日期分组；`get_trace_stats()` 同步调整 `start_date` 窗口计算
+    - `admin.py`：`/api/admin/stats/traces` 新增 `tz_offset_minutes` 查询参数（范围 -720..840，默认 0=UTC）
+    - `frontend/src/api/admin.js`：`getTraceStats()` 文档注释更新
+    - `frontend/src/views/admin/StatsPage.vue`：`loadChartData()` 通过 `-new Date().getTimezoneOffset()` 获取浏览器时区偏移并传递给后端
+  - **测试**：`StatsPage.test.js` 断言更新（`toHaveBeenCalledWith(expect.objectContaining(...))` 匹配新参数）
+  - **验证**：40/40 后端测试 + 510/510 前端测试通过
+
 ### Changed
 - **S6 Batch 2: 私有函数提升为公开函数 — RAG 管线（2026-06-17）**：
   - **源码（4 文件）**：

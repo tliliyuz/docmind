@@ -260,21 +260,33 @@ async def get_trace_detail(
     )
 
 
-def _group_date_expr(group_by: str):
-    """根据 group_by 返回日期分组表达式。
+def _group_date_expr(group_by: str, tz_offset_minutes: int = 0):
+    """根据 group_by 返回日期分组表达式（按目标时区对齐）。
 
-    day: DATE(created_at) → 'YYYY-MM-DD'
-    hour: DATE_FORMAT(created_at, '%Y-%m-%d %H:00') → 'YYYY-MM-DD HH:00'
+    day: DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(created_at) + offset_seconds)) → 'YYYY-MM-DD'
+    hour: DATE_FORMAT(FROM_UNIXTIME(...), '%Y-%m-%d %H:00') → 'YYYY-MM-DD HH:00'
+
+    通过 UNIX_TIMESTAMP 秒级偏移实现时区转换，避免 DATE_ADD + INTERVAL 语法在
+    SQLAlchemy func 中的兼容性问题（text() 可能被当作字符串而非 SQL 关键字渲染）。
     """
+    if tz_offset_minutes == 0:
+        if group_by == "hour":
+            return func.date_format(Trace.created_at, "%Y-%m-%d %H:00")
+        return func.date(Trace.created_at)
+
+    offset_seconds = tz_offset_minutes * 60
+    adjusted_ts = func.unix_timestamp(Trace.created_at) + offset_seconds
+    adjusted_dt = func.from_unixtime(adjusted_ts)
     if group_by == "hour":
-        return func.date_format(Trace.created_at, "%Y-%m-%d %H:00")
-    return func.date(Trace.created_at)
+        return func.date_format(adjusted_dt, "%Y-%m-%d %H:00")
+    return func.date(adjusted_dt)
 
 
 async def get_trace_stats(
     db: AsyncSession,
     days: int = 7,
     group_by: str = "day",
+    tz_offset_minutes: int = 0,
 ) -> TraceStatsResponse:
     """Trace 统计数据，用于 ECharts 图表渲染。
 
@@ -283,10 +295,14 @@ async def get_trace_stats(
     - latency: p50/p95/p99 分位数（Python 排序计算）
     - tokens: input/output token 汇总
     - intent_distribution / response_mode_distribution: 分布统计
+
+    tz_offset_minutes: 目标时区相对 UTC 的分钟偏移（如 UTC+8 → 480）。
+        start_date 计算和日期分组均基于目标时区的「自然日」边界。
     """
-    now = datetime.now(timezone.utc)
-    start_date = now - timedelta(days=days)
-    date_expr = _group_date_expr(group_by)
+    now_utc = datetime.now(timezone.utc)
+    # 加 1 天余量确保时区偏移不裁剪窗口边界数据（最坏 UTC+14 → 14h 偏移）
+    start_date = now_utc - timedelta(days=days + 1)
+    date_expr = _group_date_expr(group_by, tz_offset_minutes)
 
     # ===== 1. Trend: 按日期+状态分组（MySQL IF） =====
     trend_q = (

@@ -1585,6 +1585,7 @@ Trace 统计数据，用于 ECharts 图表渲染。
 |:---|:---|:---|:---|
 | `days` | int | 否 | 过去 N 天，默认 7 |
 | `group_by` | string | 否 | day / hour，默认 day |
+| `tz_offset_minutes` | int | 否 | 目标时区相对 UTC 的分钟偏移（如 UTC+8 → 480），用于日期分组和窗口边界对齐。默认 0（UTC） |
 
 **响应** (200)：
 

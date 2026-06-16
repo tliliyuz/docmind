@@ -154,7 +154,9 @@ async function loadStats() {
 
 async function loadChartData() {
   try {
-    const { data } = await getTraceStats({ days: 7 })
+    // 传递浏览器时区偏移，确保日期分组与用户本地时区对齐
+    const tzOffset = -new Date().getTimezoneOffset() // 分钟，UTC+8 → 480
+    const { data } = await getTraceStats({ days: 7, tz_offset_minutes: tzOffset })
     if (data.code === '0') {
       chartData.value = {
         trend: data.data.trend || [],

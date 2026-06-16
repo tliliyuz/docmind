@@ -153,6 +153,10 @@ async def get_admin_trace_detail(
 async def get_admin_trace_stats(
     days: int = Query(7, ge=1, le=90, description="过去 N 天"),
     group_by: str = Query("day", description="day / hour"),
+    tz_offset_minutes: int = Query(
+        0, ge=-720, le=840,
+        description="目标时区相对 UTC 的分钟偏移（如 UTC+8 → 480）。用于日期分组和窗口边界对齐。",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
@@ -160,7 +164,9 @@ async def get_admin_trace_stats(
 
     对齐 API.md §7.6。
     """
-    data = await get_trace_stats(db, days=days, group_by=group_by)
+    data = await get_trace_stats(
+        db, days=days, group_by=group_by, tz_offset_minutes=tz_offset_minutes,
+    )
     return {"code": "0", "message": "ok", "data": data.model_dump()}
 
 

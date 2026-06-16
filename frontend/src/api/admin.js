@@ -23,7 +23,7 @@ export function getAdminDocuments(params = {}) {
 }
 
 /** GET /api/admin/stats/traces — Trace 统计数据（ECharts 图表数据源）
- * @param {Object} params — { days, group_by }
+ * @param {Object} params — { days, group_by, tz_offset_minutes }
  * @returns {Object} { trend, latency, tokens, intent_distribution, response_distribution }
  */
 export function getTraceStats(params = {}) {

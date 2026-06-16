@@ -234,10 +234,12 @@ describe('StatsPage', () => {
       expect(wrapper.find('.charts-section').exists()).toBe(true)
     })
 
-    it('getTraceStats 被调用时传入 days=7', async () => {
+    it('getTraceStats 被调用时传入 days=7 和时区偏移', async () => {
       getComponent()
       await flushPromises()
-      expect(mockGetTraceStats).toHaveBeenCalledWith({ days: 7 })
+      expect(mockGetTraceStats).toHaveBeenCalledWith(
+        expect.objectContaining({ days: 7, tz_offset_minutes: expect.any(Number) })
+      )
     })
 
     it('图表 API 失败时不阻断页面，图表区域隐藏', async () => {
