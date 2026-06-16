@@ -27,7 +27,7 @@ class Conversation(Base):
     )
     original_kb_id: Mapped[int | None] = mapped_column(
         BigInteger, nullable=True,
-        comment="KB 删除前的原始 kb_id，用于孤儿会话检测"
+        comment="KB 删除前的原始 kb_id，用于孤儿会话检测。有意不使用 ForeignKey，因为关联 KB 可能已被物理删除"
     )
     original_kb_name: Mapped[str | None] = mapped_column(
         String(128), nullable=True,

@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.core.chroma_client import get_vector_store
 from app.core.exceptions import (
+    AppException,
     DocumentNameExistsException,
     DocumentNotFoundException,
     DocumentProcessingError,
@@ -43,7 +44,7 @@ from app.schemas.document import (
 )
 from app.ingest.delete_tasks import delete_document as delete_doc_task
 from app.ingest.tasks import ingest_document as ingest_doc_task
-from app.services.admin_service import escape_like
+from app.core.utils import escape_like
 from app.services.knowledge_base_service import check_kb_active
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,14 @@ ALLOWED_EXTENSIONS = set(
 )
 
 
+# 文件魔数签名（magic bytes），防止扩展名伪装
+MAGIC_BYTES = {
+    "pdf": b"%PDF",
+    "docx": b"PK\x03\x04",
+    # md/txt 无魔数，纯文本不做二进制校验
+}
+
+
 def _validate_file(file: UploadFile) -> None:
     """校验文件类型和大小，不通过时抛对应异常"""
     if file.filename is None:
@@ -71,6 +80,20 @@ def _validate_file(file: UploadFile) -> None:
     # 读取内容并校验大小（UploadFile.size 可能为 None）
     if file.size is not None and file.size > settings.UPLOAD_MAX_SIZE:
         raise FileSizeExceededException()
+
+    # 魔数校验：防止将 .exe 改名为 .pdf 等恶意上传
+    expected_magic = MAGIC_BYTES.get(ext)
+    if expected_magic is not None:
+        try:
+            header = file.file.read(len(expected_magic))
+            file.file.seek(0)  # 回退指针，供后续保存使用
+            if header != expected_magic:
+                raise UnsupportedFileFormatException(ext)
+        except UnsupportedFileFormatException:
+            raise
+        except Exception:
+            # 读取失败时放行（可能为空文件或特殊流），交由后续处理阶段报错
+            pass
 
 
 async def _check_kb_ownership(
@@ -205,9 +228,19 @@ async def upload_document(
         file_path = await local_storage.save(file, kb_id, doc.id)
         doc.file_path = file_path
         doc.file_size = Path(file_path).stat().st_size
+        # 二次校验：UploadFile.size 可能为 None，以实际磁盘文件大小为准
+        if doc.file_size > settings.UPLOAD_MAX_SIZE:
+            # 删除已保存的超大文件
+            try:
+                Path(file_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise FileSizeExceededException()
         await db.flush()
         await db.commit()  # 必须在 delay 前提交，否则 Worker 看不到新记录
         await db.refresh(doc)
+    except AppException:
+        raise
     except Exception:
         raise StorageErrorException(f"文件保存失败：{filename}")
 

@@ -41,16 +41,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Redis 异步客户端预连接失败（非致命）: %s", e)
 
-    # JWT 密钥默认值校验：生产环境使用默认值将拒绝启动
-    if settings.JWT_SECRET_KEY == "change-me":
+    # JWT 密钥校验：空字符串或默认值均拒绝启动（生产环境）/ 警告（开发环境）
+    if not settings.JWT_SECRET_KEY or settings.JWT_SECRET_KEY == "change-me":
         if settings.DEBUG:
             logger.warning(
-                "⚠ JWT_SECRET_KEY 仍为默认值 'change-me'，开发环境继续运行，"
+                "⚠ JWT_SECRET_KEY 未设置或仍为默认值，开发环境继续运行，"
                 "生产环境请务必通过 .env 覆盖"
             )
         else:
             raise RuntimeError(
-                "JWT_SECRET_KEY 不能为默认值 'change-me'，"
+                "JWT_SECRET_KEY 未设置或仍为默认值，"
                 "请通过 .env 文件设置 JWT_SECRET_KEY"
             )
 

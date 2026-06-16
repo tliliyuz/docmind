@@ -25,12 +25,16 @@ _NOT_FOUND_KEYWORDS = ["未找到相关信息", "知识库中未找到"]
 _CITATION_PATTERN = re.compile(r'\[来源(\d+)\]')
 
 
+# 标题截断长度：从用户问题前 N 个字符截取作为会话标题
+TITLE_TRUNCATE_LENGTH = 12
+
+
 def _generate_title(question: str) -> str:
-    """自动生成会话标题：截取用户问题前 12 字，去除标点。
+    """自动生成会话标题：截取用户问题前 N 字，去除标点。
 
     对齐 ARCHITECTURE.md §5.1 / ROADMAP.md Decision #24。
     """
-    title = question[:12]
+    title = question[:TITLE_TRUNCATE_LENGTH]
     title = re.sub(r"[^\w\s一-鿿]", "", title)
     return title.strip() or "新对话"
 

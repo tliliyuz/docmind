@@ -271,55 +271,21 @@ async def _generate_sse_stream(
 
     t_sources_end = time.perf_counter()  # 引用构建结束
 
-    # 持久化阶段：独立短生命周期 session，消息 + Trace 单事务提交（ADR-017）
+    # 持久化阶段：委托 _persist_message 公共函数（ADR-017）
     # LLM 流式期间不持有 DB 连接，session 仅在最后持久化阶段短暂占用
     title = None
     message_id = 0  # 异常回退时的默认值
-    async with async_session() as s:
-        try:
-            # 跨 session 重新查询 conv，确保绑定到当前 session
-            conv_in = await s.get(Conversation, conv.id)
-            if conv_in is None:
-                logger.error("会话 %d 在持久化时已不存在", conv.id)
-                raise ConversationNotFoundException(conv.id)
-
-            # 保存助手消息
-            assistant_msg = Message(
-                conversation_id=conv_in.id,
-                role="assistant",
-                content=assistant_content,
-                thinking_content=None,  # Phase 3 不落库
-                token_count=token_usage.get("total", 0),
-            )
-            s.add(assistant_msg)
-            conv_in.message_count += 1
-            # 手动同步 updated_at + last_message_at（对齐 ARCHITECTURE.md §8.6）
-            _now = datetime.now(timezone.utc)
-            conv_in.updated_at = _now
-            conv_in.last_message_at = _now
-            await s.flush()
-            await s.refresh(assistant_msg)
-            message_id = assistant_msg.id
-
-            # 标题生成（首轮：截断标题立即返回，LLM 标题异步更新）
-            if is_first_turn:
-                title = _generate_title(question)
-                conv_in.title = title
-
-            # Trace 写入（commit=False，由外层统一提交，确保与消息在同一事务）
-            if recorder:
-                await recorder.finish(s, commit=False)
-
-            await s.commit()
-
-        except Exception:
-            logger.exception("保存助手消息失败")
-            await s.rollback()
-            yield format_sse_event("error", {
-                "code": "E9001",
-                "message": "保存消息失败",
-            })
-            return
+    msg_id, title = await _persist_message(
+        conv, is_first_turn, question, assistant_content, "STREAM", recorder,
+        token_count=token_usage.get("total", 0),
+    )
+    if msg_id is None:
+        yield format_sse_event("error", {
+            "code": "E9001",
+            "message": "保存消息失败",
+        })
+        return
+    message_id = msg_id
 
     # session 已释放，安全发送 finish 事件（message_id 来自已提交的记录）
     yield format_sse_event("finish", {
@@ -363,29 +329,32 @@ async def _generate_sse_stream(
         asyncio.create_task(_update_title_async())
 
 
-async def _persist_fixed_response(
+async def _persist_message(
     conv: Conversation,
     is_first_turn: bool,
     question: str,
     content: str,
     log_label: str,
     recorder: TraceRecorder | None = None,
+    *,
+    token_count: int = 0,
 ) -> tuple[int | None, str | None]:
-    """固定响应公共持久化：创建 Message → 更新 Conversation → 写入 Trace。
+    """消息公共持久化：创建 Message → 更新 Conversation → 写入 Trace。
 
-    供 _generate_reject_response / _generate_meta_response 复用，
-    消除 ~50 行重复代码。
+    供 _generate_sse_stream / _generate_reject_response / _generate_meta_response
+    复用，消除 ~90 行重复的 session 管理代码。
 
     Args:
         conv: 会话对象（跨 session 引用，内部重新查询）
         is_first_turn: 是否首轮，用于生成标题
         question: 用户问题，用于生成标题
         content: assistant 消息文本
-        log_label: 日志标识（"REJECT" / "META"）
+        log_label: 日志标识（"STREAM" / "REJECT" / "META"）
         recorder: Trace 收集器
+        token_count: Token 用量（流式回答有估算值，固定模板为 0）
 
     Returns:
-        (message_id, title)：成功时 message_id > 0；异常时返回 (0, None)
+        (message_id, title)：成功时 message_id > 0；异常时返回 (None, None)
     """
     message_id = 0
     title = None
@@ -401,7 +370,7 @@ async def _persist_fixed_response(
                 role="assistant",
                 content=content,
                 thinking_content=None,
-                token_count=0,
+                token_count=token_count,
             )
             s.add(assistant_msg)
             conv_in.message_count += 1
@@ -410,7 +379,7 @@ async def _persist_fixed_response(
             conv_in.last_message_at = _now
             await s.flush()
             await s.refresh(assistant_msg)
-            message_id = assistant_msg.id
+            message_id = assistant_msg.id or 0
 
             if is_first_turn:
                 title = _generate_title(question)
@@ -443,7 +412,7 @@ async def _generate_reject_response(
     yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
     yield format_sse_event("message", {"delta": _REJECT_RESPONSE})
 
-    message_id, title = await _persist_fixed_response(
+    message_id, title = await _persist_message(
         conv, is_first_turn, question, _REJECT_RESPONSE, "REJECT", recorder,
     )
     if message_id is None:
@@ -472,7 +441,7 @@ async def _generate_meta_response(
     yield format_sse_event("meta", {"conversation_id": conv.uuid, "task_id": str(uuid4())})
     yield format_sse_event("message", {"delta": _META_RESPONSE})
 
-    message_id, title = await _persist_fixed_response(
+    message_id, title = await _persist_message(
         conv, is_first_turn, question, _META_RESPONSE, "META", recorder,
     )
 

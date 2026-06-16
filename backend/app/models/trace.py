@@ -30,7 +30,7 @@ class Trace(Base):
         comment="会话 ID（可为空）",
     )
     kb_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True,
+        BigInteger, ForeignKey("knowledge_bases.id", ondelete="SET NULL"), nullable=True,
         comment="知识库 ID",
     )
     question: Mapped[str | None] = mapped_column(

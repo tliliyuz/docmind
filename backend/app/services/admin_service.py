@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.exceptions import AdminSelfModifyException, PasswordSameAsCurrentException, UserNotFoundException
 from app.core.security import hash_password, verify_password
+from app.core.utils import escape_like
 from app.models.conversation import Conversation
 from app.models.document import Document
 from app.models.knowledge_base import KnowledgeBase
@@ -34,14 +35,54 @@ from app.schemas.admin import (
 logger = logging.getLogger(__name__)
 
 
-def escape_like(value: str) -> str:
-    r"""转义 SQL LIKE 通配符 `%` 和 `_`，防止用户输入被解释为 LIKE 模式。
+# ==================== 用户统计聚合辅助函数 ====================
+# 消除 list_users() 与 get_user_detail() 间的重复聚合查询
 
-    MySQL / SQLite 默认使用 ``\`` 作为 ESCAPE 字符。
 
-    供 admin_service / trace_service / document_service 等模糊搜索复用。
-    """
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+async def _get_user_kb_count(db: AsyncSession, user_id: int) -> int:
+    """获取用户拥有的知识库数量"""
+    result = await db.execute(
+        select(func.count()).select_from(
+            select(KnowledgeBase).where(KnowledgeBase.user_id == user_id).subquery()
+        )
+    )
+    return result.scalar() or 0
+
+
+async def _get_user_doc_count(db: AsyncSession, user_id: int) -> int:
+    """获取用户拥有的文档数量（通过 KB 关联）"""
+    result = await db.execute(
+        select(func.count()).select_from(
+            select(Document)
+            .join(KnowledgeBase, Document.kb_id == KnowledgeBase.id)
+            .where(KnowledgeBase.user_id == user_id)
+            .subquery()
+        )
+    )
+    return result.scalar() or 0
+
+
+async def _get_user_conversation_count(db: AsyncSession, user_id: int) -> int:
+    """获取用户的会话数量"""
+    result = await db.execute(
+        select(func.count()).select_from(
+            select(Conversation).where(Conversation.user_id == user_id).subquery()
+        )
+    )
+    return result.scalar() or 0
+
+
+async def _get_user_message_count(db: AsyncSession, user_id: int) -> int:
+    """获取用户的消息数量（通过 Conversation 关联）"""
+    result = await db.execute(
+        select(func.count()).select_from(
+            select(Message)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(Conversation.user_id == user_id)
+            .subquery()
+        )
+    )
+    return result.scalar() or 0
 
 
 async def get_stats(db: AsyncSession) -> AdminStatsResponse:
@@ -305,27 +346,10 @@ async def list_users(
 
     items = []
     for user in users:
-        # 聚合统计
-        kb_count = (await db.execute(
-            select(func.count()).select_from(
-                select(KnowledgeBase).where(KnowledgeBase.user_id == user.id).subquery()
-            )
-        )).scalar() or 0
-
-        doc_count = (await db.execute(
-            select(func.count()).select_from(
-                select(Document)
-                .join(KnowledgeBase, Document.kb_id == KnowledgeBase.id)
-                .where(KnowledgeBase.user_id == user.id)
-                .subquery()
-            )
-        )).scalar() or 0
-
-        conversation_count = (await db.execute(
-            select(func.count()).select_from(
-                select(Conversation).where(Conversation.user_id == user.id).subquery()
-            )
-        )).scalar() or 0
+        # 聚合统计（委托辅助函数，消除与 get_user_detail 的重复）
+        kb_count = await _get_user_kb_count(db, user.id)
+        doc_count = await _get_user_doc_count(db, user.id)
+        conversation_count = await _get_user_conversation_count(db, user.id)
 
         # 最后活跃时间（从 traces 表聚合）
         last_active_at = (await db.execute(
@@ -363,36 +387,11 @@ async def get_user_detail(
     if user is None:
         raise UserNotFoundException(user_id)
 
-    # 聚合统计
-    kb_count = (await db.execute(
-        select(func.count()).select_from(
-            select(KnowledgeBase).where(KnowledgeBase.user_id == user_id).subquery()
-        )
-    )).scalar() or 0
-
-    doc_count = (await db.execute(
-        select(func.count()).select_from(
-            select(Document)
-            .join(KnowledgeBase, Document.kb_id == KnowledgeBase.id)
-            .where(KnowledgeBase.user_id == user_id)
-            .subquery()
-        )
-    )).scalar() or 0
-
-    conversation_count = (await db.execute(
-        select(func.count()).select_from(
-            select(Conversation).where(Conversation.user_id == user_id).subquery()
-        )
-    )).scalar() or 0
-
-    message_count = (await db.execute(
-        select(func.count()).select_from(
-            select(Message)
-            .join(Conversation, Message.conversation_id == Conversation.id)
-            .where(Conversation.user_id == user_id)
-            .subquery()
-        )
-    )).scalar() or 0
+    # 聚合统计（委托辅助函数，消除与 list_users 的重复）
+    kb_count = await _get_user_kb_count(db, user_id)
+    doc_count = await _get_user_doc_count(db, user_id)
+    conversation_count = await _get_user_conversation_count(db, user_id)
+    message_count = await _get_user_message_count(db, user_id)
 
     # Token 聚合（从 traces 表 JSON_EXTRACT）
     token_stats = (await db.execute(

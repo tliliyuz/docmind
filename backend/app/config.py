@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     RERANK_TIMEOUT: int = 30  # DashScope Rerank API 请求超时（秒）
 
     # JWT
-    JWT_SECRET_KEY: str = "change-me"
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # access_token 短有效期（对齐 API.md §2）
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # refresh_token 长有效期

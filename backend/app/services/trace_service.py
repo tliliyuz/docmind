@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import TraceNotFoundException
-from app.services.admin_service import escape_like
+from app.core.utils import escape_like
 
 from app.models.knowledge_base import KnowledgeBase
 from app.models.trace import Trace
