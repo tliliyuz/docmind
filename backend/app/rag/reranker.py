@@ -2,7 +2,7 @@
 
 DashScope Rerank API 说明：
 - 端点：POST {RERANK_BASE_URL}/services/rerank/text-rerank/text-rerank
-- 模型：gte-rerank-v2
+- 模型：qwen3-rerank
 - 输入：query（字符串）+ documents（字符串列表）
 - 输出：results 列表（按 relevance_score 降序），含 index / relevance_score
 - 重试：指数退避，默认 3 次
@@ -54,7 +54,7 @@ class BaseReranker(ABC):
 class DashScopeReranker(BaseReranker):
     """DashScope Rerank API 精排实现
 
-    调用 DashScope text-rerank API（gte-rerank-v2），对 RRF 融合结果做语义精排。
+    调用 DashScope text-rerank API（qwen3-rerank），对 RRF 融合结果做语义精排。
     按 relevance_score 降序排列，截取 top_k。
 
     - 输入不足 top_k 时返回全部

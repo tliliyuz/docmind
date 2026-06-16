@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Rerank (DashScope)
     RERANK_API_KEY: str = ""
     RERANK_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
-    RERANK_MODEL: str = "gte-rerank-v2"
+    RERANK_MODEL: str = "qwen3-rerank"
     RERANK_MAX_RETRIES: int = 3
     RERANK_TIMEOUT: int = 30  # DashScope Rerank API 请求超时（秒）
 

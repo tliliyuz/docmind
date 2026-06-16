@@ -1,6 +1,6 @@
 # ADR-008: NoopReranker 策略——保持 RRF 相关性排序
 
-**状态**：已废弃（2026-06-16）—— NoopReranker 已被 DashScope Rerank API（gte-rerank-v2）替代
+**状态**：已废弃（2026-06-16）—— NoopReranker 已被 DashScope Rerank API（qwen3-rerank）替代
 **决策者**：开发团队
 **关联文档**：RAG_PIPELINE.md §3 / ARCHITECTURE.md §7.3 / ROADMAP.md §5.5
 

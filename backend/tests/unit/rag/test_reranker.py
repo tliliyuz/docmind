@@ -415,7 +415,7 @@ class TestDashScopeRerankerIntegration:
         call_args = mock_client.post.call_args
         assert call_args is not None
         payload = call_args.kwargs["json"]
-        assert payload["model"] == "gte-rerank-v2"
+        assert payload["model"] == "qwen3-rerank"
         assert payload["input"]["query"] == "年假怎么申请"
         assert len(payload["input"]["documents"]) == 5
         assert payload["input"]["documents"][0] == "入职流程包括填写个人信息"

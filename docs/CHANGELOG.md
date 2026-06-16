@@ -53,7 +53,7 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 - **Phase 5.5 — 句级修辞过滤**：`sentence_matcher.py` 新增 `detect_sentence_role()` 和 `filter_chunk_sentences()` 函数，基于 `_REFERENTIAL_PATTERNS` 规则层（显式标记 + 结构层 JSON/代码块检测）在 chunk 内部过滤引用性句子，解决 Chunk 内部混合陈述句和引用句的污染问题；`knowledge_pipeline.py` 在 `match_sentences()` 前插入过滤步骤
 - **Phase 5.5 — 程序级三层证据审计**：新增 `app/rag/evidence_auditor.py` 模块，实现引用存在性检查（第一层）、来源一致性检查（第二层）、句级证据回溯（第三层）。审计在 LLM 流完成后、sources 事件构建阶段执行，不影响 SSE 流输出。sources 事件新增 `confidence` / `confidence_note` 字段
 - **Phase 5.5 — 前端置信度展示**：`MessageItem.vue` 新增置信度警告组件，当证据审计发现 medium/low 置信度时展示警告提示和详细说明；`chat.js` store 从 sources SSE 事件中提取 `confidence` / `confidence_note` 字段
-- **Phase 5.5 §8.6 — DashScope Rerank API 接入**：`reranker.py` 新增 `DashScopeReranker(BaseReranker)` 类，调用 DashScope text-rerank API（`gte-rerank-v2`）对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常降级回退到原始 RRF 排序。`knowledge_pipeline.py` 默认使用 `DashScopeReranker` 替换 `NoopReranker`。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项。新增 22 个 DashScopeReranker 单元测试
+- **Phase 5.5 §8.6 — DashScope Rerank API 接入**：`reranker.py` 新增 `DashScopeReranker(BaseReranker)` 类，调用 DashScope text-rerank API（`qwen3-rerank`）对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常降级回退到原始 RRF 排序。`knowledge_pipeline.py` 默认使用 `DashScopeReranker` 替换 `NoopReranker`。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项。新增 22 个 DashScopeReranker 单元测试
 - **ADR-019 句级修辞过滤**：架构决策记录，覆盖修辞角色判定、过滤策略、Prompt 模板升级设计
 - **ADR-020 三层证据审计**：架构决策记录，覆盖三层审计机制、综合置信度计算、容错策略
 
