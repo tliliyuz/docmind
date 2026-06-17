@@ -8,6 +8,11 @@
 #   celery  — Celery Worker（文档入库异步任务）
 # 前端由宿主机 Nginx 直接托管静态文件，不参与 Docker Compose
 #
+# 资源约束（2核2G 小服务器）：
+#   mem_limit 是 compose v2 顶层字段，限制单个容器最大内存。
+#   注：deploy.resources.limits 仅在 Docker Swarm 下生效，
+#       普通 docker compose up 会被忽略，故此处不用。
+#
 # 快速启动：
 #   cp backend/.env.example backend/.env
 #   # 编辑 backend/.env 填入实际凭证
@@ -23,6 +28,7 @@ services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
@@ -47,6 +53,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -59,12 +66,11 @@ services:
 
   # ── FastAPI 后端 ──
   backend:
-    # 镜像由本地构建后 docker save/load 导入服务器，不在服务器构建
-    image: docmind-backend:latest
     build:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
+    mem_limit: 512m
     env_file:
       - backend/.env
     ports:
@@ -86,12 +92,11 @@ services:
 
   # ── Celery Worker（文档入库异步任务）──
   celery:
-    # 复用 backend 同一镜像，启动命令不同
-    image: docmind-backend:latest
     build:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
+    mem_limit: 384m
     env_file:
       - backend/.env
     volumes:
@@ -103,7 +108,8 @@ services:
       redis:
         condition: service_healthy
     # Linux 容器使用默认 prefork pool（多进程并发），无需 --pool=solo
-    command: celery -A app.ingest.celery_app worker --loglevel=info --concurrency=4
+    # 2核2G 服务器：并发降为 2，避免 worker 进程过多导致 OOM
+    command: celery -A app.ingest.celery_app worker --loglevel=info --concurrency=2
 
 # ── 持久化卷 ──
 volumes:
