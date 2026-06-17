@@ -28,7 +28,7 @@ services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 512m
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
@@ -73,7 +73,7 @@ services:
     # 2核2G 服务器：单 worker，避免 4 worker 各自加载 ChromaDB 导致 OOM 死循环
     # （command 覆盖 Dockerfile 里的 --workers 4，无需重新 build 镜像）
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
-    mem_limit: 640m
+    mem_limit: 512m
     env_file:
       - backend/.env
     ports:
