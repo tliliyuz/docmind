@@ -397,9 +397,19 @@ async function loadPage() {
         })
       }
     }
-  } catch {
-    ElMessage.error('知识库不存在或无权访问')
-    router.push(backRoute.value)
+  } catch (err) {
+    // 区分真实权限错误和其他错误（超时/网络/JS异常），避免误导用户
+    const status = err?.response?.status
+    if (status === 403 || status === 404) {
+      ElMessage.error('知识库不存在或无权访问')
+      router.push(backRoute.value)
+    } else if (err?.code === 'ECONNABORTED') {
+      ElMessage.error('请求超时，正在重试...')
+      // 超时不跳转，让用户留在当前页重试
+    } else {
+      console.error('KnowledgeDetail loadPage 失败:', err)
+      ElMessage.error(err?.response?.data?.message || '页面加载失败，请刷新重试')
+    }
   } finally {
     pageLoading.value = false
   }

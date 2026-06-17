@@ -1,11 +1,14 @@
 """知识库业务逻辑 — 创建/查询/更新/删除"""
 
+import logging
+import time
 import uuid as uuid_lib
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import engine
 from app.core.exceptions import (
     KnowledgeBaseNameExistsException,
     KnowledgeBaseNotFoundException,
@@ -25,6 +28,20 @@ from app.schemas.knowledge_base import (
     PublicKnowledgeBaseResponse,
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _pool_status() -> str:
+    """获取数据库连接池状态（用于诊断连接池耗尽）"""
+    try:
+        pool = engine.sync_engine.pool
+        return (
+            f"pool[size={pool.size()}, checkedin={pool.checkedin()}, "
+            f"checkedout={pool.checkedout()}, overflow={pool.overflow()}]"
+        )
+    except Exception:
+        return "pool[unavailable]"
+
 
 async def _get_real_chunk_counts(
     db: AsyncSession, kb_ids: list[int]
@@ -36,12 +53,20 @@ async def _get_real_chunk_counts(
     """
     if not kb_ids:
         return {}
+    t0 = time.time()
     result = await db.execute(
         select(Chunk.kb_id, func.count(Chunk.id))
         .where(Chunk.kb_id.in_(kb_ids))
         .group_by(Chunk.kb_id)
     )
-    return {row.kb_id: row[1] for row in result.all()}
+    counts = {row.kb_id: row[1] for row in result.all()}
+    t = time.time() - t0
+    if t > 0.1:
+        logger.warning(
+            "_get_real_chunk_counts kb_ids=%s SLOW=%.3fs %s",
+            kb_ids, t, _pool_status(),
+        )
+    return counts
 
 
 async def create_kb(
@@ -82,15 +107,31 @@ async def get_kb(
     替代 KB 表 chunk_count 缓存列，消除 Celery 任务导致的僵尸计数。
     内部调用（如 check_kb_active）无需此值时传 False 避免额外查询。
     """
+    t_start = time.time()
+
+    t0 = time.time()
     result = await db.execute(select(KnowledgeBase).where(KnowledgeBase.id == kb_id))
     kb = result.scalar_one_or_none()
+    t_select = time.time() - t0
+
     if kb is None:
         raise KnowledgeBaseNotFoundException(kb_id)
     if user_id is not None:
         require_kb_readable(kb, user_id, role)
+
+    t_chunk = 0.0
     if fill_chunk_count:
         real_counts = await _get_real_chunk_counts(db, [kb_id])
         kb.chunk_count = real_counts.get(kb_id, kb.chunk_count)
+        t_chunk = time.time() - t_start - t_select  # 近似（含 _get_real_chunk_counts 内部 overhead）
+
+    t_total = time.time() - t_start
+    if t_total > 0.3:
+        logger.warning(
+            "get_kb kb_id=%d SLOW SELECT=%.3fs CHUNK=%.3fs TOTAL=%.3fs %s",
+            kb_id, t_select, t_chunk, t_total, _pool_status(),
+        )
+
     return kb
 
 

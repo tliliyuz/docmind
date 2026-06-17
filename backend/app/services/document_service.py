@@ -1,5 +1,6 @@
 """文档业务逻辑 — 上传/批量上传/列表/详情/分块/删除/重新处理"""
 import logging
+import time
 import uuid as uuid_lib
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.chroma_client import get_vector_store
+from app.core.database import engine
 from app.core.exceptions import (
     AppException,
     DocumentNameExistsException,
@@ -48,6 +50,18 @@ from app.core.utils import escape_like
 from app.services.knowledge_base_service import check_kb_active
 
 logger = logging.getLogger(__name__)
+
+
+def _pool_status() -> str:
+    """获取数据库连接池状态（用于诊断连接池耗尽）"""
+    try:
+        pool = engine.sync_engine.pool
+        return (
+            f"pool[size={pool.size()}, checkedin={pool.checkedin()}, "
+            f"checkedout={pool.checkedout()}, overflow={pool.overflow()}]"
+        )
+    except Exception:
+        return "pool[unavailable]"
 
 # 允许的排序字段
 SORT_ALLOWED_FIELDS = {"created_at", "updated_at", "filename", "file_size", "status"}
@@ -225,7 +239,7 @@ async def upload_document(
         # 递增 KB 文档计数
         kb = await db.get(KnowledgeBase, kb_id)
         if kb is not None:
-            kb.doc_count = KnowledgeBase.doc_count + 1
+            kb.doc_count = kb.doc_count + 1  # 使用实例值而非 class 属性（避免 BinaryExpression）
 
     await db.refresh(doc)
 
@@ -324,7 +338,11 @@ async def list_documents(
 
     public KB 允许任意登录用户查看文档列表（只读），对齐 PRD.md §5.4
     """
+    t_start = time.time()
+
+    t0 = time.time()
     await _check_kb_ownership(db, kb_id, user_id, role, allow_public_read=True)
+    t_perm = time.time() - t0
 
     # 排序字段白名单校验
     if sort_by not in SORT_ALLOWED_FIELDS:
@@ -352,7 +370,9 @@ async def list_documents(
         .select_from(Document)
         .where(*conditions)
     )
+    t0 = time.time()
     total = (await db.execute(count_q)).scalar() or 0
+    t_count = time.time() - t0
 
     # 分页（selectinload KB 用于 kb_uuid 属性）
     q = (
@@ -363,8 +383,20 @@ async def list_documents(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
+    t0 = time.time()
     rows = (await db.execute(q)).scalars().all()
+    t_select = time.time() - t0
+
+    t0 = time.time()
     items = [_build_document_response(r) for r in rows]
+    t_serialize = time.time() - t0
+
+    t_total = time.time() - t_start
+    logger.info(
+        "list_documents kb=%d page=%d %s → PERM=%.3fs COUNT=%.3fs SELECT=%.3fs SERIALIZE=%.3fs TOTAL=%.3fs %s",
+        kb_id, page, _pool_status(), t_perm, t_count, t_select, t_serialize, t_total,
+        f"({total} docs, {len(items)} items)" if t_total > 0.3 else "",
+    )
 
     return DocumentListResponse(total=total, page=page, page_size=page_size, items=items)
 

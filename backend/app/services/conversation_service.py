@@ -1,11 +1,14 @@
 """会话业务逻辑 — CRUD + 权限校验，对齐 API.md §5"""
 
+import logging
+import time
 import uuid as uuid_lib
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.database import engine
 from app.core.exceptions import (
     ConversationAccessDeniedException,
     ConversationNotFoundException,
@@ -21,6 +24,20 @@ from app.schemas.conversation import (
     ConversationUpdate,
     MessageResponse,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _pool_status() -> str:
+    """获取数据库连接池状态（用于诊断连接池耗尽）"""
+    try:
+        pool = engine.sync_engine.pool
+        return (
+            f"pool[size={pool.size()}, checkedin={pool.checkedin()}, "
+            f"checkedout={pool.checkedout()}, overflow={pool.overflow()}]"
+        )
+    except Exception:
+        return "pool[unavailable]"
 
 
 async def _get_owned_conversation(
@@ -100,13 +117,17 @@ async def list_conversations(
     db: AsyncSession, user_id: int, page: int = 1, page_size: int = 20
 ) -> ConversationListResponse:
     """获取当前用户会话列表，按 last_message_at DESC 分页"""
+    t_start = time.time()
+
     # 总数
     count_q = (
         select(func.count())
         .select_from(Conversation)
         .where(Conversation.user_id == user_id)
     )
+    t0 = time.time()
     total = (await db.execute(count_q)).scalar() or 0
+    t_count = time.time() - t0
 
     # 分页查询（selectinload KB 用于 kb_status 填充）
     offset = (page - 1) * page_size
@@ -118,13 +139,24 @@ async def list_conversations(
         .offset(offset)
         .limit(page_size)
     )
+    t0 = time.time()
     rows = (await db.execute(list_q)).scalars().unique().all()
+    t_select = time.time() - t0
 
+    t0 = time.time()
     items = []
     for c in rows:
         resp = ConversationResponse.model_validate(c)
         _enrich_kb_status(resp, c, user_id)
         items.append(resp)
+    t_serialize = time.time() - t0
+
+    t_total = time.time() - t_start
+    logger.info(
+        "list_conversations user=%d page=%d %s → COUNT=%.3fs SELECT=%.3fs SERIALIZE=%.3fs TOTAL=%.3fs %s",
+        user_id, page, _pool_status(), t_count, t_select, t_serialize, t_total,
+        f"({total} rows, {len(items)} items)" if t_total > 0.5 else "",
+    )
 
     return ConversationListResponse(
         total=total,
