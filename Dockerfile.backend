@@ -15,7 +15,12 @@ ENV PYTHONUNBUFFERED=1
 # - curl: 健康检查
 # - build-essential / gcc / pkg-config: 编译 Python C 扩展（chromadb、bcrypt 等）
 # - libffi-dev: cffi 依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
+
+# 替换 Debian 源为阿里云镜像（国内加速 apt-get）
+# python:3.11-slim 使用 DEB822 格式 .sources 文件
+RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's|http://security.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
         curl \
         build-essential \
         gcc \
@@ -27,7 +32,10 @@ WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 层缓存
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# PyPI 换阿里云镜像（国内加速 pip install）
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
+    && pip install --no-cache-dir -r requirements.txt
 
 # 复制后端源代码
 COPY backend/ .
