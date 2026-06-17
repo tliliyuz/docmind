@@ -96,7 +96,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 256m
     env_file:
       - backend/.env
     volumes:
@@ -108,8 +108,8 @@ services:
       redis:
         condition: service_healthy
     # Linux 容器使用默认 prefork pool（多进程并发），无需 --pool=solo
-    # 2核2G 服务器：并发降为 2，避免 worker 进程过多导致 OOM
-    command: celery -A app.ingest.celery_app worker --loglevel=info --concurrency=2
+    # 2核2G 服务器：单 worker，避免多进程导致 OOM（入库任务排队处理即可）
+    command: celery -A app.ingest.celery_app worker --loglevel=info --concurrency=1
 
 # ── 持久化卷 ──
 volumes:
