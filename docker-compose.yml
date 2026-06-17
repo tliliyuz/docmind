@@ -59,6 +59,8 @@ services:
 
   # ── FastAPI 后端 ──
   backend:
+    # 镜像由本地构建后 docker save/load 导入服务器，不在服务器构建
+    image: docmind-backend:latest
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -84,6 +86,8 @@ services:
 
   # ── Celery Worker（文档入库异步任务）──
   celery:
+    # 复用 backend 同一镜像，启动命令不同
+    image: docmind-backend:latest
     build:
       context: .
       dockerfile: Dockerfile.backend
