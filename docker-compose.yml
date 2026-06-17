@@ -1,12 +1,12 @@
 # ============================================================
 # DocMind — Docker Compose 服务编排
 # ============================================================
-# 5 个服务：
+# 4 个服务：
 #   mysql   — MySQL 8.0 关系数据库
 #   redis   — Redis 7.0 缓存 + Celery Broker
 #   backend — FastAPI 后端（端口 8000）
 #   celery  — Celery Worker（文档入库异步任务）
-#   nginx   — Nginx 前端（端口 80）+ API 反向代理
+# 前端由宿主机 Nginx 直接托管静态文件，不参与 Docker Compose
 #
 # 快速启动：
 #   cp backend/.env.example backend/.env
@@ -45,7 +45,7 @@ services:
 
   # ── Redis 7.0 ──
   redis:
-    image: redis:7.0-alpine
+    image: redis:7-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
@@ -100,18 +100,6 @@ services:
         condition: service_healthy
     # Linux 容器使用默认 prefork pool（多进程并发），无需 --pool=solo
     command: celery -A app.ingest.celery_app worker --loglevel=info --concurrency=4
-
-  # ── Nginx 前端 + API 反向代理 ──
-  nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      backend:
-        condition: service_healthy
 
 # ── 持久化卷 ──
 volumes:
