@@ -36,16 +36,16 @@ async def lifespan(app: FastAPI):
     init_chroma()
 
     # 诊断：打印默认线程池大小（排查 asyncio.to_thread 排队问题）
-    import concurrent.futures
-    _loop = asyncio.get_running_loop()
-    _default_executor = _loop._default_executor  # type: ignore[attr-defined]
-    if isinstance(_default_executor, concurrent.futures.ThreadPoolExecutor):
-        logger.info(
-            "线程池诊断: max_workers=%d (默认值, 未自定义)",
-            _default_executor._max_workers,
-        )
-    else:
-        logger.info("线程池诊断: 未使用 ThreadPoolExecutor, type=%s", type(_default_executor).__name__)
+    try:
+        _loop = asyncio.get_running_loop()
+        _default_executor = getattr(_loop, "_default_executor", None)
+        if _default_executor is not None:
+            _max_workers = getattr(_default_executor, "_max_workers", "?")
+            logger.info("线程池诊断: max_workers=%s, type=%s", _max_workers, type(_default_executor).__name__)
+        else:
+            logger.info("线程池诊断: 未找到 _default_executor（可能在首次 to_thread 调用时才创建）")
+    except Exception as _e:
+        logger.info("线程池诊断: 无法读取线程池配置: %s", _e)
 
     # Redis 异步客户端预连接（避免首次请求时的 2 秒延迟）
     try:
