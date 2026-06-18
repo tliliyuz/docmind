@@ -21,6 +21,7 @@ celery==5.4.*
 httpx==0.28.*
 alembic==1.14.*
 
+psutil==6.*
 # 测试
 pytest==8.*
 pytest-asyncio==0.24.*

@@ -11,25 +11,31 @@
 - detect_section_numbers(): 检测用户提问中的章节号模式
 - 搜索时对 section_title/section_path 匹配的 chunk 做 BM25 分数加权
 - 缓存结构新增 section_info 列表，存储每个 chunk 的章节元数据
+
+内存优化（ADR-023 BM25 缓存重构，2026-06-18）：
+- Redis 缓存：仅存 tokens + doc_ids + section_info，**不存 chunk 原文**
+- 进程内缓存：仅存 BM25Okapi + doc_ids + section_info，**不存 chunk 原文**
+- chunk 原文在 BM25 评分后按需从 MySQL 取 top_k 条（O(1) vs O(N)）
+- 大知识库保护：chunk 数超过 BM25_LOCAL_CACHE_MAX_CHUNKS 时跳过进程内缓存
 """
 
 import json
 import logging
+import os
 import re
 import time
-from typing import Any, Optional
+from typing import Any
 
 import jieba
 from rank_bm25 import BM25Okapi
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config import settings
 from app.core.exceptions import RetrievalServiceException
 from app.core.redis_client import get_async_redis, get_redis
 from app.models.chunk import Chunk
 from app.rag.retriever import RetrievalOutput, RetrievalResult
-
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +64,23 @@ _CN_DIGIT_MAP = {
 # Redis key 模式：bm25_tokens:{kb_id}
 BM25_CACHE_KEY_PREFIX = "bm25_tokens"
 
-# 进程内缓存：{kb_id: (bm25, doc_ids, contents, section_info, expire_at)}
-# §8.8: section_info 为 list[dict]，每项含 section_title/section_path
-_local_cache: dict[int, tuple[BM25Okapi | None, list, list, list, float]] = {}
+# 进程内缓存：{kb_id: (bm25, doc_ids, section_info, expire_at)}
+# 注意：不再缓存 chunk 原文（contents），BM25 评分后按需从 MySQL 取 top_k 条
+_local_cache: dict[int, tuple[BM25Okapi | None, list, list, float]] = {}
 _LOCAL_TTL = settings.BM25_LOCAL_CACHE_TTL  # 进程内缓存 TTL（秒）
+# 注意：_MAX_CHUNKS 不在模块加载时固化，_set_local_cache 内从 settings 实时读取，
+# 以便测试中 monkeypatch settings.BM25_LOCAL_CACHE_MAX_CHUNKS 生效
+
+# psutil 按需加载（内存监控用，仅在大 KB 加载时打印）
+
+
+def _get_memory_mb() -> float:
+    """返回当前进程 RSS 内存（MB），psutil 不可用时返回 -1"""
+    try:
+        import psutil
+        return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+    except Exception:
+        return -1.0
 
 
 def _build_cache_key(kb_id: int) -> str:
@@ -194,12 +213,16 @@ def match_section_numbers(
     return False
 
 
-def _get_local_cache(kb_id: int) -> tuple[BM25Okapi | None, list, list, list] | None:
-    """从进程内缓存获取，过期返回 None。§8.8：返回 (bm25, doc_ids, contents, section_info)。"""
+def _get_local_cache(kb_id: int) -> tuple[BM25Okapi | None, list, list] | None:
+    """从进程内缓存获取，过期返回 None。
+
+    Returns:
+        (bm25, doc_ids, section_info) 或 None
+    """
     if kb_id in _local_cache:
-        bm25, doc_ids, contents, section_info, expire_at = _local_cache[kb_id]
+        bm25, doc_ids, section_info, expire_at = _local_cache[kb_id]
         if time.time() < expire_at:
-            return bm25, doc_ids, contents, section_info
+            return bm25, doc_ids, section_info
         else:
             del _local_cache[kb_id]
     return None
@@ -209,12 +232,23 @@ def _set_local_cache(
     kb_id: int,
     bm25: BM25Okapi | None,
     doc_ids: list,
-    contents: list,
     section_info: list[dict] | None = None,
 ) -> None:
-    """写入进程内缓存。§8.8：新增 section_info 参数。"""
+    """写入进程内缓存。
+
+    注意：不再缓存 chunk 原文（contents），BM25 评分后按需从 MySQL 取 top_k 条。
+    超过 BM25_LOCAL_CACHE_MAX_CHUNKS 阈值的 KB 不写入进程内缓存。
+    """
+    # 大 KB 保护：超过阈值不写入进程内缓存（阈值从 settings 实时读取，便于测试 monkeypatch）
+    if len(doc_ids) > settings.BM25_LOCAL_CACHE_MAX_CHUNKS:
+        logger.info(
+            "BM25 跳过进程内缓存（chunks=%d > max=%d）: kb_id=%d",
+            len(doc_ids), settings.BM25_LOCAL_CACHE_MAX_CHUNKS, kb_id,
+        )
+        return
+
     _local_cache[kb_id] = (
-        bm25, doc_ids, contents,
+        bm25, doc_ids,
         section_info if section_info is not None else [],
         time.time() + _LOCAL_TTL,
     )
@@ -223,7 +257,8 @@ def _set_local_cache(
 class BM25Retriever:
     """BM25 关键词检索器
 
-    流程：查询分词 → 获取 BM25 索引（进程内缓存 → Redis 缓存 → MySQL 懒加载）→ BM25Okapi 评分 → 返回 top_k
+    流程：查询分词 → 获取 BM25 索引（进程内缓存 → Redis 缓存 → MySQL 懒加载）
+    → BM25Okapi 评分 → 按需取 top_k chunk 原文 → 返回 top_k
     """
 
     def __init__(
@@ -264,7 +299,8 @@ class BM25Retriever:
             t_tokenize = time.perf_counter()
 
             # 2. 获取 BM25 索引（进程内缓存 → Redis 缓存 → MySQL 懒加载）
-            bm25, doc_ids, chunk_contents, section_info_list, cache_type = await self._get_bm25_index(kb_id)
+            #    注意：不再返回 chunk 原文，只返回 bm25 + doc_ids + section_info
+            bm25, doc_ids, section_info_list, cache_type = await self._get_bm25_index(kb_id)
             t_index = time.perf_counter()
 
             if not doc_ids or bm25 is None:
@@ -306,32 +342,42 @@ class BM25Retriever:
                         boosted_count, len(scores), boost, boost, section_numbers,
                     )
 
-            # 4. 按分数降序排列
+            # 4. 按分数降序排列，过滤低于阈值的 chunk
             ranked_indices = sorted(
                 range(len(scores)), key=lambda i: scores[i], reverse=True
             )
 
             candidate_count = len(scores)
-            results: list[RetrievalResult] = []
+            top_k_pairs: list[tuple[int, int]] = []
+            top_k_scores: list[float] = []
+            top_k_section_info: list[dict] = []
             for idx in ranked_indices:
                 score = float(scores[idx])
-                # 过滤低于阈值的 chunk：小语料下 IDF 可能为负，极端负分表示完全无关
                 if score < min_score:
                     continue
-                doc_id, chunk_index = doc_ids[idx]
-                # §8.7: 章节元数据回填到 RetrievalResult
+                if len(top_k_pairs) >= top_k:
+                    break
+                top_k_pairs.append(doc_ids[idx])
+                top_k_scores.append(score)
                 si = section_info_list[idx] if idx < len(section_info_list) else {}
+                top_k_section_info.append(si)
+
+            # 5. 按需从 MySQL 取 top_k chunk 原文（O(1) 而非 O(N)）
+            t_before_fetch = time.perf_counter()
+            content_map = await self._fetch_chunk_contents(top_k_pairs) if top_k_pairs else {}
+            t_fetch = time.perf_counter()
+
+            # 6. 组装结果
+            results: list[RetrievalResult] = []
+            for (doc_id, chunk_index), score, si in zip(top_k_pairs, top_k_scores, top_k_section_info):
                 results.append(RetrievalResult(
                     doc_id=doc_id,
                     chunk_index=chunk_index,
-                    content=chunk_contents[idx],
+                    content=content_map.get((doc_id, chunk_index), ""),
                     score=score,
                     section_title=si.get("section_title") or None,
                     section_path=si.get("section_path") or None,
                 ))
-
-            # 5. 截取 top_k
-            results = results[:top_k]
 
             logger.info("BM25 检索完成: kb_id=%d, %d 条结果", kb_id, len(results))
             return RetrievalOutput(
@@ -341,6 +387,7 @@ class BM25Retriever:
                     "redis_cache": cache_type,
                     "tokenize_ms": int((t_tokenize - t0) * 1000),
                     "score_ms": int((t_score - t_index) * 1000),
+                    "fetch_ms": int((t_fetch - t_before_fetch) * 1000),
                     "candidate_count": candidate_count,
                     "result_count": len(results),
                 },
@@ -352,30 +399,65 @@ class BM25Retriever:
             logger.exception("BM25 检索异常: kb_id=%d", kb_id)
             raise RetrievalServiceException(f"BM25 检索失败: {e}") from e
 
+    async def _fetch_chunk_contents(
+        self, pairs: list[tuple[int, int]]
+    ) -> dict[tuple[int, int], str]:
+        """从 MySQL 按 (doc_id, chunk_index) 批量取 chunk 原文。
+
+        仅在 BM25 评分后调用，只取 top_k 条（通常 ≤10），
+        避免加载全库 chunk 原文到内存。
+
+        Args:
+            pairs: [(doc_id, chunk_index), ...] 需要取内容的 chunk 标识
+
+        Returns:
+            {(doc_id, chunk_index): content} 映射
+        """
+        if not pairs:
+            return {}
+
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(Chunk.doc_id, Chunk.chunk_index, Chunk.content)
+                .where(tuple_(Chunk.doc_id, Chunk.chunk_index).in_(pairs))
+            )
+            rows = result.all()
+
+        content_map: dict[tuple[int, int], str] = {}
+        for row in rows:
+            content_map[(row.doc_id, row.chunk_index)] = row.content
+
+        # 补全未查到的 pair（理论上不应发生，但做防御性处理）
+        for pair in pairs:
+            if pair not in content_map:
+                content_map[pair] = ""
+
+        return content_map
+
     async def _get_bm25_index(
         self, kb_id: int
-    ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[str], list[dict], str]:
+    ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[dict], str]:
         """获取 BM25Okapi 实例 + 文档元数据。
 
         优先级：进程内缓存 → Redis 缓存 → MySQL 懒加载。
 
-        §8.8 扩展：返回 section_info 列表用于章节号 BM25 boost。
+        注意：不再返回 chunk 原文列表，BM25 评分后按需从 MySQL 取 top_k 条。
 
         Returns:
-            (bm25实例|None, [(doc_id, chunk_index), ...], [chunk_content, ...], [section_info, ...], cache_type)
+            (bm25实例|None, [(doc_id, chunk_index), ...], [section_info, ...], cache_type)
         """
         t0 = time.perf_counter()
 
         # 1. 尝试进程内缓存（<1ms）
         local = _get_local_cache(kb_id)
         if local is not None:
-            bm25, doc_ids, contents, section_info = local
+            bm25, doc_ids, section_info = local
             t_local = time.perf_counter()
             logger.info(
                 "BM25_PERF cache=local_hit chunks=%d cost=%.3fms",
                 len(doc_ids), (t_local - t0) * 1000,
             )
-            return bm25, doc_ids, contents, section_info, "local_hit"
+            return bm25, doc_ids, section_info, "local_hit"
 
         # 2. 尝试 Redis 缓存
         cache_key = _build_cache_key(kb_id)
@@ -394,13 +476,13 @@ class BM25Retriever:
                 t_deserialize = time.perf_counter()
                 tokens = data["tokens"]
                 doc_ids = [tuple(pair) for pair in data["doc_ids"]]
-                contents = data.get("contents", [])
+                # section_info 向后兼容旧缓存（无此字段时默认空列表）
                 section_info = data.get("section_info", [])
                 bm25 = BM25Okapi(tokens) if tokens else None
                 t_build = time.perf_counter()
 
-                # 回填进程内缓存（含 section_info）
-                _set_local_cache(kb_id, bm25, doc_ids, contents, section_info)
+                # 回填进程内缓存（仅 doc_ids + section_info，无 chunk 原文）
+                _set_local_cache(kb_id, bm25, doc_ids, section_info)
 
                 logger.info(
                     "BM25_PERF cache=redis_hit chunks=%d redis_get=%.3fs deserialize=%.3fs build=%.3fs total=%.3fs",
@@ -410,7 +492,7 @@ class BM25Retriever:
                     t_build - t_deserialize,
                     t_build - t0,
                 )
-                return bm25, doc_ids, contents, section_info, "redis_hit"
+                return bm25, doc_ids, section_info, "redis_hit"
         except Exception as e:
             logger.warning("Redis 读取 BM25 缓存失败（降级为直查）: %s", e)
 
@@ -422,13 +504,21 @@ class BM25Retriever:
 
     async def _load_and_cache(
         self, kb_id: int, cache_key: str
-    ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[str], list[dict]]:
+    ) -> tuple[BM25Okapi | None, list[tuple[int, int]], list[dict]]:
         """从 MySQL 加载 chunks → jieba 分词 → 缓存到 Redis + 进程内 → 构建 BM25Okapi。
 
-        §8.8 扩展：同时加载 section_info（section_title/section_path），
-        用于章节号 BM25 boost 匹配。
+        内存优化（ADR-023）：
+        - Redis 缓存仅存 tokens + doc_ids + section_info，**不存 chunk 原文**
+        - 进程内缓存仅存 BM25Okapi + doc_ids + section_info，超阈值则跳过
+        - 添加 psutil 内存监控日志，用于 OOM 诊断
+
+        Returns:
+            (bm25实例|None, doc_ids, section_info)
         """
         t0 = time.perf_counter()
+        mem0 = _get_memory_mb()
+        logger.info("BM25_LOAD_START kb_id=%d mem=%.1fMB", kb_id, mem0)
+
         async with self._session_factory() as db:
             result = await db.execute(
                 select(Chunk.doc_id, Chunk.chunk_index, Chunk.content, Chunk.metadata_)
@@ -437,42 +527,49 @@ class BM25Retriever:
             )
             rows = result.all()
         t_mysql = time.perf_counter()
+        mem_mysql = _get_memory_mb()
+        logger.info(
+            "BM25_LOAD mysql_done kb_id=%d rows=%d time=%.3fs mem=%.1fMB",
+            kb_id, len(rows), t_mysql - t0, mem_mysql,
+        )
 
         if not rows:
             logger.info("KB %d 无 chunk 数据", kb_id)
             # 空结果也缓存（避免反复查 MySQL），短 TTL
             try:
                 await self._async_redis.setex(cache_key, 60, json.dumps({
-                    "doc_ids": [], "tokens": [], "contents": [], "section_info": [],
+                    "doc_ids": [], "tokens": [], "section_info": [],
                 }))
             except Exception:
                 pass
             # BM25Okapi 不接受空语料，返回 None + 空列表
-            _set_local_cache(kb_id, None, [], [], [])
-            return None, [], [], []
+            _set_local_cache(kb_id, None, [], [])
+            return None, [], []
 
         # jieba 分词（最昂贵步骤）
         doc_ids: list[tuple[int, int]] = []
         tokenized_corpus: list[list[str]] = []
-        contents: list[str] = []
         section_info: list[dict] = []
         for row in rows:
             doc_ids.append((row.doc_id, row.chunk_index))
             tokenized_corpus.append(_tokenize(row.content))
-            contents.append(row.content)
             meta = row.metadata_ or {}
             section_info.append({
                 "section_title": meta.get("section_title", ""),
                 "section_path": meta.get("section_path", ""),
             })
         t_jieba = time.perf_counter()
+        mem_jieba = _get_memory_mb()
+        logger.info(
+            "BM25_LOAD jieba_done kb_id=%d chunks=%d time=%.3fs mem=%.1fMB",
+            kb_id, len(doc_ids), t_jieba - t_mysql, mem_jieba,
+        )
 
-        # 写入 Redis 缓存
+        # 写入 Redis 缓存（仅 tokens + doc_ids + section_info，不存 chunk 原文）
         try:
             cache_data = json.dumps({
                 "doc_ids": doc_ids,
                 "tokens": tokenized_corpus,
-                "contents": contents,
                 "section_info": section_info,
             }, ensure_ascii=False)
             await self._async_redis.setex(cache_key, settings.BM25_CACHE_TTL, cache_data)
@@ -483,20 +580,28 @@ class BM25Retriever:
 
         bm25 = BM25Okapi(tokenized_corpus)
         t_build = time.perf_counter()
+        mem_build = _get_memory_mb()
+        logger.info(
+            "BM25_LOAD bm25_done kb_id=%d chunks=%d time=%.3fs mem=%.1fMB",
+            kb_id, len(doc_ids), t_build - t_redis, mem_build,
+        )
 
-        # 写入进程内缓存（含 section_info，§8.8）
-        _set_local_cache(kb_id, bm25, doc_ids, contents, section_info)
+        # 写入进程内缓存（超阈值则跳过，仅存 BM25Okapi + doc_ids + section_info）
+        _set_local_cache(kb_id, bm25, doc_ids, section_info)
 
         logger.info(
-            "BM25_LOAD chunks=%d mysql=%.3fs jieba=%.3fs redis_write=%.3fs build=%.3fs total=%.3fs",
-            len(rows),
+            "BM25_LOAD done kb_id=%d chunks=%d "
+            "mysql=%.3fs jieba=%.3fs redis_write=%.3fs build=%.3fs total=%.3fs "
+            "mem_start=%.1fMB mem_end=%.1fMB delta=%.1fMB",
+            kb_id, len(rows),
             t_mysql - t0,
             t_jieba - t_mysql,
             t_redis - t_jieba,
             t_build - t_redis,
             t_build - t0,
+            mem0, mem_build, mem_build - mem0,
         )
-        return bm25, doc_ids, contents, section_info
+        return bm25, doc_ids, section_info
 
 
 async def invalidate_bm25_cache_async(kb_id: int) -> None:

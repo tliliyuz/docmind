@@ -326,7 +326,7 @@
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | P3-U7.20 | 缓存-命中 | `_get_bm25_index()` | Redis 有 `bm25_tokens:{kb_id}` | 直接返回 `BM25Okapi(data["tokens"]), data["doc_ids"]` + 回填进程内缓存 | ✅ | 2026-06-11 | Mock async Redis（P0-2 接口适配） |
 | P3-U7.21 | 缓存-未命中懒加载 | `_get_bm25_index()` | Redis 无缓存 | 从 MySQL 读 chunks → jieba 分词 → 写 Redis + 进程内缓存 → 返回 | ✅ | 2026-06-11 | — |
-| P3-U7.22 | 缓存-写入格式正确 | `_get_bm25_index()` | 懒加载后写缓存 | Redis 存 `{"doc_ids": [...], "tokens": [[...], ...], "contents": [...]}` JSON | ✅ | 2026-06-11 | — |
+| P3-U7.22 | 缓存-写入格式正确 | `_get_bm25_index()` | 懒加载后写缓存 | Redis 存 `{"doc_ids": [...], "tokens": [[...], ...], "section_info": [...]}` JSON（ADR-023：不含 contents） | ✅ | 2026-06-18 | ADR-023 重构：移除 contents，新增 _fetch_chunk_contents 按需取原文 |
 | P3-U7.23 | 缓存-TTL=300s | `_get_bm25_index()` | 写缓存 | `SETEX` 带 300s 过期 | ✅ | 2026-06-11 | — |
 | P3-U7.24 | 缓存-文档终态后重建 | Celery task | 文档入库完成 | 触发 `DEL bm25_tokens:{kb_id}` → 下次查询懒加载 | ✅ | 2026-06-11 | `invalidate_bm25_cache(kb_id)` 同步版 |
 | P3-U7.25 | 缓存-文档删除后失效 | Celery task | 文档删除完成 | `DEL bm25_tokens:{kb_id}` | ✅ | 2026-06-11 | — |
@@ -1271,7 +1271,7 @@
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
 | `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`validate_file`(12) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索（16 用例；适配 BaseVectorStore 抽象 + 章节元数据回填 3 用例） |
-| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2 + §8.8：BM25 检索 + 三级缓存 + 章节号检测与 boost（59 用例，含 7 个真实 jieba 集成 + 进程内缓存 + 异步缓存清除 + cn_to_int 5 + detect_section_numbers 10 + match_section_numbers 8 + section_boost 5） |
+| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2 + §8.8 + ADR-023：BM25 检索 + 三级缓存（去除 contents）+ 章节号检测与 boost + 按需取原文 + 大 KB 进程缓存跳过（97 用例，含 7 个真实 jieba 集成 + content fetch 测试 + 进程内缓存阈值测试） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
 | `rag/reranker.py` | ≥ 80% | ✅ | DashScopeReranker（24 用例，P55-RR.1-P55-RR.22 + 接口测试 2） |
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例）+ 章节信息展示（4 用例） |

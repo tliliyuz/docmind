@@ -65,17 +65,23 @@ DEL Redis key: bm25_tokens:{kb_id}  +  清除进程内缓存
     ↓ 下次查询时
 get_bm25_index(kb_id):
   ├── L1: 进程内缓存（dict，TTL=60s）
-  │   ├── 命中 → 直接返回 BM25Okapi 实例（<1ms）
+  │   ├── 命中 → 直接返回 BM25Okapi 实例（不含 chunk 原文）（<1ms）
+  │   ├── 大 KB 保护：chunk 数 > BM25_LOCAL_CACHE_MAX_CHUNKS 时跳过 L1
   │   └── 未命中 → 进入 L2
   ├── L2: Redis 缓存（async Redis，TTL=300s）
-  │   ├── 命中 → json.loads → BM25Okapi(tokens) 实例化（~50ms）
+  │   ├── 命中 → json.loads → BM25Okapi(tokens) 实例化（~50ms～数秒）
+  │   │   回填 L1（不超过阈值时）
   │   └── 未命中 → 进入 L3
-  └── L3: 懒加载重建（MySQL → jieba → Redis → 进程内缓存）
+  └── L3: 懒加载重建（MySQL → jieba → Redis → L1）
        1. SELECT content FROM chunks WHERE kb_id=? ORDER BY id
        2. [jieba.lcut(c.content) for c in chunks]  ← 最昂贵步骤
-       3. SETEX bm25_tokens:{kb_id} 300 {"doc_ids":[...], "tokens":[[...],...]}
+       3. SETEX bm25_tokens:{kb_id} 300 {"doc_ids":[...], "tokens":[[...],...], "section_info":[...]}
+          ↳ 注意：不缓存 chunk 原文（contents），避免大 KB OOM
        4. BM25Okapi(tokens)
-  └── get_scores(jieba.lcut(question)) → top_k=10
+       5. 回填 L1（不超过阈值时）
+  └── BM25 评分 → get_scores(jieba.lcut(question)) → top_k
+  └── 按需取原文：SELECT content FROM chunks WHERE (doc_id, chunk_index) IN (...)
+       ↳ 仅取 top_k 条（≤10），O(1) 而非 O(N)
 ```
 
 | 事件 | 触发 | 操作 |
@@ -89,23 +95,33 @@ get_bm25_index(kb_id):
 
 ```json
 {
-  "doc_ids": [101, 102, 103],
-  "tokens": [["入职", "指南", "欢迎"], ["报销", "制度"], ["VPN", "配置"]]
+  "doc_ids": [[101, 0], [102, 0], [103, 0]],
+  "tokens": [["入职", "指南", "欢迎"], ["报销", "制度"], ["VPN", "配置"]],
+  "section_info": [
+    {"section_title": "§3.2 入职", "section_path": "HR > §3 > §3.2"},
+    {"section_title": "§4.1 报销", "section_path": "财务 > §4 > §4.1"},
+    {"section_title": "§5.1 VPN", "section_path": "IT > §5 > §5.1"}
+  ]
 }
 ```
+
+> **内存优化（ADR-023）**：缓存中 **不包含 chunk 原文（contents）**。BM25 评分后仅对 top_k 条结果按需从 MySQL 取原文（`SELECT content FROM chunks WHERE (doc_id, chunk_index) IN (...)`，≤10 条），避免全库 chunk 原文驻留内存导致 OOM。
 
 #### 设计要点
 
 - **三级缓存**：进程内 dict（TTL=60s）→ Redis（TTL=300s）→ MySQL 懒加载
 - **进程内缓存**：避免 Redis 网络 IO，cache hit 从 ~50ms 降至 <1ms
+- **大知识库保护**：chunk 数超过 `BM25_LOCAL_CACHE_MAX_CHUNKS`（默认 5000）时跳过进程内缓存，仅使用 Redis 缓存（每次请求重建 BM25Okapi 后释放内存），避免 OOM
+- **按需取原文**：chunk 原文不进入任何缓存层，BM25 评分后批量取 top_k 条（O(1)），彻底消除全库 contents 的 Python 字符串开销（大 KB 可达数百 MB）
 - **async Redis**：FastAPI 异步接口避免阻塞事件循环（原同步调用导致 ~2.8s 阻塞）
   - **开发环境（Windows）**：`redis.Redis` 同步客户端 + `asyncio.to_thread()` 线程池包装
-  - **生产环境（Linux）**：建议使用原生 `redis.asyncio.Redis` + `ConnectionPool`
+  - **生产环境（Linux）**：使用原生 `redis.asyncio.Redis` + `ConnectionPool`
 - **Celery 保持同步**：Celery Worker 继续使用同步 `get_redis()`，`invalidate_bm25_cache` 提供同步/异步两个版本
 - **缓存 `tokenized_corpus` 而非 pickle BM25Okapi 实例**：JSON 格式跨版本安全、Redis 友好、可人工排查
-- **BM25Okapi 构造极轻量**（纯 NumPy 计算），真正昂贵的是 IO + jieba 分词
+- **BM25Okapi 构造代价**：对小型 KB（<5000 chunks）极轻量（纯 NumPy 计算，<50ms）；大型 KB 重建时间随 chunk 数线性增长（20000 chunk ~2-5s），但内存峰值仅在请求期间，请求结束后释放
 - **TTL=300s** 作为兜底：即使 Celery 未触发 DEL，缓存也会过期重建
 - **最终一致性**：文档终态后才触发重建，避免处理中状态污染索引
+- **内存监控**：大 KB 加载时打印 RSS 内存日志（MySQL 读取后 / 分词后 / BM25 构建后），用于 OOM 诊断
 
 #### IDF 静默衰减风险
 
@@ -666,7 +682,6 @@ BM25 分数加权：
 {
   "doc_ids": [[1, 0], [1, 1]],
   "tokens": [["入职", "指南"], ["报销", "制度"]],
-  "contents": ["入职指南...", "报销制度..."],
   "section_info": [
     {"section_title": "§3.2 限流", "section_path": "架构 > §3 > §3.2"},
     {"section_title": "§4.1 数据库", "section_path": "架构 > §4 > §4.1"}
@@ -674,7 +689,9 @@ BM25 分数加权：
 }
 ```
 
-> **向后兼容**：旧缓存无 `section_info` 字段时 `data.get("section_info", [])` 返回空列表，boost 逻辑自动跳过。
+> **注意**：chunk 原文（contents）不进入缓存（ADR-023），BM25 评分后按需取 top_k 条。
+>
+> **向后兼容**：旧缓存无 `section_info` 字段时 `data.get("section_info", [])` 返回空列表，boost 逻辑自动跳过。旧缓存含 `contents` 字段时自动忽略（不参与新逻辑）。
 
 ---
 

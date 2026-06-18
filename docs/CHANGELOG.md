@@ -22,6 +22,22 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ## [Unreleased] - 2026-06-18
 
+### Changed
+- **BM25 缓存结构重构（ADR-023，2026-06-18）**：
+  - **问题**：BM25 Redis 缓存和进程内缓存中存储了全库 chunk 原文（`contents`），对于 20000 chunk 的知识库，Python 内存开销达 300-500MB（tokenized_corpus ~230MB + BM25Okapi 内部结构 ~50MB + contents ~20MB），导致 `backend exited 137`（Linux OOM Kill）
+  - **根因**：
+    1. Redis 缓存了 `contents`（全库 chunk 原文）和 `tokenized_corpus`（全库分词结果）
+    2. Redis 命中后 `json.loads()` 将全部数据反序列化到 Python 内存，再调用 `BM25Okapi(tokens)` 重建索引（`BM25Okapi` 持有 `self.corpus` 引用，token 列表永不释放）
+    3. 进程内缓存（`_local_cache`）保存了 BM25Okapi 实例 + 全库 chunk 原文 + section_info，每个被查询过的大 KB 在进程内存中驻留 60s
+  - **修复（3 文件）**：
+    - `rag/bm25.py`：Redis 缓存剔除 `contents` 字段（仅存 `tokens` + `doc_ids` + `section_info`）；进程内缓存剔除 `contents`（仅存 BM25Okapi + `doc_ids` + `section_info`）；新增 `_fetch_chunk_contents()` 方法——BM25 评分后按 `(doc_id, chunk_index)` 批量查 MySQL 取 top_k 条原文（≤10 条，O(1) 而非 O(N)）；新增 psutil 内存监控日志（MySQL 读取后/分词后/BM25 构建后分别打印 RSS）；新增 `BM25_LOCAL_CACHE_MAX_CHUNKS` 阈值（默认 5000），超过则跳过进程内缓存
+    - `config.py`：新增 `BM25_LOCAL_CACHE_MAX_CHUNKS: int = 5000` 配置项
+    - `requirements.txt`：新增 `psutil` 依赖
+  - **效果**：进程内缓存中全库 chunk 原文开销归零（~20MB→0）；进程内大 KB BM25 驻留内存消除（不再缓存 >5000 chunk 的 BM25Okapi 实例）；每次请求仅在内存中短暂持有 tokenized_corpus，请求结束后 GC 回收；memory 监控日志可精确追踪每个阶段的 RSS 增量
+  - **权衡**：大 KB（>5000 chunks）每次 BM25 查询需从 Redis 读取 token 缓存后重建 BM25Okapi（~2-5s @ 20000 chunks），无进程内缓存加速；chunk 原文每次查询需额外 1 次 MySQL 批量查询（≤10 条，<10ms）。此权衡可接受——解决 OOM 是第一优先级，BM25 重建 CPU 成本后续可用磁盘持久化索引或 Elasticsearch 解决
+  - **测试**：97/97 BM25 单元测试通过，1227/1227 后端全量测试零回归
+  - **文档**：`backend/docs/RAG_PIPELINE.md` §2.2 缓存结构/生命周期更新
+
 ### Added
 - **ADR-022：问答 Service 层三模块拆分（2026-06-18）**：
   - `chat_service.py`（1015 行）拆分为三个模块：`chat_service.py`（入口+校验+re-export）、`sse_stream.py`（SSE 流生成+消息持久化）、`chat_helpers.py`（辅助函数）

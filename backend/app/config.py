@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     BM25_MIN_SCORE: float = -5.0
     BM25_CACHE_TTL: int = 300
     BM25_LOCAL_CACHE_TTL: int = 60  # 进程内 BM25 缓存 TTL（秒）
+    BM25_LOCAL_CACHE_MAX_CHUNKS: int = 5000  # 进程内缓存 chunk 数上限，超过则仅用 Redis 缓存
     BM25_SECTION_BOOST_FACTOR: float = 2.0  # §8.8 章节号匹配时 BM25 分数加权倍率
 
     # ── RRF ──
