@@ -102,7 +102,7 @@ CREATE TABLE knowledge_bases (
 | visibility | ENUM | private（仅 owner 可见可检索）/ public（所有用户可检索），默认 private |
 | status | ENUM | active（正常）/ deleting（异步清理中，随后物理删除行） |
 | chunk_count | INT | 分块总数（冗余缓存列，Celery 任务内部维护）。**API 响应使用 Chunk 表实时 COUNT，不读此列**，避免 Celery 任务异常导致僵尸计数值 |
-| doc_count | INT | 文档总数（冗余缓存）。文档删除时须用 `GREATEST(0, doc_count - 1)` 原子递减 |
+| doc_count | INT | 文档总数（冗余缓存列，Celery 任务内部维护）。**API 响应使用 Document 表实时 COUNT，不读此列**，避免上传失败等场景导致僵尸计数值 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
@@ -376,7 +376,8 @@ CREATE TABLE traces (
     INDEX idx_created_response (created_at, response_mode),
     INDEX idx_user_created (user_id, created_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL,
+    FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE SET NULL
 );
 ```
 
@@ -481,6 +482,7 @@ CREATE TABLE traces (
 | `refresh_tokens.user_id` | `users(id)` | `ON DELETE CASCADE` | 用户删除时自动清理其刷新令牌，避免悬空数据 |
 | `traces.user_id` | `users(id)` | `ON DELETE CASCADE` | 用户删除时自动清理其 Trace 记录 |
 | `traces.conversation_id` | `conversations(id)` | `ON DELETE SET NULL` | 会话删除后 Trace 保留，仅解除关联（conversation_id 置空），Trace 作为性能观测数据独立于会话生命周期 |
+| `traces.kb_id` | `knowledge_bases(id)` | `ON DELETE SET NULL` | 知识库删除后 Trace 保留，仅解除关联（kb_id 置空），Trace 作为性能观测数据独立于知识库生命周期 |
 
 > **重要**：知识库/文档的实际删除采用 **Celery 异步物理删除**（先标记 `deleting` → Worker 清理 ChromaDB 向量 + 磁盘文件 → 物理 `DELETE FROM` MySQL 记录）。`ON DELETE CASCADE` 作为数据库层兜底保障——即使 Celery 仅执行 `DELETE FROM knowledge_bases WHERE id=?`，子记录（documents → chunks）也会由 FK CASCADE 自动级联清理，无需显式逐表删除。
 

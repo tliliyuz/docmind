@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |:---|:---|
-| 文档版本 | v1.2 |
-| 最后更新 | 2026-06-18（Phase 5 压测完成，限流阈值更新） |
+| 文档版本 | v1.3 |
+| 最后更新 | 2026-06-18（第 3 轮人工评分完成 + E9 补充） |
 
 ---
 
@@ -170,6 +170,7 @@
 | P2-A3.14 | 上传-越权 | POST `/api/knowledge-bases/{kb_id}/documents` | 非 owner/admin | 403, E5005 | ✅ | 2026-05-18 | — |
 | P2-A3.15 | 批量上传-全部成功 | POST `/api/knowledge-bases/{kb_id}/documents/batch-upload` | 多文件 | 200, success 列表 | ✅ | 2026-05-18 | — |
 | P2-A3.16 | 批量上传-部分失败 | POST `/api/knowledge-bases/{kb_id}/documents/batch-upload` | 含不支持格式 | 200, success + failed 列表 | ✅ | 2026-05-18 | — |
+| P2-A3.16b | 批量上传-超限拒绝 | POST `/api/knowledge-bases/{kb_id}/documents/batch-upload` | 文件数 > 50 | 400, E2014 | ✅ | 2026-06-18 | BATCH_UPLOAD_MAX_COUNT=50 |
 | P2-A3.17 | 文档分块列表 | GET `/api/knowledge-bases/{kb_id}/documents/{id}/chunks` | 正常 | 200, preview 截断 | ✅ | 2026-05-18 | — |
 | P2-A3.18 | 文档分块-无数据 | GET `/api/knowledge-bases/{kb_id}/documents/{id}/chunks` | 无分块 | 200, total=0 | ✅ | 2026-05-18 | — |
 | P2-A3.19 | 文档列表-分页校验 | GET `/api/knowledge-bases/{kb_id}/documents` | page_size=0/101 | 422 | ✅ | 2026-05-18 | Query(ge=1, le=100) |
@@ -183,7 +184,7 @@
 | P2-U6.3 | 解析容错-轻微错误 | `parser.py` | <20% 页面失败 | 返回 warning 级别结果 | ✅ | 2026-05-19 | Mock PyPDF2 |
 | P2-U6.4 | 解析容错-中等错误 | `parser.py` | 20-50% 页面失败 | 标记 partial_failed | ✅ | 2026-05-19 | Mock PyPDF2 |
 | P2-U6.5 | 解析容错-严重错误 | `parser.py` | >50% 页面失败 | 标记 failed | ✅ | 2026-05-19 | Mock PyPDF2 |
-| P2-U6.6 | 分块逻辑 | `chunker.py` | 长文本 | 按分隔符优先级分块，每块 800-1200 chars | ✅ | 2026-05-20 | 35 用例全部通过 |
+| P2-U6.6 | 分块逻辑 | `chunker.py` | 长文本 | 按分隔符优先级分块，每块 800-1200 chars | ✅ | 2026-06-17 | 57 用例全部通过（含 21 个章节检测用例：detect_sections 8 + resolve_section 9 + 集成 4） |
 | P2-U6.7 | Embedding 批次 checkpoint | `tasks.py` / `test_tasks.py` | 中途失败 | 从 last_success_batch 恢复 | ✅ | 2026-06-15 | test_tasks.py 覆盖断点恢复/阶段检测/ChromaDB 清理失败标记/锁集成（11 用例）；修复：幂等锁集成测试 mock 目标从同步改为异步版本 |
 | P2-U6.8 | 存储-保存文件 | `storage.py` | 上传文件 | 文件写入磁盘，返回路径 `uploads/{kb_id}/{doc_id}/{uuid}_{filename}` | ✅ | 2026-05-21 | tempfile 临时目录 + Mock UploadFile |
 | P2-U6.9 | 存储-读取文件 | `storage.py` | 已有文件 | 返回 bytes 内容 | ✅ | 2026-05-21 | — |
@@ -298,6 +299,7 @@
 | P3-U7.6 | 向量检索-Embedding 调用 | `vector_retriever.search()` | 查询文本 | 调用 DashScope embed API，text_type="query" | ✅ | 2026-05-28 | 复用 embedder，text_type 参数已扩展 |
 | P3-U7.7 | 向量检索-ChromaDB 异常 | `vector_retriever.search()` | ChromaDB 不可用 | 抛出 `RetrievalServiceException(E4003)` | ✅ | 2026-05-28 | 含 embedding 异常场景 |
 | P3-U7.8 | 向量检索-metadata int 类型一致性 | `vector_retriever.search()` | metadata kb_id/doc_id/chunk_index 为 int | 入库/查询两端统一 int，显式 int() 转换保障 | ✅ | 2026-06-01 | 决策 #21，新增 test_metadata字段为int类型 测试 |
+| P3-U7.9 | 向量检索-章节元数据回填 | `vector_retriever.search()` | ChromaDB metadata 含 section_title/section_path | RetrievalResult 正确回填章节字段；无章节字段时默认 None；空章节字段正确处理 | ✅ | 2026-06-17 | 3 用例：含章节字段 / 无章节字段 / 空章节字段 |
 
 ### 5.2 后端 — BM25 检索器单元测试
 
@@ -314,6 +316,7 @@
 | P3-U7.18 | BM25-真实分词缓存懒加载 | `bm25_retriever.search()` | 缓存未命中 + 真实 jieba | 从 MySQL 加载后用真实 jieba 分词构建索引并缓存 | ✅ | 2026-06-11 | 验证缓存 tokens 非逐字拆分 |
 | P3-U7.27 | BM25-进程内缓存命中 | `_get_local_cache()` | 进程内缓存未过期 | 直接返回，不访问 Redis | ✅ | 2026-06-11 | 新增 TestLocalCache + test_进程内缓存命中 |
 | P3-U7.28 | BM25-进程内缓存过期 | `_get_local_cache()` | 进程内缓存已过期 | 返回 None，清空缓存条目 | ✅ | 2026-06-11 | — |
+| P3-U7.31 | BM25-章节号检测与 boost | `cn_to_int()` / `detect_section_numbers()` / `match_section_numbers()` | 中文数字转换/章节号模式检测/元数据匹配/分数加权 | cn_to_int 参数化 20 用例 + detect 10 用例 + match 8 用例 + boost 5 用例 = 28 用例全部通过 | ✅ | 2026-06-17 | §8.8 章节号 BM25 增强：正分 ×2.0 / 负分 ÷2.0 |
 
 ### 5.3 后端 — BM25 索引缓存测试
 
@@ -360,14 +363,14 @@
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P55-RR.1 | DashScopeReranker-正常解析降序结果 | `_parse_rerank_response()` | API 返回 3 条结果 | 按 relevance_score 降序提取 index 列表 | ✅ | 2026-06-15 | — |
-| P55-RR.2 | DashScopeReranker-部分结果截取 top_n | `_parse_rerank_response()` | 5 篇文档，top_n=2 | 返回 2 条结果的 index | ✅ | 2026-06-15 | — |
-| P55-RR.3 | DashScopeReranker-单条结果 | `_parse_rerank_response()` | 1 篇文档 | 返回 [0] | ✅ | 2026-06-15 | — |
-| P55-RR.4 | DashScopeReranker-空 output 降级 | `_parse_rerank_response()` | API 返回 output={} | 降级返回全部原始索引 | ✅ | 2026-06-15 | — |
-| P55-RR.5 | DashScopeReranker-空 results 降级 | `_parse_rerank_response()` | API 返回 results=[] | 降级返回全部原始索引 | ✅ | 2026-06-15 | — |
-| P55-RR.6 | DashScopeReranker-缺少 index 抛异常 | `_parse_rerank_response()` | 结果项缺 index 字段 | ValueError，含「缺少 index 字段」 | ✅ | 2026-06-15 | — |
-| P55-RR.7 | DashScopeReranker-index 越界抛异常 | `_parse_rerank_response()` | index=5, doc_count=3 | ValueError，含「索引越界」 | ✅ | 2026-06-15 | — |
-| P55-RR.8 | DashScopeReranker-负 index 抛异常 | `_parse_rerank_response()` | index=-1 | ValueError，含「索引越界」 | ✅ | 2026-06-15 | — |
+| P55-RR.1 | DashScopeReranker-正常解析降序结果 | `parse_rerank_response()` | API 返回 3 条结果 | 按 relevance_score 降序提取 index 列表 | ✅ | 2026-06-15 | — |
+| P55-RR.2 | DashScopeReranker-部分结果截取 top_n | `parse_rerank_response()` | 5 篇文档，top_n=2 | 返回 2 条结果的 index | ✅ | 2026-06-15 | — |
+| P55-RR.3 | DashScopeReranker-单条结果 | `parse_rerank_response()` | 1 篇文档 | 返回 [0] | ✅ | 2026-06-15 | — |
+| P55-RR.4 | DashScopeReranker-空 output 降级 | `parse_rerank_response()` | API 返回 output={} | 降级返回全部原始索引 | ✅ | 2026-06-15 | — |
+| P55-RR.5 | DashScopeReranker-空 results 降级 | `parse_rerank_response()` | API 返回 results=[] | 降级返回全部原始索引 | ✅ | 2026-06-15 | — |
+| P55-RR.6 | DashScopeReranker-缺少 index 抛异常 | `parse_rerank_response()` | 结果项缺 index 字段 | ValueError，含「缺少 index 字段」 | ✅ | 2026-06-15 | — |
+| P55-RR.7 | DashScopeReranker-index 越界抛异常 | `parse_rerank_response()` | index=5, doc_count=3 | ValueError，含「索引越界」 | ✅ | 2026-06-15 | — |
+| P55-RR.8 | DashScopeReranker-负 index 抛异常 | `parse_rerank_response()` | index=-1 | ValueError，含「索引越界」 | ✅ | 2026-06-15 | — |
 | P55-RR.9 | DashScopeReranker-API 正常排序 | `DashScopeReranker.rerank()` | 5 条输入 top_k=3 | API 返回 [2,0,4] → 按此顺序重排 | ✅ | 2026-06-15 | Mock httpx.AsyncClient |
 | P55-RR.10 | DashScopeReranker-API 部分结果 | `DashScopeReranker.rerank()` | 5 条输入 top_k=2 | API 返回 2 条 → 输出 2 条 | ✅ | 2026-06-15 | — |
 | P55-RR.11 | DashScopeReranker-空输入 | `DashScopeReranker.rerank()` | 输入 [] | 直接返回空，不调 API | ✅ | 2026-06-15 | — |
@@ -394,10 +397,13 @@
 | P3-U7.54 | Prompt-history 参数 | `prompt_builder.build()` | Phase 4 历史透传 | `history_messages` 参数正确透传到 `PromptBuildResult`，空/None → 空列表 | ✅ | 2026-06-14 | 4 用例：透传/默认空列表/None→空列表/不影响chunk组装 |
 | P3-U7.55 | Prompt-预算计算正确 | `estimate_tokens()` | 中文/英文/混合 | 中文占比 >30% → ratio=1.5，否则 4.0（复用 chunker 算法） | ✅ | 2026-06-01 | 复用 chunker.estimate_tokens |
 | P3-U7.56 | Prompt-不超过模型上限 80% | `prompt_builder.build()` | 大量 chunks | 最终 prompt tokens ≤ 模型 context_window × 0.8 | ⬜ | — | — |
+| P3-U7.57 | Prompt-章节信息展示 | `_format_chunk_reference()` | chunk 含 section_title/section_path | 格式从 `[来源1]（文档: API.md）` 升级为 `[来源1]（文档: API.md \| 章节: API > §6 SSE > §6.1）` | ✅ | 2026-06-17 | 4 用例：含章节+文档名+页码 / 仅 section_title 回退 / 含章节无文档名 / 章节+文档名+页码同时存在 |
 
 ### 5.7 后端 — Chat Service 单元测试
 
 > **测试架构**：`chat_service` 委托 `KnowledgePipeline` 完成检索+上下文构建（`app/rag/knowledge_pipeline.py`），自身专注于 LLM SSE 流式输出。单元测试通过 Mock KnowledgePipeline 隔离检索管线，专注验证 SSE 流/消息保存/标题生成/错误处理/sources 引用过滤等行为。
+>
+> **2026-06-18 章节元数据增强**：`ChatSourceChunk` schema 新增 `section_title`/`section_path` 可选字段（默认 None，向前兼容）；`build_sources()` 从 `RetrievalResult` 透传章节字段到 `ChatSourceChunk`（`getattr` 兜底）；`SYSTEM_PROMPT_TEMPLATE` 指令要求 LLM 附带章节信息；前端 `MessageItem.vue` sources 面板展示章节信息。新增 6 个测试覆盖章节字段透传、旧 chunk 兼容和 schema 序列化。
 
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -406,11 +412,16 @@
 | P3-U7.62 | Service-检索失败 | `chat_service.chat()` | 检索抛异常 | 包装为 `RetrievalServiceException(E4003)`，对齐 API.md §1.3 E4003 | ✅ | 2026-06-02 | — |
 | P3-U7.63 | Service-LLM 失败 | `chat_service.chat()` | LLM API 返回 500 | SSE event: error (E4002)，不崩连接 | ✅ | 2026-06-02 | — |
 | U7.63b | Service-sources 抑制 | `_generate_sse_stream` | LLM 回答含"未找到相关信息" | 前缀 35 字符匹配 → 抑制；全文匹配 + 无 [来源N] 引用 → 抑制；有引用 → 保留 | ✅ | 2026-06-04 | 4 用例：真阴性前缀/假阳性有引用/真阴性无引用/正常回答 |
-| U7.63c | Service-sources chunk_index | `_build_sources` | 正常检索结果 | 每个 chunk 含 `chunk_index` 字段，与 LLM Prompt 中 [来源N] 编号一致 | ✅ | 2026-06-04 | 使用 `prompt_result.used_chunks` 确保编号一致 |
-| U7.63d | Service-sources 引用过滤 | `_extract_citation_indices` + `_generate_sse_stream` | 多种引用场景 | ① 提取 [来源N] 编号（单个/多个/去重）；② 无引用返回空集合；③ sources 仅含被引用 chunk（LLM 写 [来源N] 时）；④ 全引用时全量发送；⑤ 零引用时回退发送全部 used_chunks（修复 LLM 格式脆弱耦合）；⑥ LLM 失败时回退全量发送；⑦ 幻觉编号忽略 | ✅ | 2026-06-08 | 10 用例（TestExtractCitationIndices 5 + TestChatCitationFiltering 5），修复脆弱耦合 |
+| U7.63c | Service-sources chunk_index | `build_sources` | 正常检索结果 | 每个 chunk 含 `chunk_index` 字段，与 LLM Prompt 中 [来源N] 编号一致 | ✅ | 2026-06-04 | 使用 `prompt_result.used_chunks` 确保编号一致 |
+| U7.63d | Service-sources 引用过滤 | `extract_citation_indices` + `_generate_sse_stream` | 多种引用场景 | ① 提取 [来源N] 编号（单个/多个/去重）；② 无引用返回空集合；③ sources 仅含被引用 chunk（LLM 写 [来源N] 时）；④ 全引用时全量发送；⑤ 零引用时回退发送全部 used_chunks（修复 LLM 格式脆弱耦合）；⑥ LLM 失败时回退全量发送；⑦ 幻觉编号忽略 | ✅ | 2026-06-08 | 10 用例（TestExtractCitationIndices 5 + TestChatCitationFiltering 5），修复脆弱耦合 |
+| U7.63e | Service-章节字段透传（有值） | `build_sources` | RetrievalResult 含 section_title/section_path | ChatSourceChunk 正确透传章节字段 | ✅ | 2026-06-18 | 章节元数据增强 |
+| U7.63f | Service-章节字段透传（None） | `build_sources` | RetrievalResult 无章节字段 | ChatSourceChunk section_title/section_path 为 None | ✅ | 2026-06-18 | 章节元数据增强 |
+| U7.63g | Service-旧 chunk 兼容 | `build_sources` | 旧 chunk 对象无 section 属性 | getattr 兜底，不抛异常，字段默认 None | ✅ | 2026-06-18 | 章节元数据增强 |
+| U7.63h | Schema-序列化（有章节） | `ChatSourceChunk` | section_title/section_path 有值 | model_dump 正确输出章节字段 | ✅ | 2026-06-18 | 章节元数据增强 |
+| U7.63i | Schema-序列化（无章节） | `ChatSourceChunk` | section_title/section_path 为 None | model_dump 输出 None，向前兼容 | ✅ | 2026-06-18 | 章节元数据增强 |
 | P3-U7.64 | Service-kb 无文档 | `chat_service.chat()` | kb chunks=0 | SSE event: error (E4001) | ✅ | 2026-06-02 | — |
 | P3-U7.65 | Service-用户消息保存 | `chat_service.chat()` | 正常问答 | messages 表写入 role=user + role=assistant 两条 | ✅ | 2026-06-02 | — |
-| P3-U7.66 | Service-标题生成 | `chat_service._generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-14 | UUID 适配 |
+| P3-U7.66 | Service-标题生成 | `chat_helpers.generate_title()` | 首轮问答 | 截取 question[:12]，去除标点，更新 conversation.title | ✅ | 2026-06-14 | UUID 适配 |
 | P3-U7.67 | Service-message_count 递增 | `chat_service.chat()` | 每次问答 | conversation.message_count += 2（user+assistant） | ✅ | 2026-06-14 | UUID 适配 |
 
 ### 5.8 后端 — LLM 调用与 thinking 解析测试
@@ -436,7 +447,7 @@
 | P3-U7.82 | SSE-中途错误 | `sse_helpers` | LLM 中途失败 | meta → (message)×N → error → 连接关闭 | ✅ | 2026-06-02 | 异常向上传播验证 |
 | P3-U7.83 | SSE-客户端断开 | `sse_helpers` | 用户关闭页面 | `asyncio.CancelledError` 被捕获，LLM 流被中断 | ✅ | 2026-06-15 | 2 用例：task cancel 验证 pending 任务清理 + 底层 generator finally 关闭验证 |
 | P3-U7.84 | SSE-Content-Type | `StreamingResponse` | 正常 | `text/event-stream` + `Cache-Control: no-cache` + `Connection: keep-alive` | ✅ | 2026-06-02 | 通过 API 集成测试覆盖 |
-| P3-U7.85 | SSE-sources 事件数据 | `chat_service._build_sources()`（导入生产函数，非复制） | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ✅ | 2026-06-03 | P2 重构：消除逻辑复制，改为 import 真实函数 |
+| P3-U7.85 | SSE-sources 事件数据 | `chat_helpers.build_sources()`（导入生产函数，非复制） | 正常 | chunks 数组每项含 doc_id/doc_name/content/score/page | ✅ | 2026-06-03 | P2 重构：消除逻辑复制，改为 import 真实函数 |
 | P3-U7.86 | SSE-finish 事件数据 | `sse_helpers._build_finish()` | 正常 | message_id + title（首轮）+ token_usage{prompt,completion,total} | ✅ | 2026-06-02 | — |
 
 ### 5.10 后端 — ChatRequest Schema 校验测试
@@ -651,6 +662,7 @@
 | E6 | 人工答案评分（第 1 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.38** | ✅ | 2026-06-04 | 10 题 × 4 维度，详见 `backend/tests/eval/human_eval_template.md` |
 | E7 | 人工答案评分（第 2 轮） | Session 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.76** | ✅ | 2026-06-09 | 5 Session × 23 轮，修正后评分。轮次均分 4.62/5.0，RAG 保活性满分。详见 `backend/tests/eval/human_eval_template.md` |
 | E8 | 多轮 RAG 回归测试 | 各轮次均有 sources | 23/23 轮 | **23/23** | ✅ | 2026-06-09 | 5 Session 全部通过，RAG 未退化。脚本：`regression_multi_turn_test.py` |
+| E9 | 人工答案评分（第 3 轮） | 综合分 ≥ 4.0 | ≥ 4.0/5.0 | **4.71** | ✅ | 2026-06-18 | 10 题 × 4 维度，Phase 5.5 全治理效果验证。平均综合分 4.71/5.0，无 1 分评分。详见 `backend/tests/eval/human_eval_template.md` |
 
 ---
 
@@ -695,15 +707,15 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P4-U8.1 | History 超限截断 | `chat_service._load_history` | 历史 token > HISTORY_BUDGET(6000) | 超大旧消息被 `continue` 跳过，最新消息优先保留 | ✅ | 2026-06-05 | Token 优先，非条数优先；审查修复 break→continue |
+| P4-U8.1 | History 超限截断 | `chat_helpers.load_history` | 历史 token > HISTORY_BUDGET(6000) | 超大旧消息被 `continue` 跳过，最新消息优先保留 | ✅ | 2026-06-05 | Token 优先，非条数优先；审查修复 break→continue |
 | P4-U8.2 | Retrieval 超限截断 | `prompt_builder` | 检索结果 token > RETRIEVAL_BUDGET(10000) | 从低分 chunk 开始丢弃 | ✅ | 2026-06-13 | 3 用例：超预算丢弃低分 / 软上限跳过超大保留小 / score 降序验证 |
 | P4-U8.3 | History + Retrieval 同时超限 | `chat_service` | 两池子均超预算 | 各自独立截断，互不侵蚀 | ✅ | 2026-06-13 | 3 用例：双池独立截断 / 历史不侵蚀检索（P0防御） / 检索不侵蚀历史 |
-| P4-U8.4 | 条数硬上限兜底 | `chat_service._load_history` | 30 条短消息（未超 token 预算） | 最多 20 条消息，即使 token 预算未满 | ✅ | 2026-06-05 | `max_messages=20` 硬截断 |
-| P4-U8.5 | 空历史 | `chat_service._load_history` | 新建会话无历史 | 返回 `[]`，不影响正常问答 | ✅ | 2026-06-05 | — |
-| P4-U8.6 | `[来源N]` 标记剥离 | `chat_service._load_history` | assistant 消息含 `[来源1][来源2]` | 注入历史中已去除所有 `[来源N]`，user 消息不去除 | ✅ | 2026-06-05 | 2 用例：assistant 去除 + user 保留 |
+| P4-U8.4 | 条数硬上限兜底 | `chat_helpers.load_history` | 30 条短消息（未超 token 预算） | 最多 20 条消息，即使 token 预算未满 | ✅ | 2026-06-05 | `max_messages=20` 硬截断 |
+| P4-U8.5 | 空历史 | `chat_helpers.load_history` | 新建会话无历史 | 返回 `[]`，不影响正常问答 | ✅ | 2026-06-05 | — |
+| P4-U8.6 | `[来源N]` 标记剥离 | `chat_helpers.load_history` | assistant 消息含 `[来源1][来源2]` | 注入历史中已去除所有 `[来源N]`，user 消息不去除 | ✅ | 2026-06-05 | 2 用例：assistant 去除 + user 保留 |
 | P4-U8.7 | `updated_at` 自动更新 | `chat_service` | 新增 Message 后 | `conversation.updated_at = now()` | ✅ | 2026-06-05 | chat_service 测试覆盖（`_generate_sse_stream` 内手动同步） |
-| P4-U8.8 | system 消息过滤 | `chat_service._load_history` | 消息含 system 角色 | system 消息不注入历史 | ✅ | 2026-06-05 | 审查新增：原逻辑未过滤 |
-| P4-U8.9 | thinking_content 不注入 | `chat_service._load_history` | assistant 消息含 thinking_content | 历史仅含 role+content | ✅ | 2026-06-05 | — |
+| P4-U8.8 | system 消息过滤 | `chat_helpers.load_history` | 消息含 system 角色 | system 消息不注入历史 | ✅ | 2026-06-05 | 审查新增：原逻辑未过滤 |
+| P4-U8.9 | thinking_content 不注入 | `chat_helpers.load_history` | assistant 消息含 thinking_content | 历史仅含 role+content | ✅ | 2026-06-05 | — |
 
 ### 6.2.1 会话标题 LLM 生成测试
 
@@ -711,12 +723,12 @@
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P4-U8.10 | LLM 正常生成标题 | `_generate_title_llm` | LLM 返回有效标题 | 返回 LLM 生成的标题文本 | ✅ | 2026-06-05 | — |
-| P4-U8.11 | LLM 返回带引号标题 | `_generate_title_llm` | `"报销流程问答"` | 自动去除首尾引号 | ✅ | 2026-06-05 | `strip('"\'""')` 去中文引号 |
-| P4-U8.12 | LLM 调用失败回退 | `_generate_title_llm` | LLM 抛异常 | 回退到 `_generate_title` 截断方案 | ✅ | 2026-06-05 | 不阻塞主流程 |
-| P4-U8.13 | LLM 返回空内容回退 | `_generate_title_llm` | LLM 返回空白 | 回退到截断方案 | ✅ | 2026-06-05 | `strip()` 后为空 |
-| P4-U8.14 | LLM 返回过长标题 | `_generate_title_llm` | >20 字标题 | 截断至 20 字 | ✅ | 2026-06-05 | `title[:20]` |
-| P4-U8.15 | 回退结果与截断一致 | `_generate_title_llm` | LLM 失败回退 | 回退结果与直接调 `_generate_title` 相同 | ✅ | 2026-06-05 | — |
+| P4-U8.10 | LLM 正常生成标题 | `generate_title_llm` | LLM 返回有效标题 | 返回 LLM 生成的标题文本 | ✅ | 2026-06-05 | — |
+| P4-U8.11 | LLM 返回带引号标题 | `generate_title_llm` | `"报销流程问答"` | 自动去除首尾引号 | ✅ | 2026-06-05 | `strip('"\'""')` 去中文引号 |
+| P4-U8.12 | LLM 调用失败回退 | `generate_title_llm` | LLM 抛异常 | 回退到 `generate_title` 截断方案 | ✅ | 2026-06-05 | 不阻塞主流程 |
+| P4-U8.13 | LLM 返回空内容回退 | `generate_title_llm` | LLM 返回空白 | 回退到截断方案 | ✅ | 2026-06-05 | `strip()` 后为空 |
+| P4-U8.14 | LLM 返回过长标题 | `generate_title_llm` | >20 字标题 | 截断至 20 字 | ✅ | 2026-06-05 | `title[:20]` |
+| P4-U8.15 | 回退结果与截断一致 | `generate_title_llm` | LLM 失败回退 | 回退结果与直接调 `generate_title` 相同 | ✅ | 2026-06-05 | — |
 
 ### 6.2.2 Query Rewrite 单元测试
 
@@ -875,15 +887,15 @@
 
 > 测试文件：`tests/unit/rag/test_sources_preview.py`（21 用例，全部通过 ✅）+ `tests/unit/rag/test_sse_helpers.py` TestBuildSources（4 用例）+ `tests/unit/rag/test_sentence_matcher.py`（14 用例，全部通过 ✅）。
 > 
-> Phase 5.5 从「LLM 引用定位」重构为「Evidence Highlight（句级 BM25 定位）」：`match_sentences()` 在检索阶段定位最佳证据句 → `_build_sources()` 基于 `matched_sentence` 生成 ±100 字符预览窗口。旧 `_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet` 共 5 个函数已删除。
+> Phase 5.5 从「LLM 引用定位」重构为「Evidence Highlight（句级 BM25 定位）」：`match_sentences()` 在检索阶段定位最佳证据句 → `build_sources()` 基于 `matched_sentence` 生成 ±100 字符预览窗口。旧 `_locate_preview` / `_fallback_preview` / `_extract_snippet_after` / `_extract_snippet_before` / `_try_match_snippet` 共 5 个函数已删除。
 
 | ID | 测试用例 | 被测对象 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| P5-U11.1 | Evidence定位-精确匹配 | `match_sentences()` + `_build_sources()` | question「入职申请表提交」→ 句级 BM25 定位最佳句 | `matched_sentence` 含「入职申请表」，`preview_text` 以该句为中心 ±100 窗口 | ✅ | 2026-06-11 | TestEvidencePreviewIntegration (3 用例)：强断言验证窗口中心在证据句附近 |
-| P5-U11.2 | Evidence定位-无匹配降级 | `_build_sources()` | chunk 无 `matched_sentence` | `preview_text = None`, `preview_range = None`（前端自行降级取 content 前 200 字符） | ✅ | 2026-06-11 | TestEvidencePreviewFallback (3 用例)：无 matched_sentence / 空 content / 两者皆空 |
-| P5-U11.3 | Evidence定位-短 chunk（<200字符） | `match_sentences()` + `_build_sources()` | chunk.content 仅 ~20 字符 | `preview_text` 在 chunk 中，`preview_range` 范围有效 | ✅ | 2026-06-11 | TestEvidencePreviewShortChunk (2 用例)：短 chunk 证据句定位 + 恰好 200 字符 |
-| P5-U11.4 | SSE-sources 含 preview_text + highlight | `_build_sources()` | 正常 Evidence 定位后构建 sources | `preview_text` / `preview_range` / `highlight_start` / `highlight_end` 字段存在且类型正确（str / PreviewRange / int / int） | ✅ | 2026-06-11 | TestBuildSourcesFormat + TestHighlightRange（6 用例）：字段类型/向前兼容/score 精度/highlight 精确覆盖/boundary |
-| P5-U11.5 | SSE-sources 向前兼容 | `_build_sources()` | content 字段保留完整 | `content` 字段仍在且完整，旧前端不受影响 | ✅ | 2026-06-11 | TestBuildSourcesFormat.test_content字段保留完整内容_向前兼容 |
+| P5-U11.1 | Evidence定位-精确匹配 | `match_sentences()` + `build_sources()` | question「入职申请表提交」→ 句级 BM25 定位最佳句 | `matched_sentence` 含「入职申请表」，`preview_text` 以该句为中心 ±100 窗口 | ✅ | 2026-06-11 | TestEvidencePreviewIntegration (3 用例)：强断言验证窗口中心在证据句附近 |
+| P5-U11.2 | Evidence定位-无匹配降级 | `build_sources()` | chunk 无 `matched_sentence` | `preview_text = None`, `preview_range = None`（前端自行降级取 content 前 200 字符） | ✅ | 2026-06-11 | TestEvidencePreviewFallback (3 用例)：无 matched_sentence / 空 content / 两者皆空 |
+| P5-U11.3 | Evidence定位-短 chunk（<200字符） | `match_sentences()` + `build_sources()` | chunk.content 仅 ~20 字符 | `preview_text` 在 chunk 中，`preview_range` 范围有效 | ✅ | 2026-06-11 | TestEvidencePreviewShortChunk (2 用例)：短 chunk 证据句定位 + 恰好 200 字符 |
+| P5-U11.4 | SSE-sources 含 preview_text + highlight | `build_sources()` | 正常 Evidence 定位后构建 sources | `preview_text` / `preview_range` / `highlight_start` / `highlight_end` 字段存在且类型正确（str / PreviewRange / int / int） | ✅ | 2026-06-11 | TestBuildSourcesFormat + TestHighlightRange（6 用例）：字段类型/向前兼容/score 精度/highlight 精确覆盖/boundary |
+| P5-U11.5 | SSE-sources 向前兼容 | `build_sources()` | content 字段保留完整 | `content` 字段仍在且完整，旧前端不受影响 | ✅ | 2026-06-11 | TestBuildSourcesFormat.test_content字段保留完整内容_向前兼容 |
 | P5-U11.6 | 前端-高亮渲染 | `MessageItem.vue` | sources 收到含 highlight_start/end 的 chunk | `getSourcePreviewHtml(src)` 纯 slice 渲染：`slice(0, s) + <mark> + slice(s, e) + </mark> + slice(e)` | ✅ | 2026-06-11 | `getSourcePreviewHtml()` 基于 `highlight_start/end` 纯切片渲染；旧 snippet 体系（extractSnippet 等 5 函数 ~80 行）已删除 |
 
 ### 7.5 句级修辞过滤 + Evidence 定位（sentence_matcher）测试用例
@@ -1179,6 +1191,17 @@
 | P5-C10.7 | Admin Trace 列表 — 无自增 id | `TraceList.vue` | 渲染 Trace 列表 | 表格不展示自增 `id` 列 | ✅ | 2026-06-15 | — |
 | P5-C10.8 | Admin Trace 详情 — 无自增 id | `TraceDetail.vue` | 渲染 Trace 详情 | 详情不展示自增 `id` 字段 | ✅ | 2026-06-15 | — |
 
+### 7.12 前端 — Pinia Store 单元测试
+
+> 测试文件（4 个，共 81 用例，全部通过 ✅）：`frontend/tests/authStore.test.js`（21 用例）、`frontend/tests/chatStore.test.js`（21 用例）、`frontend/tests/conversationStore.test.js`（18 用例）、`frontend/tests/knowledgeStore.test.js`（21 用例）。
+
+| ID | 测试用例 | Store | 覆盖范围 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| P5-C11.1 | authStore 单元测试 | `auth.js` | JWT 解析/刷新定时器/并发守卫/登录注册登出/初始化恢复 | 21 用例全部通过 | ✅ | 2026-06-16 | — |
+| P5-C11.2 | chatStore 单元测试 | `chat.js` | SSE 6 事件回调状态机/发送验证/历史加载/重新生成/中断/连接恢复/reset | 21 用例全部通过 | ✅ | 2026-06-16 | — |
+| P5-C11.3 | conversationStore 单元测试 | `conversation.js` | 分页加载/时间分组/重命名删除/addConversation | 18 用例全部通过 | ✅ | 2026-06-16 | — |
+| P5-C11.4 | knowledgeStore 单元测试 | `knowledge.js` | KB CRUD/文档 CRUD/轮询生命周期/isTerminal/getDepartmentStyle/上传 | 21 用例全部通过 | ✅ | 2026-06-16 | — |
+
 ---
 
 ## 8. 专项测试用例
@@ -1232,7 +1255,7 @@
 | 模块 | 覆盖率目标 | 当前值 | 备注 |
 |:---|:---|:---|:---|
 | `core/security.py` | ≥ 90% | ✅ 100% | 10 个测试全覆盖 |
-| `core/exceptions.py` | ≥ 80% | ✅ 已覆盖 | E2001-E2013/E5005 等文档异常全部覆盖 |
+| `core/exceptions.py` | ≥ 80% | ✅ 已覆盖 | E2001-E2014/E5005 等文档异常全部覆盖 |
 | `services/auth_service.py` | ≥ 80% | ✅ 100% | 7 个测试全覆盖 |
 | `api/auth.py` (接口测试) | ≥ 90% | ✅ 100% | 14 个测试全覆盖 |
 | `api/document.py` (接口测试) | ≥ 90% | ✅ 100% | 65 个测试全覆盖（上传/批量/列表/详情/分块/删除/reprocess + 权限矩阵 18 用例）|
@@ -1240,24 +1263,25 @@
 | `models/` | ≥ 70% | ✅ 已覆盖 | P1-U4.1-P1-U4.3 已实现 |
 | `ingest/lock.py` | ≥ 80% | ✅ 100% | 16 个测试全覆盖（幂等锁获取/重复拒绝/过期重入） |
 | `rag/parser.py` | ≥ 80% | ✅ 100% | 35 个测试全覆盖（PDF/DOCX逐段容错/MD/TXT 解析 + 容错分级） |
-| `rag/chunker.py` | ≥ 80% | ✅ 100% | 36 个测试全覆盖（分隔符优先级/偏移量页码追踪/中英文自适应token估算/重叠） |
+| `rag/chunker.py` | ≥ 80% | ✅ 100% | 57 个测试全覆盖（分隔符优先级/偏移量页码追踪/中英文自适应token估算/重叠 + 章节检测 21 用例：detect_sections 8 + resolve_section 9 + 集成 4） |
 | `rag/embedder.py` | ≥ 80% | ✅ 100% | 28 个测试全覆盖（DashScope API/重试/批量/响应解析/指数退避）；修复：重试失败异常类型从 RuntimeError 对齐为 EmbeddingTimeoutException |
 | `core/storage.py` | ≥ 80% | ✅ 100% | 29 个测试全覆盖（sanitize_filename/generate_stored_filename/LocalStorage save/read/delete/空目录清理） |
 | `schemas/knowledge_base.py` | ≥ 85% | ✅ 100% | visibility 字段校验 10 用例（P25-U9.1-P25-U9.8），Phase 2.5 |
-| `services/knowledge_base_service.py` | ≥ 80% | ✅ 33 用例 | `test_kb_service.py` 全覆盖：`_get_real_chunk_counts`(4) + `create_kb`(3) + `get_kb`(8) + `list_kbs`(3) + `list_public_kbs`(2) + `update_kb`(8) + `delete_kb`(3) + `check_kb_active`(2) |
+| `services/knowledge_base_service.py` | ≥ 80% | ✅ 36 用例 | `test_kb_service.py` 全覆盖：`_get_real_chunk_counts`(4) + `_get_real_doc_counts`(3) + `create_kb`(3) + `get_kb`(8) + `list_kbs`(3) + `list_public_kbs`(2) + `update_kb`(8) + `delete_kb`(3) + `check_kb_active`(2) |
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
 | `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`validate_file`(12) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
-| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索已覆盖（13 用例；适配 BaseVectorStore 抽象，AsyncMock 替代 ChromaDB Mock） |
-| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2：BM25 检索 + 三级缓存（进程内→Redis→MySQL）+ async Redis（31 用例，含 7 个真实 jieba 集成测试 + 进程内缓存 + 异步缓存清除） |
+| `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索（16 用例；适配 BaseVectorStore 抽象 + 章节元数据回填 3 用例） |
+| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2 + §8.8：BM25 检索 + 三级缓存 + 章节号检测与 boost（59 用例，含 7 个真实 jieba 集成 + 进程内缓存 + 异步缓存清除 + cn_to_int 5 + detect_section_numbers 10 + match_section_numbers 8 + section_boost 5） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
 | `rag/reranker.py` | ≥ 80% | ✅ | DashScopeReranker（24 用例，P55-RR.1-P55-RR.22 + 接口测试 2） |
-| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例） |
+| `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例）+ 章节信息展示（4 用例） |
 | `core/llm.py` | ≥ 80% | ✅ | Phase 3：LLM 调用 + thinking 解析（15 用例） |
 | `core/sse.py` | ≥ 80% | ✅ | Phase 3：SSE 格式/心跳/流式（20 用例，含 U7.83 客户端断开 2 用例） |
 | `services/conversation_service.py` | ≥ 80% | ✅ 通过 API 测试 | Phase 4.1：会话 CRUD（5 个端点，20 用例） |
 | `api/conversation.py` | ≥ 90% | ✅ 100% | Phase 4.1：会话 API（20 用例） |
-| `services/chat_helpers.py` (_load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py） |
-| `services/chat_helpers.py` (_generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py） |
+| `services/chat_helpers.py` (load_history) | ≥ 80% | ✅ 9 用例 | Phase 4.1：历史记忆（test_history_memory.py） |
+| `services/chat_helpers.py` (generate_title_llm) | ≥ 80% | ✅ 6 用例 | Phase 4.1：LLM 标题生成（test_conversation_title.py） |
+| `services/chat_helpers.py` (build_sources) | ≥ 80% | ✅ 5 用例 | 章节元数据增强：章节字段透传 2 + 旧 chunk 兼容 1 + schema 序列化 2（U7.63e-U7.63i） |
 | `core/error_handlers.py` | ≥ 80% | ✅ | Phase 4.2：全局异常处理（test_error_handlers.py，9 用例，P4-U9.1-P4-U9.3） |
 | `core/logging_config.py` | ≥ 70% | ✅ | Phase 4.2：结构化日志（13 用例，含 P4-U12.4 JSON 格式集成校验） |
 | `models/trace.py` | ≥ 80% | ✅ | Phase 5：Trace ORM 模型（通过 service 测试覆盖） |
@@ -1272,7 +1296,10 @@
 | `rag/evidence_reviewer.py` | ≥ 80% | ✅ 13 用例 | 2026-06-16：Evidence Review 门控（decision 7 + chunk_decisions 1 + sentence_detail 2 + degradation 1 + performance 1 + counts 1） |
 | 前端 `components/chat/` | ≥ 60% | ✅ | Phase 3：ChatInput(19) + MessageList(10) + MessageItem(26) + WelcomeScreen(8) = 63 用例 |
 | 前端 `views/ChatPage.vue` | ≥ 60% | ✅ | Phase 3：问答页集成（13 用例） |
-| 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 |
+| 前端 `stores/chat.js` | ≥ 60% | ✅ | Phase 3：通过 ChatPage 集成测试间接覆盖 + Phase 5.5 chatStore 独立测试（21 用例，P5-C11.2） |
+| 前端 `stores/auth.js` | ≥ 60% | ✅ 21 用例 | Phase 5.5：authStore 独立测试（P5-C11.1） |
+| 前端 `stores/conversation.js` | ≥ 60% | ✅ 18 用例 | Phase 5.5：conversationStore 独立测试（P5-C11.3） |
+| 前端 `stores/knowledge.js` | ≥ 60% | ✅ 21 用例 | Phase 5.5：knowledgeStore 独立测试（P5-C11.4） |
 | 前端 `api/admin.js` | ≥ 80% | ✅ 12 用例 | Phase 5：Admin API 参数透传（12 用例） |
 | 前端 `composables/useECharts.js` | ≥ 80% | ✅ 9 用例 | Phase 5：ECharts 组合式函数 |
 | 前端 `views/admin/StatsPage.vue` | ≥ 60% | ✅ 24 用例 | Phase 5：系统统计页 |

@@ -3,7 +3,7 @@
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.0 |
-| 最后更新 | 2026-06-14 |
+| 最后更新 | 2026-06-18 |
 
 ---
 
@@ -32,7 +32,7 @@
 
 ## 2. 项目结构
 
-> 最后更新：2026-06-15（同步自实际文件清单）
+> 最后更新：2026-06-18（同步自实际文件清单）
 
 ```
 docmind/
@@ -119,13 +119,14 @@ docmind/
 │   │   │   ├── __init__.py
 │   │   │   ├── _types.py              # RAG 管线共享类型（Source, IntentResult 等）
 │   │   │   ├── parser.py              # 文档解析器（PDF/DOCX/MD/TXT）
-│   │   │   ├── chunker.py             # 文本分块策略（512 token / 50 重叠）
+│   │   │   ├── chunker.py             # 文本分块策略（RecursiveCharacterTextSplitter, 1000 字符 / 150 重叠）
 │   │   │   ├── embedder.py            # Embedding 封装（DashScope text-embedding-v3）
 │   │   │   ├── vector_store.py        # 向量存储抽象层（BaseVectorStore ABC + ChromaVectorStore，ADR-018）
 │   │   │   ├── retriever.py           # 向量检索器（依赖 BaseVectorStore 抽象，ADR-018）
 │   │   │   ├── bm25.py                # BM25 关键词检索 + Redis 缓存
 │   │   │   ├── fusion.py              # RRF 多路融合算法
 │   │   │   ├── reranker.py            # DashScope Rerank API 语义精排
+│   │   │   ├── evidence_reviewer.py   # PRE-LLM 证据审查（chunk 分类 ASSERTIVE/REJECTED，ADR-021）
 │   │   │   ├── knowledge_pipeline.py  # 知识管线：查询重写→双路检索→RRF→Rerank→句级修辞过滤→句子匹配→Prompt 构建
 │   │   │   ├── prompt_builder.py      # Prompt 模板组装（宽松策略 + System/History/Retrieval/Question）
 │   │   │   ├── intent.py              # 意图识别（Meta/Chitchat/RAG 三路分发）
@@ -153,6 +154,7 @@ docmind/
 │   │   │   ├── exceptions.py          # 自定义异常（AppException 基类 + 全局处理器）
 │   │   │   ├── llm.py                 # LLM 调用封装（DashScope/OpenAI 兼容）
 │   │   │   ├── logging_config.py      # 日志配置
+│   │   │   ├── utils.py               # 共享工具函数（escape_like SQL LIKE 通配符转义）
 │   │   │   └── uuid_helpers.py        # UUID 工具函数
 │   │   │
 │   │   └── middleware/
@@ -435,6 +437,17 @@ UPLOAD_DIR=./uploads
 # STORAGE_BACKEND=oss
 # OSS_ENDPOINT=...
 # OSS_BUCKET=docmind-files
+
+# 批量上传限制
+BATCH_UPLOAD_MAX_COUNT=50
+
+# 限流（RATE_LIMIT_ENABLED=false 可全局关闭）
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_CHAT_PER_MINUTE=60
+RATE_LIMIT_UPLOAD_PER_MINUTE=20
+RATE_LIMIT_LOGIN_PER_MINUTE=10
+RATE_LIMIT_DEFAULT_PER_MINUTE=120
+RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 **注意事项**：
@@ -624,7 +637,7 @@ docker-compose down -v
 |:---|:---|:---|
 | 前端页面 | `http://localhost` | Nginx 托管 Vite 构建产物，端口 80 |
 | 后端 API | `http://localhost/api` | 通过 Nginx 反向代理到 backend:8000 |
-| API 文档 | `http://localhost:8000/docs` | Swagger UI（开发环境可直连后端端口） |
+| API 文档 | `http://localhost:8000/docs` | Swagger UI（Docker 部署时仅宿主机回环可访问） |
 | MySQL | `localhost:3306` | 数据库（本地调试时可连接） |
 | Redis | `localhost:6379` | 缓存（本地调试时可连接） |
 

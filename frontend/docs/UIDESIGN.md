@@ -845,6 +845,16 @@ body {
     font-size: var(--dm-text-3xs);               /* 11px */
     font-weight: var(--dm-weight-semibold);
 }
+
+.source-section {
+    font-size: var(--dm-text-3xs);               /* 11px */
+    color: var(--dm-text-tertiary);
+}
+
+.source-section i {
+    margin-right: var(--dm-space-1);             /* 4px */
+    font-size: var(--dm-text-3xs);               /* 11px */
+}
 ```
 
 ---

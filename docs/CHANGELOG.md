@@ -9,7 +9,41 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+### Fixed
+- **章节元数据增强功能断链修复（2026-06-18）**：
+  - **问题**：`_format_chunk_reference()` 虽已实现章节信息格式化，但 `ChatSourceChunk` schema 和 `build_sources()` 未传递 `section_title`/`section_path` 到前端，且 `SYSTEM_PROMPT_TEMPLATE` 未要求 LLM 引用时附带章节信息，导致前端 sources 面板和 LLM 回答中均无法看到章节信息
+  - **源码（4 文件）**：
+    - `schemas/chat.py`：`ChatSourceChunk` 新增 `section_title` / `section_path` 字段（可选，默认 None，向前兼容）
+    - `services/chat_helpers.py`：`build_sources()` 从 `RetrievalResult` 透传章节字段到 `ChatSourceChunk`（`getattr` 兜底，兼容旧 chunk 对象）
+    - `rag/prompt_builder.py`：`SYSTEM_PROMPT_TEMPLATE` 指令从「标注 [来源N]」升级为「标注 [来源N]，并尽量附带文档名和章节信息」
+    - `frontend/src/components/chat/MessageItem.vue`：sources 面板 source-header 新增章节信息展示（`.source-section` 样式对齐 `.source-page`）
+  - **测试**：新增 6 个测试（章节字段透传 ×2、旧 chunk 兼容 ×1、schema 序列化 ×2、section 样式展示 ×0 前端纯 UI）
+  - **验证**：1222/1222 后端测试通过
+
 ## [Unreleased] - 2026-06-18
+
+### Added
+- **ADR-022：问答 Service 层三模块拆分（2026-06-18）**：
+  - `chat_service.py`（1015 行）拆分为三个模块：`chat_service.py`（入口+校验+re-export）、`sse_stream.py`（SSE 流生成+消息持久化）、`chat_helpers.py`（辅助函数）
+  - Re-export 兼容机制确保所有现有 import 路径不变，零破坏性拆分
+  - 原 ARCHITECTURE.md §5.5 移除，设计决策迁移至 ADR-022
+- **第 3 轮人工答案评分完成（2026-06-18）**：
+  - 10 题 × 4 维度评分，平均综合分 **4.71/5.0** ✅ 满足 ≥ 4.0 目标（较第 1 轮 4.38 ↑+0.33，较第 2 轮 4.62 ↑+0.09）
+  - 满分题：Q1/Q2/Q5/Q6/Q7/Q10（6 题 5.0 分）；最低分题：Q8（3.2 分，审批权限误判）
+  - Phase 5.5 治理效果评估：Rerank 精排 ✅ / 修辞过滤 ✅ / 章节元数据 ✅ / 证据审计 ⚠️（概念边界混淆检测不足）
+  - 评估记录：`backend/tests/eval/human_eval_template.md`
+
+### Fixed
+- **知识库详情文档计数（doc_count）与实际不符（2026-06-18）**：
+  - **问题**：批量上传后知识库详情页「文档总数」与实际上传数量不一致（如 300+ 文件只显示 299）
+  - **根因 1**：`upload_document()` 在文件保存之前递增 `doc_count`，若文件保存失败（磁盘满、超限等），未提交的 `doc_count` 脏值残留于会话 Identity Map（`expire_on_commit=False`），导致下一个文件的计数出错
+  - **根因 2**：`get_kb()` / `list_kbs()` / `list_public_kbs()` 对 `chunk_count` 有实时校验（从 Chunk 表 COUNT 覆写），但 `doc_count` 没有对应的实时校验，僵尸计数值无法自愈
+  - **修复（4 文件）**：
+    - `services/document_service.py`：`upload_document()` 将 `doc_count` 递增移到文件保存成功之后，避免保存失败时脏值残留；commit 后显式 `db.expire(kb)` 确保批量上传下一次迭代读到 DB 最新值
+    - `services/knowledge_base_service.py`：新增 `_get_real_doc_counts()`（从 Document 表 COUNT 实时文档数，排除 DELETING）；`get_kb()` / `list_kbs()` / `list_public_kbs()` / `update_kb()` 全部改用实时文档数替代 KB 表缓存列
+    - `services/knowledge_base_service.py`：`check_kb_active()` 传 `fill_chunk_count=False` 给 `get_kb()`，避免权限校验时产生不必要的 COUNT 查询
+    - `tests/`：`test_kb_service.py` 新增 `_get_real_doc_counts` 相关断言（含 `doc_count` 实时覆写验证）；`test_document_service.py` 同步移除 17 处 chunk_count mock 条目（因 `check_kb_active` 不再消耗该查询）
+  - **验证**：1222/1222 后端测试通过
 
 ### Added
 - **Phase 5 压测完成（2026-06-18）**：
