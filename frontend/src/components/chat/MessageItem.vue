@@ -78,6 +78,10 @@
                 <i class="fas fa-file-alt"></i>
                 {{ src.doc_name || '未知文档' }}
               </span>
+              <span v-if="src.section_path || src.section_title" class="source-section">
+                <i class="fas fa-list-ul"></i>
+                {{ src.section_path || src.section_title }}
+              </span>
               <span v-if="src.page" class="source-page">第{{ src.page }}页</span>
             </div>
             <!-- 智能预览：优先使用 preview_text 定位展示，降级回 content 前 200 字符 -->
@@ -604,6 +608,16 @@ function getSourcePreviewHtml(src) {
 .source-page {
   font-size: var(--dm-text-3xs);
   color: var(--dm-text-tertiary);
+}
+
+.source-section {
+  font-size: var(--dm-text-3xs);
+  color: var(--dm-text-tertiary);
+}
+
+.source-section i {
+  margin-right: var(--dm-space-1);
+  font-size: var(--dm-text-3xs);
 }
 
 .source-content {

@@ -410,6 +410,29 @@ class TestBuildSourcesEdgeCases:
         assert sources[0].page == 5
         assert sources[1].page is None
 
+    def test_章节字段透传(self):
+        """section_title / section_path 字段正确透传到 ChatSourceChunk"""
+        from app.services.chat_service import build_sources
+
+        results = [
+            RetrievalResult(
+                doc_id=1, chunk_index=0, content="内容。", score=0.9,
+                section_title="§6.1 SSE 事件完整格式",
+                section_path="RAG Pipeline > §6 SSE 事件流",
+            ),
+            RetrievalResult(
+                doc_id=2, chunk_index=0, content="内容。", score=0.8,
+                section_title=None, section_path=None,
+            ),
+        ]
+
+        sources = build_sources(results, {1: "API.md", 2: "文档B.md"})
+
+        assert sources[0].section_title == "§6.1 SSE 事件完整格式"
+        assert sources[0].section_path == "RAG Pipeline > §6 SSE 事件流"
+        assert sources[1].section_title is None
+        assert sources[1].section_path is None
+
 
 # ==================== ChatSourceChunk Schema 校验 ====================
 
@@ -446,6 +469,39 @@ class TestChatSourceChunkSchema:
         assert d["highlight_start"] == 2
         assert d["highlight_end"] == 6
         assert d["content"] == "完整的 chunk 内容" * 20
+
+    def test_ChatSourceChunk含章节字段序列化(self):
+        """ChatSourceChunk 含 section_title + section_path 时正确序列化"""
+        chunk = ChatSourceChunk(
+            chunk_index=1,
+            doc_id=10,
+            doc_name="API.md",
+            content="SSE 事件格式详解",
+            score=0.95,
+            page=3,
+            section_title="§6.1 SSE 事件完整格式",
+            section_path="RAG Pipeline > §6 SSE 事件流",
+        )
+
+        d = chunk.model_dump()
+        assert d["section_title"] == "§6.1 SSE 事件完整格式"
+        assert d["section_path"] == "RAG Pipeline > §6 SSE 事件流"
+        assert d["page"] == 3
+        assert d["doc_name"] == "API.md"
+
+    def test_ChatSourceChunk章节字段默认None(self):
+        """不传 section_title/section_path 时默认为 None（向前兼容）"""
+        chunk = ChatSourceChunk(
+            chunk_index=1,
+            doc_id=10,
+            doc_name="旧文档.pdf",
+            content="旧内容",
+            score=0.5,
+        )
+
+        d = chunk.model_dump()
+        assert d["section_title"] is None
+        assert d["section_path"] is None
 
     def test_ChatSourceChunk无highlight字段序列化(self):
         """无 highlight 字段时序列化为 null（向前兼容）"""

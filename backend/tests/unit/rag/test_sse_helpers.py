@@ -339,6 +339,46 @@ class TestBuildSources:
 
         assert sources[0].doc_name == ""
 
+    def test_章节字段透传(self):
+        """section_title / section_path 正确从 RetrievalResult 透传到 ChatSourceChunk"""
+        from app.rag.retriever import RetrievalResult
+        from app.services.chat_service import build_sources
+
+        results = [
+            RetrievalResult(
+                doc_id=1, chunk_index=0, content="SSE 事件格式详解", score=0.95,
+                section_title="§6.1 SSE 事件完整格式",
+                section_path="RAG Pipeline > §6 SSE 事件流",
+            ),
+            RetrievalResult(
+                doc_id=2, chunk_index=0, content="限流配置", score=0.8,
+                section_title=None, section_path=None,
+            ),
+        ]
+        sources = build_sources(results, {1: "API.md", 2: "ARCHITECTURE.md"})
+
+        assert sources[0].section_title == "§6.1 SSE 事件完整格式"
+        assert sources[0].section_path == "RAG Pipeline > §6 SSE 事件流"
+        assert sources[1].section_title is None
+        assert sources[1].section_path is None
+
+    def test_旧chunk无章节属性兼容(self):
+        """无 section_title/section_path 属性的 chunk 降级为 None（getattr 兜底）"""
+        from app.services.chat_service import build_sources
+
+        # 模拟旧 chunk 对象（无 section_title/section_path 属性）
+        class OldChunk:
+            doc_id = 1
+            chunk_index = 0
+            content = "旧内容"
+            score = 0.5
+            page = None
+
+        sources = build_sources([OldChunk()], {1: "旧文档.txt"})
+
+        assert sources[0].section_title is None
+        assert sources[0].section_path is None
+
 
 class TestFinishEventData:
     """测试 finish 事件数据结构"""

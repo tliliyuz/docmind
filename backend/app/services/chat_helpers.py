@@ -193,6 +193,8 @@ def build_sources(
             content=content,
             score=round(chunk.score, 4),
             page=chunk.page,
+            section_title=getattr(chunk, 'section_title', None) or None,
+            section_path=getattr(chunk, 'section_path', None) or None,
             preview_text=preview_text,
             preview_range=preview_range,
             highlight_start=highlight_start,

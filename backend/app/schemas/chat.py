@@ -40,6 +40,8 @@ class ChatSourceChunk(BaseModel):
     content: str = Field(description="分块文本（完整内容）")
     score: float
     page: int | None = None
+    section_title: str | None = Field(None, description="当前所属章节标题（如 §6.1 SSE 事件完整格式）")
+    section_path: str | None = Field(None, description="章节路径（如 RAG Pipeline > §6 SSE 事件流）")
     preview_text: str | None = Field(None, description="定位后的预览文本（200 字符上下文窗口）")
     preview_range: PreviewRange | None = Field(None, description="预览窗口在 content 中的起止位置")
     highlight_start: int | None = Field(None, description="高亮区间在 preview_text 内的起始偏移（含）")
