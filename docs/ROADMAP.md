@@ -2,8 +2,8 @@
 
 | 属性 | 值          |
 |:---|:-----------|
-| 文档版本 | v1.0       |
-| 最后更新 | 2026-06-16 |
+| 文档版本 | v1.1 |
+| 最后更新 | 2026-06-18 |
 
 > **编号规范**
 >
@@ -538,7 +538,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | U8.2 Retrieval 超限截断测试 | 单元测试 | 3 用例（`test_history_memory.py` TestRetrievalBudgetTruncation）：超预算从低分丢弃 / 软上限跳过超大保留小 / score 降序验证。**P0 Bug 防御** |
 | ✅ | U8.3 History + Retrieval 同时超限测试 | 单元测试 | 3 用例（`test_history_memory.py` TestHistoryRetrievalDualBudget）：双池独立截断 / 历史不侵蚀检索（P0防御） / 检索不侵蚀历史。**P0 Bug 防御** |
 | ✅ | 全量回归测试 | 回归测试 | 运行 `regression_test.py` + `regression_multi_turn_test.py` 遍历完整测试集 |
-| ⬜ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** |
+| ✅ | 压测 | 性能测试 | Locust 4 场景（基准/日常/峰值/极限），P50≤3s / P99≤10s。**压测完成后据此设定限流阈值** |
 | ⬜ | 最终人工评分 | 人工评估 | 最终 10 题 × 4 维度评分，平均综合分 ≥ 4.0 |
 
 ### 7.9 🚫 本阶段不做的

@@ -9,6 +9,19 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [Unreleased] - 2026-06-18
+
+### Added
+- **Phase 5 压测完成（2026-06-18）**：
+  - 4 场景全部通过：基准(1并发)→日常(5并发)→峰值(10并发)→极限(20并发)，零失败
+  - TTFT P50 稳定在 690-920ms，远优于 1.5s 目标（检索管线自身性能优秀）
+  - 端到端 P50 5.5-7.4s / P99 13-20s，滞后主要由 DeepSeek LLM 生成耗时（5-15s）决定，非本系统瓶颈
+  - 20 并发未触及系统容量上限（0 失败、P99 未恶化）
+  - 压测报告：`backend/tests/performance/STRESS_TEST_REPORT.md`
+
+### Changed
+- **限流阈值调整（2026-06-18）**：`RATE_LIMIT_CHAT_PER_MINUTE` 从占位值 30 上调至 60（压测推算：20 用户 × 5 req/min × 0.7 安全系数）
+
 ## [Unreleased] - 2026-06-17
 
 ### Fixed

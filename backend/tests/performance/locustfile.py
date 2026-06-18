@@ -52,7 +52,7 @@ from locust import HttpUser, task, between, events, tag
 # 配置（支持环境变量覆盖）
 # ============================================================================
 
-KB_ID = int(os.environ.get("STRESS_KB_ID", "1"))
+KB_ID = os.environ.get("STRESS_KB_ID", "")
 AUTH_TOKEN = os.environ.get("STRESS_AUTH_TOKEN", "")
 DEEP_THINKING_PROBABILITY = float(os.environ.get("STRESS_DEEP_THINKING", "0.1"))
 
