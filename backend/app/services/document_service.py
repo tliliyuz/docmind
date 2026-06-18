@@ -172,6 +172,7 @@ async def upload_document(
     ).scalar_one_or_none()
 
     doc = None  # None=新建文档；复用 deleting 记录时赋值为旧记录
+    is_new_doc = False  # 标记是否为新建文档（用于文件保存成功后才递增 doc_count）
 
     if existing is not None:
         if existing.status == DocumentStatus.DELETING:
@@ -226,7 +227,7 @@ async def upload_document(
             await db.commit()  # 必须在 delay 前提交，否则 Worker 看不到 DELETING 状态
             delete_doc_task.delay(existing.id)
 
-    # 非复用场景：创建新文档记录
+    # 非复用场景：创建新文档记录（doc_count 延后到文件保存成功后再递增）
     if doc is None:
         doc = Document(
             uuid=str(uuid_lib.uuid4()),
@@ -236,15 +237,12 @@ async def upload_document(
         )
         db.add(doc)
         await db.flush()
-
-        # 递增 KB 文档计数
-        kb = await db.get(KnowledgeBase, kb_id)
-        if kb is not None:
-            kb.doc_count = kb.doc_count + 1  # 使用实例值而非 class 属性（避免 BinaryExpression）
+        is_new_doc = True
 
     await db.refresh(doc)
 
     # 保存文件
+    kb_for_count: KnowledgeBase | None = None
     try:
         file_path = await local_storage.save(file, kb_id, doc.id)
         doc.file_path = file_path
@@ -257,9 +255,23 @@ async def upload_document(
             except Exception:
                 pass
             raise FileSizeExceededException()
+
+        # 文件保存成功后才递增 doc_count
+        # 避免保存失败时 Identity Map 残留未提交脏值，导致批量上传后续计数错误
+        if is_new_doc:
+            kb_for_count = await db.get(KnowledgeBase, kb_id)
+            if kb_for_count is not None:
+                kb_for_count.doc_count = kb_for_count.doc_count + 1
+
         await db.flush()
         await db.commit()  # 必须在 delay 前提交，否则 Worker 看不到新记录
         await db.refresh(doc)
+
+        # 提交后手动过期 KB 对象，确保批量上传场景下
+        # 下一次迭代的 db.get() 读到 DB 最新值
+        # （expire_on_commit=False 配置下不会自动过期）
+        if kb_for_count is not None:
+            db.expire(kb_for_count)
     except AppException:
         raise
     except Exception:

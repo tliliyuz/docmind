@@ -282,7 +282,6 @@ class TestListDocuments:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),  # check_kb_active → get_kb: 查 KB
-            _make_scalar_result(5),                # get_kb: _get_real_chunk_counts
             _make_scalar_result(1),                # COUNT total
             _make_scalars_all_result([doc]),       # data rows
         ]
@@ -300,7 +299,6 @@ class TestListDocuments:
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
             _make_scalar_result(0),
-            _make_scalar_result(0),
             _make_scalars_all_result([]),
         ]
 
@@ -316,7 +314,6 @@ class TestListDocuments:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_result(1),
             _make_scalars_all_result([doc]),
         ]
@@ -335,7 +332,6 @@ class TestListDocuments:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_result(1),
             _make_scalars_all_result([doc]),
         ]
@@ -360,7 +356,6 @@ class TestGetDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),  # check_kb_active → get_kb: 查 KB
-            _make_scalar_result(0),                # get_kb: _get_real_chunk_counts
             _make_scalar_one_or_none_result(doc),  # query doc
         ]
 
@@ -374,7 +369,6 @@ class TestGetDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_one_or_none_result(None),
         ]
 
@@ -398,7 +392,6 @@ class TestGetDocumentChunks:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),   # check_kb_active → get_kb: 查 KB
-            _make_scalar_result(0),                 # get_kb: _get_real_chunk_counts
             _make_scalar_one_or_none_result(doc),   # get_document
             _make_scalar_result(1),                  # COUNT chunks
             _make_scalars_all_result([chunk]),       # chunk rows
@@ -415,7 +408,6 @@ class TestGetDocumentChunks:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_one_or_none_result(doc),
             _make_scalar_result(0),
             _make_scalars_all_result([]),
@@ -440,7 +432,6 @@ class TestDeleteDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),   # check_kb_active → get_kb: 查 KB
-            _make_scalar_result(0),                 # get_kb: _get_real_chunk_counts
             _make_scalar_one_or_none_result(doc),   # query doc
         ]
         mock_db.flush = AsyncMock()
@@ -461,7 +452,6 @@ class TestDeleteDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_one_or_none_result(None),
         ]
 
@@ -476,7 +466,6 @@ class TestDeleteDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_one_or_none_result(doc),
         ]
 
@@ -499,7 +488,6 @@ class TestReprocessDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),   # check_kb_active → get_kb: 查 KB
-            _make_scalar_result(0),                 # get_kb: _get_real_chunk_counts
             _make_scalar_one_or_none_result(doc),   # query doc
         ]
         mock_db.flush = AsyncMock()
@@ -521,7 +509,6 @@ class TestReprocessDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_one_or_none_result(doc),
         ]
 
@@ -543,7 +530,6 @@ class TestUploadDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),    # check_kb_active → get_kb: 查 KB
-            _make_scalar_result(0),                  # get_kb: _get_real_chunk_counts
         ]
 
         f = _make_upload_file("doc.pdf", 1000)
@@ -559,7 +545,6 @@ class TestUploadDocument:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
             _make_scalar_one_or_none_result(existing),
         ]
 
@@ -591,7 +576,6 @@ class TestBatchUploadCountLimit:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
         ]
 
         # 构造超过限制数量的文件列表
@@ -616,7 +600,6 @@ class TestBatchUploadCountLimit:
         # 后面每个文件会调用 upload_document，但 upload_document 被 mock
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_scalar_result(0),
         ]
 
         exact_limit = [

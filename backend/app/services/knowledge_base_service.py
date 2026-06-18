@@ -16,6 +16,8 @@ from app.core.exceptions import (
 from app.core.permissions import require_kb_readable, require_kb_writable
 from app.ingest.delete_tasks import delete_kb as delete_kb_task
 from app.models.chunk import Chunk
+from app.models.document import Document
+from app.models.enums import DocumentStatus
 from app.models.knowledge_base import KnowledgeBase
 from app.models.user import User
 from app.schemas.knowledge_base import (
@@ -69,6 +71,35 @@ async def _get_real_chunk_counts(
     return counts
 
 
+async def _get_real_doc_counts(
+    db: AsyncSession, kb_ids: list[int]
+) -> dict[int, int]:
+    """查询指定 KB 的实时文档总数（从 Document 表 COUNT，非 KB 表缓存列）。
+
+    用于替代 KnowledgeBase.doc_count 静态缓存列，避免批量上传中
+    doc_count 更新延迟或会话脏数据导致的僵尸计数值。
+    """
+    if not kb_ids:
+        return {}
+    t0 = time.time()
+    result = await db.execute(
+        select(Document.kb_id, func.count(Document.id))
+        .where(
+            Document.kb_id.in_(kb_ids),
+            Document.status != DocumentStatus.DELETING,
+        )
+        .group_by(Document.kb_id)
+    )
+    counts = {row.kb_id: row[1] for row in result.all()}
+    t = time.time() - t0
+    if t > 0.1:
+        logger.warning(
+            "_get_real_doc_counts kb_ids=%s SLOW=%.3fs %s",
+            kb_ids, t, _pool_status(),
+        )
+    return counts
+
+
 async def create_kb(
     db: AsyncSession, user_id: int, data: KnowledgeBaseCreate
 ) -> KnowledgeBaseResponse:
@@ -103,8 +134,9 @@ async def get_kb(
     - public KB：所有登录用户可读
     - private KB：仅 owner 或 admin 可读
 
-    fill_chunk_count=True（默认）时从 Chunk 表实时查询分块数，
-    替代 KB 表 chunk_count 缓存列，消除 Celery 任务导致的僵尸计数。
+    fill_chunk_count=True（默认）时从 Chunk/Document 表实时查询
+    分块数与文档数，替代 KB 表 chunk_count/doc_count 缓存列，
+    消除 Celery 任务延迟或批量上传会话脏数据导致的僵尸计数。
     内部调用（如 check_kb_active）无需此值时传 False 避免额外查询。
     """
     t_start = time.time()
@@ -121,9 +153,11 @@ async def get_kb(
 
     t_chunk = 0.0
     if fill_chunk_count:
-        real_counts = await _get_real_chunk_counts(db, [kb_id])
-        kb.chunk_count = real_counts.get(kb_id, kb.chunk_count)
-        t_chunk = time.time() - t_start - t_select  # 近似（含 _get_real_chunk_counts 内部 overhead）
+        real_chunk_counts = await _get_real_chunk_counts(db, [kb_id])
+        real_doc_counts = await _get_real_doc_counts(db, [kb_id])
+        kb.chunk_count = real_chunk_counts.get(kb_id, kb.chunk_count)
+        kb.doc_count = real_doc_counts.get(kb_id, kb.doc_count)
+        t_chunk = time.time() - t_start - t_select  # 近似（含查询 overhead）
 
     t_total = time.time() - t_start
     if t_total > 0.3:
@@ -153,14 +187,16 @@ async def list_kbs(
     )
     rows = (await db.execute(q)).scalars().all()
 
-    # 实时查询分块数（替代 KB 表 chunk_count 缓存列，消除僵尸计数）
+    # 实时查询分块数与文档数（替代 KB 表缓存列，消除僵尸计数）
     kb_ids = [r.id for r in rows]
-    real_counts = await _get_real_chunk_counts(db, kb_ids)
+    real_chunk_counts = await _get_real_chunk_counts(db, kb_ids)
+    real_doc_counts = await _get_real_doc_counts(db, kb_ids)
 
     items = []
     for r in rows:
         resp = KnowledgeBaseResponse.model_validate(r)
-        resp.chunk_count = real_counts.get(r.id, 0)
+        resp.chunk_count = real_chunk_counts.get(r.id, 0)
+        resp.doc_count = real_doc_counts.get(r.id, 0)
         items.append(resp)
 
     return KnowledgeBaseListResponse(total=total, page=page, page_size=page_size, items=items)
@@ -191,9 +227,10 @@ async def list_public_kbs(
     )
     rows = (await db.execute(q)).all()
 
-    # 实时查询分块数（替代 KB 表 chunk_count 缓存列，消除僵尸计数）
+    # 实时查询分块数与文档数（替代 KB 表缓存列，消除僵尸计数）
     kb_ids = [kb.id for kb, _ in rows]
-    real_counts = await _get_real_chunk_counts(db, kb_ids)
+    real_chunk_counts = await _get_real_chunk_counts(db, kb_ids)
+    real_doc_counts = await _get_real_doc_counts(db, kb_ids)
 
     items = [
         PublicKnowledgeBaseResponse(
@@ -204,8 +241,8 @@ async def list_public_kbs(
             username=username,
             visibility=kb.visibility,
             status=kb.status,
-            doc_count=kb.doc_count,
-            chunk_count=real_counts.get(kb.id, 0),
+            doc_count=real_doc_counts.get(kb.id, 0),
+            chunk_count=real_chunk_counts.get(kb.id, 0),
             created_at=kb.created_at,
             updated_at=kb.updated_at,
         )
@@ -239,9 +276,11 @@ async def update_kb(
 
     await db.refresh(kb)
     resp = KnowledgeBaseResponse.model_validate(kb)
-    # db.refresh() 会用 DB 缓存列的僵尸值覆盖 get_kb() 已填充的实时分块数，需重新修正
-    real_counts = await _get_real_chunk_counts(db, [kb_id])
-    resp.chunk_count = real_counts.get(kb_id, resp.chunk_count)
+    # db.refresh() 会用 DB 缓存列的僵尸值覆盖 get_kb() 已填充的实时计数，需重新修正
+    real_chunk_counts = await _get_real_chunk_counts(db, [kb_id])
+    real_doc_counts = await _get_real_doc_counts(db, [kb_id])
+    resp.chunk_count = real_chunk_counts.get(kb_id, resp.chunk_count)
+    resp.doc_count = real_doc_counts.get(kb_id, resp.doc_count)
     return resp
 
 
@@ -268,7 +307,7 @@ async def check_kb_active(db: AsyncSession, kb_id: int) -> KnowledgeBase:
     """检查知识库存在且 status==active，否则抛异常。
     供文档上传/检索/reprocess 等服务调用。
     """
-    kb = await get_kb(db, kb_id)
+    kb = await get_kb(db, kb_id, fill_chunk_count=False)
     if kb.status != "active":
         raise KnowledgeBaseNotFoundException(kb_id)
     return kb

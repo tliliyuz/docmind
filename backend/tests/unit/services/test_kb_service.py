@@ -23,6 +23,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
 from app.services.knowledge_base_service import (
     _get_real_chunk_counts,
+    _get_real_doc_counts,
     check_kb_active,
     create_kb,
     delete_kb,
@@ -103,6 +104,15 @@ def _make_chunk_count_row(kb_id, count):
     row = MagicMock()
     row.kb_id = kb_id
     # row[1] 模仿 func.count() 的第二列
+    row.__getitem__ = MagicMock(side_effect=lambda i: [kb_id, count][i])
+    row[1] = count
+    return row
+
+
+def _make_doc_count_row(kb_id, count):
+    """构造 Document GROUP BY 查询返回的一行（Row 对象）"""
+    row = MagicMock()
+    row.kb_id = kb_id
     row.__getitem__ = MagicMock(side_effect=lambda i: [kb_id, count][i])
     row[1] = count
     return row
@@ -259,21 +269,24 @@ class TestCreateKB:
 class TestGetKB:
     @pytest.mark.asyncio
     async def test_获取成功_含实时分块数(self, mock_db):
-        """正常获取 KB，fill_chunk_count=True（默认）时从 Chunk 表实时查询分块数"""
-        kb = _make_kb(kb_id=1, chunk_count=0)  # DB 缓存值是僵尸值
+        """正常获取 KB，fill_chunk_count=True（默认）时从 Chunk/Document 表实时查询分块数与文档数"""
+        kb = _make_kb(kb_id=1, chunk_count=0, doc_count=0)  # DB 缓存值是僵尸值
         mock_db.execute = AsyncMock()
         # 第一次 execute：查 KB
         # 第二次 execute：查 Chunk 实时分块数
+        # 第三次 execute：查 Document 实时文档数
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
             _make_all_result([_make_chunk_count_row(1, 99)]),
+            _make_all_result([_make_doc_count_row(1, 5)]),
         ]
 
         result = await get_kb(mock_db, kb_id=1, user_id=1)
 
         assert result.uuid == "kb-uuid-1"
         assert result.chunk_count == 99  # 覆写为实时值，非 DB 缓存的 0
-        assert mock_db.execute.call_count == 2
+        assert result.doc_count == 5    # 覆写为实时值，非 DB 缓存的 0
+        assert mock_db.execute.call_count == 3
 
     @pytest.mark.asyncio
     async def test_fill_chunk_count为False跳过查询(self, mock_db):
@@ -350,18 +363,20 @@ class TestGetKB:
 class TestListKBs:
     @pytest.mark.asyncio
     async def test_列表含实时分块数(self, mock_db):
-        """list_kbs 返回的每个 KB chunk_count 来自 Chunk 表实时查询"""
-        kb1 = _make_kb(kb_id=1, chunk_count=999)  # DB 缓存僵尸值
-        kb2 = _make_kb(kb_id=2, chunk_count=0)
+        """list_kbs 返回的每个 KB chunk_count/doc_count 来自 Chunk/Document 表实时查询"""
+        kb1 = _make_kb(kb_id=1, chunk_count=999, doc_count=999)  # DB 缓存僵尸值
+        kb2 = _make_kb(kb_id=2, chunk_count=0, doc_count=0)
 
         mock_db.execute = AsyncMock()
         # 1: COUNT(*) → total
         # 2: SELECT ... LIMIT OFFSET → rows
         # 3: _get_real_chunk_counts → 实时分块数
+        # 4: _get_real_doc_counts → 实时文档数
         mock_db.execute.side_effect = [
             _make_scalar_result(2),
             _make_scalars_all_result([kb1, kb2]),
             _make_all_result([_make_chunk_count_row(1, 15), _make_chunk_count_row(2, 30)]),
+            _make_all_result([_make_doc_count_row(1, 5), _make_doc_count_row(2, 3)]),
         ]
 
         result = await list_kbs(mock_db, user_id=1)
@@ -369,8 +384,10 @@ class TestListKBs:
         assert result.total == 2
         assert len(result.items) == 2
         assert result.items[0].chunk_count == 15  # 实时值，非 999
+        assert result.items[0].doc_count == 5     # 实时值，非 999
         assert result.items[1].chunk_count == 30
-        assert mock_db.execute.call_count == 3
+        assert result.items[1].doc_count == 3
+        assert mock_db.execute.call_count == 4
 
     @pytest.mark.asyncio
     async def test_空列表(self, mock_db):
@@ -379,6 +396,7 @@ class TestListKBs:
         mock_db.execute.side_effect = [
             _make_scalar_result(0),
             _make_scalars_all_result([]),
+            _make_all_result([]),
             _make_all_result([]),
         ]
 
@@ -394,6 +412,7 @@ class TestListKBs:
         mock_db.execute.side_effect = [
             _make_scalar_result(50),
             _make_scalars_all_result([]),
+            _make_all_result([]),
             _make_all_result([]),
         ]
 
@@ -411,8 +430,8 @@ class TestListKBs:
 class TestListPublicKBs:
     @pytest.mark.asyncio
     async def test_公开列表含实时分块数和username(self, mock_db):
-        """list_public_kbs 返回的每个 KB 含 username + 实时 chunk_count"""
-        kb = _make_kb(kb_id=2, user_id=3, visibility="public", chunk_count=0)
+        """list_public_kbs 返回的每个 KB 含 username + 实时 chunk_count + 实时 doc_count"""
+        kb = _make_kb(kb_id=2, user_id=3, visibility="public", chunk_count=0, doc_count=0)
         username = "zhangsan"
 
         mock_db.execute = AsyncMock()
@@ -420,6 +439,7 @@ class TestListPublicKBs:
             _make_scalar_result(1),
             _make_all_result([(kb, username)]),
             _make_all_result([_make_chunk_count_row(2, 25)]),
+            _make_all_result([_make_doc_count_row(2, 8)]),
         ]
 
         result = await list_public_kbs(mock_db, page=1, page_size=20)
@@ -430,6 +450,7 @@ class TestListPublicKBs:
         assert item.uuid == "kb-uuid-2"
         assert item.username == "zhangsan"
         assert item.chunk_count == 25  # 实时值
+        assert item.doc_count == 8    # 实时值
 
     @pytest.mark.asyncio
     async def test_空列表(self, mock_db):
@@ -437,6 +458,7 @@ class TestListPublicKBs:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_result(0),
+            _make_all_result([]),
             _make_all_result([]),
             _make_all_result([]),
         ]
@@ -466,15 +488,17 @@ class TestUpdateKB:
 
     @pytest.mark.asyncio
     async def test_更新名称成功(self, mock_db):
-        """更新 KB 名称，返回最新信息含实时分块数"""
-        kb = _make_kb(kb_id=1, name="旧名称", chunk_count=0)
+        """更新 KB 名称，返回最新信息含实时分块数与文档数"""
+        kb = _make_kb(kb_id=1, name="旧名称", chunk_count=0, doc_count=0)
         mock_db.execute = AsyncMock()
-        # get_kb: 查 KB + 查实时 chunk_count
-        # update_kb 末尾: 再查一次实时 chunk_count
+        # get_kb: 查 KB + 查实时 chunk_count + 查实时 doc_count
+        # update_kb 末尾: 再查一次实时 chunk_count + 实时 doc_count
         mock_db.execute.side_effect = [
-            _make_scalar_one_or_none_result(kb),        # get_kb: 查 KB
-            _make_all_result([_make_chunk_count_row(1, 88)]),  # get_kb: 实时分块
-            _make_all_result([_make_chunk_count_row(1, 88)]),  # update_kb 末尾: 重新修正
+            _make_scalar_one_or_none_result(kb),             # get_kb: 查 KB
+            _make_all_result([_make_chunk_count_row(1, 88)]),       # get_kb: 实时分块
+            _make_all_result([_make_doc_count_row(1, 5)]),          # get_kb: 实时文档
+            _make_all_result([_make_chunk_count_row(1, 88)]),       # update_kb 末尾: chunk 修正
+            _make_all_result([_make_doc_count_row(1, 5)]),          # update_kb 末尾: doc 修正
         ]
         mock_db.flush = AsyncMock()
 
@@ -485,10 +509,10 @@ class TestUpdateKB:
 
         assert result.name == "新名称"
         assert result.chunk_count == 88  # 实时值，非 DB 缓存值
+        assert result.doc_count == 5     # 实时值，非 DB 缓存值
         mock_db.flush.assert_called_once()
         mock_db.refresh.assert_called_once()
-        # 验证 execute 被调用了 3 次（get_kb 的两次 + update_kb 末尾的一次）
-        assert mock_db.execute.call_count == 3
+        assert mock_db.execute.call_count == 5
 
     @pytest.mark.asyncio
     async def test_更新描述(self, mock_db):
@@ -497,8 +521,10 @@ class TestUpdateKB:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
-            _make_all_result([]),   # get_kb: 实时分块（用 fallback）
-            _make_all_result([]),   # update_kb 末尾
+            _make_all_result([]),   # get_kb: 实时分块（fallback）
+            _make_all_result([]),   # get_kb: 实时文档（fallback）
+            _make_all_result([]),   # update_kb 末尾: chunk
+            _make_all_result([]),   # update_kb 末尾: doc
         ]
         mock_db.flush = AsyncMock()
 
@@ -516,6 +542,8 @@ class TestUpdateKB:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
+            _make_all_result([]),
+            _make_all_result([]),
             _make_all_result([]),
             _make_all_result([]),
         ]
@@ -548,7 +576,9 @@ class TestUpdateKB:
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
             _make_all_result([_make_chunk_count_row(1, 5)]),
+            _make_all_result([_make_doc_count_row(1, 3)]),
             _make_all_result([_make_chunk_count_row(1, 5)]),
+            _make_all_result([_make_doc_count_row(1, 3)]),
         ]
         mock_db.flush = AsyncMock()
 
@@ -567,6 +597,7 @@ class TestUpdateKB:
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
             _make_all_result([]),
+            _make_all_result([]),
         ]
         mock_db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
 
@@ -579,48 +610,56 @@ class TestUpdateKB:
 
     @pytest.mark.asyncio
     async def test_db_refresh后用实时分块数覆写(self, mock_db):
-        """关键测试：验证 update_kb 在 db.refresh() 后重新从 Chunk 表查询分块数。
+        """关键测试：验证 update_kb 在 db.refresh() 后重新从 Chunk/Document 表查询计数。
 
-        db.refresh() 会用 DB 缓存列的僵尸值覆盖 kb.chunk_count。
-        如果 update_kb 没有在 refresh 后重新调用 _get_real_chunk_counts，
-        chunk_count 会显示错误的缓存值而非真实值。
+        db.refresh() 会用 DB 缓存列的僵尸值覆盖 kb.chunk_count 和 kb.doc_count。
+        如果 update_kb 没有在 refresh 后重新调用 _get_real_chunk_counts/_get_real_doc_counts，
+        计数会显示错误的缓存值而非真实值。
         """
-        # KB 的缓存列 chunk_count=0（僵尸值），但 Chunk 表实际有 120 条
-        kb = _make_kb(kb_id=1, chunk_count=0)
+        # KB 的缓存列 chunk_count=0, doc_count=0（僵尸值），但实际 Chunk 表有 120 条，Document 表有 5 条
+        kb = _make_kb(kb_id=1, chunk_count=0, doc_count=0)
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             # get_kb: 查 KB → 返回缓存列=0 的 KB
             _make_scalar_one_or_none_result(kb),
             # get_kb: _get_real_chunk_counts → 实际 120
             _make_all_result([_make_chunk_count_row(1, 120)]),
-            # update_kb 末尾: 再次查询 → 仍为 120
+            # get_kb: _get_real_doc_counts → 实际 5
+            _make_all_result([_make_doc_count_row(1, 5)]),
+            # update_kb 末尾: chunk 再次查询 → 仍为 120
             _make_all_result([_make_chunk_count_row(1, 120)]),
+            # update_kb 末尾: doc 再次查询 → 仍为 5
+            _make_all_result([_make_doc_count_row(1, 5)]),
         ]
         mock_db.flush = AsyncMock()
 
-        # db.refresh 会把 kb.chunk_count 重置为 DB 缓存值 0
-        async def _refresh_reset_chunk_count(instance):
+        # db.refresh 会把 kb.chunk_count 和 kb.doc_count 重置为 DB 缓存值 0
+        async def _refresh_reset_counts(instance):
             instance.chunk_count = 0  # 模拟 DB 缓存列值
+            instance.doc_count = 0    # 模拟 DB 缓存列值
             instance.updated_at = datetime.now(timezone.utc)
 
-        mock_db.refresh.side_effect = _refresh_reset_chunk_count
+        mock_db.refresh.side_effect = _refresh_reset_counts
 
         result = await update_kb(
             mock_db, kb_id=1, user_id=1, role="user",
-            data=KnowledgeBaseUpdate(name="验证分块数"),
+            data=KnowledgeBaseUpdate(name="验证计数修正"),
         )
 
-        # 核心断言：即使 db.refresh() 把 chunk_count 重置为 0，
-        # update_kb 末尾的 _get_real_chunk_counts 应该覆写回 120
+        # 核心断言：即使 db.refresh() 把计数重置为 0，
+        # update_kb 末尾的实时查询应该覆写回真实值
         assert result.chunk_count == 120, (
             f"update_kb 应返回实时分块数 120，但实际返回 {result.chunk_count}。"
             f"这意味着 db.refresh() 后没有用 _get_real_chunk_counts 修正 chunk_count"
         )
+        assert result.doc_count == 5, (
+            f"update_kb 应返回实时文档数 5，但实际返回 {result.doc_count}。"
+            f"这意味着 db.refresh() 后没有用 _get_real_doc_counts 修正 doc_count"
+        )
         # 验证确实调用了 refresh
         mock_db.refresh.assert_called_once()
-        # 验证总共 3 次 execute（get_kb×2 + update_kb末尾×1）
-        assert mock_db.execute.call_count == 3, (
-            f"预期 3 次 execute 调用，实际 {mock_db.execute.call_count} 次"
+        assert mock_db.execute.call_count == 5, (
+            f"预期 5 次 execute 调用，实际 {mock_db.execute.call_count} 次"
         )
 
     @pytest.mark.asyncio
@@ -630,6 +669,8 @@ class TestUpdateKB:
         mock_db.execute = AsyncMock()
         mock_db.execute.side_effect = [
             _make_scalar_one_or_none_result(kb),
+            _make_all_result([]),
+            _make_all_result([]),
             _make_all_result([]),
             _make_all_result([]),
         ]
