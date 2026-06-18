@@ -80,19 +80,35 @@ class ChromaVectorStore(BaseVectorStore):
         include: list[str],
     ) -> dict:
         try:
+            import threading as _threading
             import time as _time
+
+            # 内层计时：在 thread 内部测真实 ChromaDB query 耗时，
+            # 与外层计时对比可算出 asyncio.to_thread 排队时间
+            _inner_elapsed = 0.0
+
+            def _query_in_thread():
+                nonlocal _inner_elapsed
+                _t_inner = _time.perf_counter()
+                r = self._collection.query(
+                    query_embeddings=query_embeddings,
+                    n_results=n_results,
+                    where=where,
+                    include=include,
+                )
+                _inner_elapsed = _time.perf_counter() - _t_inner
+                return r
+
             _t0 = _time.perf_counter()
-            result = await asyncio.to_thread(
-                self._collection.query,
-                query_embeddings=query_embeddings,
-                n_results=n_results,
-                where=where,
-                include=include,
-            )
+            _threads_before = _threading.active_count()
+            result = await asyncio.to_thread(_query_in_thread)
             _elapsed = _time.perf_counter() - _t0
+            _threads_after = _threading.active_count()
+
+            _queue_time = _elapsed - _inner_elapsed
             logger.info(
-                "CHROMA_QUERY time=%.3fs n_results=%d where=%s",
-                _elapsed, n_results, where,
+                "CHROMA_QUERY total=%.3fs queue=%.3fs exec=%.3fs threads_before=%d threads_after=%d n_results=%d where=%s",
+                _elapsed, _queue_time, _inner_elapsed, _threads_before, _threads_after, n_results, where,
             )
             return result
         except Exception:
