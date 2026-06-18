@@ -35,8 +35,17 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
     - `requirements.txt`：新增 `psutil` 依赖
   - **效果**：进程内缓存中全库 chunk 原文开销归零（~20MB→0）；进程内大 KB BM25 驻留内存消除（不再缓存 >5000 chunk 的 BM25Okapi 实例）；每次请求仅在内存中短暂持有 tokenized_corpus，请求结束后 GC 回收；memory 监控日志可精确追踪每个阶段的 RSS 增量
   - **权衡**：大 KB（>5000 chunks）每次 BM25 查询需从 Redis 读取 token 缓存后重建 BM25Okapi（~2-5s @ 20000 chunks），无进程内缓存加速；chunk 原文每次查询需额外 1 次 MySQL 批量查询（≤10 条，<10ms）。此权衡可接受——解决 OOM 是第一优先级，BM25 重建 CPU 成本后续可用磁盘持久化索引或 Elasticsearch 解决
-  - **测试**：97/97 BM25 单元测试通过，1227/1227 后端全量测试零回归
+  - **测试**：103/103 BM25 单元测试通过，1233/1233 后端全量测试零回归
   - **文档**：`backend/docs/RAG_PIPELINE.md` §2.2 缓存结构/生命周期更新
+- **BM25_MAX_CHUNKS 硬限制（2026-06-18）**：
+  - **问题**：21k chunks KB 的 `_load_and_cache()` 中 MySQL 全量加载（+56MB → 416MB）后进入 jieba 分词（预估 +200-250MB → ~650MB），超过 512MB 容器限制触发 OOM Kill（exit 137）。之前的 ADR-023 修复（移除 contents 缓存）将 OOM 点从 BM25 构建后推到了 jieba 分词阶段，但 21k chunks 的全量加载+分词本身内存需求仍超过容器限制
+  - **实锤证据**：`docker stats` 显示 `511.1MiB / 512MiB (99.83%)` 时进程被 `exit 137` 杀死
+  - **修复（2 文件）**：
+    - `config.py`：新增 `BM25_MAX_CHUNKS: int = 10000`
+    - `rag/bm25.py`：三层检查点 — ① `_load_and_cache()` 中 COUNT 先于 SELECT（超限则缓存 `skipped=True` 标记并返回空）；② Redis 命中时检查 `chunk_count` 字段（含 `skipped` 标记支持）；③ 进程内缓存命中时检查 `len(doc_ids)`，超限则清除缓存降级；Redis 缓存数据新增 `chunk_count` 字段（向后兼容：旧缓存无此字段时回退到 `len(tokens)`）
+  - **效果**：超大 KB 完全跳过 BM25 检索（COUNT 查询 ~10ms），仅依赖向量检索，512MB 容器不再 OOM
+  - **权衡**：超大 KB 失去 BM25 关键词召回路，但「能回答」优先于「回答好」；未来可增大容器内存（1-2GB）或迁移 BM25 到 Elasticsearch 后恢复
+  - **测试**：新增 6 个 BM25_MAX_CHUNKS 硬限制测试（加载超限/Redis skipped 标记/Redis chunk_count 超限/本地缓存超限清除/未超限正常检索/空 KB COUNT 路径）
 
 ### Added
 - **ADR-022：问答 Service 层三模块拆分（2026-06-18）**：

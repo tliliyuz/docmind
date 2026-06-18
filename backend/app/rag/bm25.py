@@ -452,12 +452,20 @@ class BM25Retriever:
         local = _get_local_cache(kb_id)
         if local is not None:
             bm25, doc_ids, section_info = local
-            t_local = time.perf_counter()
-            logger.info(
-                "BM25_PERF cache=local_hit chunks=%d cost=%.3fms",
-                len(doc_ids), (t_local - t0) * 1000,
-            )
-            return bm25, doc_ids, section_info, "local_hit"
+            # 硬限制检查：阈值变更后旧缓存可能超限
+            if len(doc_ids) > settings.BM25_MAX_CHUNKS:
+                logger.warning(
+                    "BM25 本地缓存超限，清除: kb_id=%d chunks=%d max=%d",
+                    kb_id, len(doc_ids), settings.BM25_MAX_CHUNKS,
+                )
+                del _local_cache[kb_id]
+            else:
+                t_local = time.perf_counter()
+                logger.info(
+                    "BM25_PERF cache=local_hit chunks=%d cost=%.3fms",
+                    len(doc_ids), (t_local - t0) * 1000,
+                )
+                return bm25, doc_ids, section_info, "local_hit"
 
         # 2. 尝试 Redis 缓存
         cache_key = _build_cache_key(kb_id)
@@ -474,7 +482,23 @@ class BM25Retriever:
             if cached is not None:
                 data = json.loads(cached)
                 t_deserialize = time.perf_counter()
+
+                # 硬限制检查：标记为跳过的 KB 或 chunk 数超限
+                if data.get("skipped"):
+                    logger.info(
+                        "BM25 跳过（Redis 缓存标记）: kb_id=%d chunks=%d",
+                        kb_id, data.get("chunk_count", 0),
+                    )
+                    return None, [], [], "redis_hit"
                 tokens = data["tokens"]
+                chunk_count = data.get("chunk_count", len(tokens))
+                if chunk_count > settings.BM25_MAX_CHUNKS:
+                    logger.warning(
+                        "BM25 跳过（chunk 数超限）: kb_id=%d chunks=%d max=%d",
+                        kb_id, chunk_count, settings.BM25_MAX_CHUNKS,
+                    )
+                    return None, [], [], "redis_hit"
+
                 doc_ids = [tuple(pair) for pair in data["doc_ids"]]
                 # section_info 向后兼容旧缓存（无此字段时默认空列表）
                 section_info = data.get("section_info", [])
@@ -519,6 +543,28 @@ class BM25Retriever:
         mem0 = _get_memory_mb()
         logger.info("BM25_LOAD_START kb_id=%d mem=%.1fMB", kb_id, mem0)
 
+        # 0. 快速 COUNT 检查（避免超大 KB 触发 OOM）
+        from sqlalchemy import func
+        async with self._session_factory() as db:
+            count_result = await db.execute(
+                select(func.count()).select_from(Chunk).where(Chunk.kb_id == kb_id)
+            )
+            chunk_count = count_result.scalar()
+        if chunk_count > settings.BM25_MAX_CHUNKS:
+            logger.warning(
+                "BM25 跳过（chunk 数超限）: kb_id=%d chunks=%d max=%d mem=%.1fMB",
+                kb_id, chunk_count, settings.BM25_MAX_CHUNKS, _get_memory_mb(),
+            )
+            # 缓存跳过标记（短 TTL），避免反复 COUNT 同一超大 KB
+            try:
+                await self._async_redis.setex(cache_key, 60, json.dumps({
+                    "doc_ids": [], "tokens": [], "section_info": [],
+                    "chunk_count": chunk_count, "skipped": True,
+                }))
+            except Exception:
+                pass
+            return None, [], []
+
         async with self._session_factory() as db:
             result = await db.execute(
                 select(Chunk.doc_id, Chunk.chunk_index, Chunk.content, Chunk.metadata_)
@@ -538,7 +584,7 @@ class BM25Retriever:
             # 空结果也缓存（避免反复查 MySQL），短 TTL
             try:
                 await self._async_redis.setex(cache_key, 60, json.dumps({
-                    "doc_ids": [], "tokens": [], "section_info": [],
+                    "doc_ids": [], "tokens": [], "section_info": [], "chunk_count": 0,
                 }))
             except Exception:
                 pass
@@ -571,6 +617,7 @@ class BM25Retriever:
                 "doc_ids": doc_ids,
                 "tokens": tokenized_corpus,
                 "section_info": section_info,
+                "chunk_count": len(doc_ids),
             }, ensure_ascii=False)
             await self._async_redis.setex(cache_key, settings.BM25_CACHE_TTL, cache_data)
             logger.info("BM25 缓存已写入: kb_id=%d, %d chunks", kb_id, len(doc_ids))

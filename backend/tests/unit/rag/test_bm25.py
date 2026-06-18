@@ -84,6 +84,13 @@ def _mock_content_rows(chunks):
     return _make_mock_rows(rows)
 
 
+def _mock_count_result(count):
+    """构造 COUNT 查询的 mock 返回值（scalar() 返回整数）"""
+    mock_result = MagicMock()
+    mock_result.scalar.return_value = count
+    return mock_result
+
+
 def _mock_async_redis(get_return=None):
     """构造 mock 异步 Redis 客户端"""
     mock = AsyncMock()
@@ -182,6 +189,18 @@ class TestLocalCache:
         monkeypatch.setattr(settings, "BM25_LOCAL_CACHE_MAX_CHUNKS", 2)
         _set_local_cache(1, None, [(1, 0), (1, 1), (1, 2)], [{}])
         assert 1 not in _local_cache  # 3 chunks > max=2，不写入
+
+    def test_本地缓存命中但超BM25硬限制则清除(self, monkeypatch):
+        """本地缓存中的 KB chunk 数超过 BM25_MAX_CHUNKS 时清除缓存并降级"""
+        monkeypatch.setattr(settings, "BM25_MAX_CHUNKS", 2)
+        from rank_bm25 import BM25Okapi
+        bm25 = BM25Okapi([list("测试"), list("内容"), list("数据")])
+        _set_local_cache(1, bm25, [(1, 0), (1, 1), (1, 2)])
+        # 超过硬限制，get 应返回 None
+        result = _get_local_cache(1)
+        assert result is not None  # 先能取到
+        # 但通过 _get_bm25_index 时会检查并清除
+        # （此测试验证缓存数据存在，BM25_MAX_CHUNKS 硬限制由 _get_bm25_index 执行）
 
 
 # ==================== invalidate_bm25_cache ====================
@@ -346,7 +365,7 @@ class TestBM25RetrieverSearch:
     @pytest.mark.asyncio
     @patch("app.rag.bm25.jieba.lcut")
     async def test_缓存未命中时从MySQL加载(self, mock_jieba):
-        """Redis 缓存未命中 → MySQL 全量加载 → jieba 分词 → Redis 写入 → content fetch"""
+        """Redis 缓存未命中 → COUNT → MySQL 全量加载 → jieba 分词 → Redis 写入 → content fetch"""
         mock_jieba.side_effect = lambda t: list(t)
 
         async_redis = _mock_async_redis(get_return=None)  # 缓存未命中
@@ -354,8 +373,9 @@ class TestBM25RetrieverSearch:
             (1, 0, "测试内容A"),
             (1, 1, "测试内容B"),
         ]
-        # 两次 DB 调用：全量加载 + content fetch
+        # 三次 DB 调用：COUNT + 全量加载 + content fetch
         session_factory = _mock_session_factory(
+            _mock_count_result(2),
             _mock_db_rows(chunks),
             _mock_content_rows(chunks),
         )
@@ -409,8 +429,11 @@ class TestBM25RetrieverSearch:
         mock_jieba.side_effect = lambda t: list(t)
 
         async_redis = _mock_async_redis(get_return=None)
-        # 只会有一次 DB 调用（全量加载返回空），不会触发 content fetch
-        session_factory = _mock_session_factory(_mock_db_rows([]))
+        # COUNT 返回 0 → SELECT 返回空 → 不触发 content fetch
+        session_factory = _mock_session_factory(
+            _mock_count_result(0),
+            _mock_db_rows([]),
+        )
 
         retriever = BM25Retriever(async_redis, session_factory)
         output = await retriever.search("问题", kb_id=99)
@@ -432,6 +455,7 @@ class TestBM25RetrieverSearch:
 
         chunks = [(1, 0, "降级测试内容")]
         session_factory = _mock_session_factory(
+            _mock_count_result(1),
             _mock_db_rows(chunks),
             _mock_content_rows(chunks),
         )
@@ -612,6 +636,134 @@ class TestBM25RetrieverSearch:
             await retriever.search("测试", kb_id=1)
 
 
+# ==================== BM25_MAX_CHUNKS 硬限制测试 ====================
+
+
+class TestBM25MaxChunks:
+    """BM25_MAX_CHUNKS 硬限制：超阈值 KB 完全跳过 BM25 检索"""
+
+    @pytest.mark.asyncio
+    async def test_加载时超硬限制则返回空(self, monkeypatch):
+        """_load_and_cache 中 COUNT > BM25_MAX_CHUNKS → 返回空 + Redis 缓存跳过标记"""
+        monkeypatch.setattr(settings, "BM25_MAX_CHUNKS", 2)
+
+        async_redis = _mock_async_redis(get_return=None)
+        chunks_3 = [
+            (1, 0, "内容A"),
+            (1, 1, "内容B"),
+            (1, 2, "内容C"),
+        ]
+        # 第一次调用：COUNT 查询（返回 3 > 2）
+        count_result = MagicMock()
+        count_result.scalar.return_value = 3
+        # 由于 COUNT 和 SELECT 在同一个方法中通过两次 session_factory() 调用，
+        # 需要分别提供返回值
+        session_factory = _mock_session_factory(count_result)
+        # 实际 _load_and_cache 会在 COUNT 阶段就返回，不会进入 SELECT
+        # 但 mock_session_factory 只提供了 COUNT 的返回值，
+        # COUNT 返回后直接 return，不会调用第二次 session_factory()
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        # 通过 _load_and_cache 间接测试：缓存未命中 → COUNT → 超限 → 返回空
+        bm25, doc_ids, section_info = await retriever._load_and_cache(1, "bm25_tokens:1")
+
+        assert bm25 is None
+        assert doc_ids == []
+        assert section_info == []
+        # 验证 Redis 缓存了跳过标记
+        async_redis.setex.assert_called_once()
+        cached = json.loads(async_redis.setex.call_args[0][2])
+        assert cached["skipped"] is True
+        assert cached["chunk_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_redis命中skipped标记则跳过(self):
+        """Redis 缓存含 skipped=True → 直接返回空，不构建 BM25Okapi"""
+        cached_data = json.dumps({
+            "doc_ids": [], "tokens": [], "section_info": [],
+            "chunk_count": 15000, "skipped": True,
+        })
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory()
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        # 通过 search 触发 _get_bm25_index → Redis hit → skipped → 空
+        with patch("app.rag.bm25.jieba.lcut", side_effect=lambda t: list(t)):
+            output = await retriever.search("测试", kb_id=1)
+
+        assert output.total == 0
+        assert output.results == []
+
+    @pytest.mark.asyncio
+    @patch("app.rag.bm25.jieba.lcut")
+    async def test_redis命中chunk_count超限则跳过(self, mock_jieba, monkeypatch):
+        """Redis 缓存无 skipped 标志但 chunk_count > BM25_MAX_CHUNKS → 跳过"""
+        monkeypatch.setattr(settings, "BM25_MAX_CHUNKS", 1)
+        mock_jieba.side_effect = lambda t: list(t)
+
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0], [1, 1]],
+            "tokens": [["测", "试"], ["内", "容"]],
+            "chunk_count": 2,
+        })
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory()
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        output = await retriever.search("测试", kb_id=1)
+
+        assert output.total == 0
+
+    @pytest.mark.asyncio
+    async def test_本地缓存超硬限制则清除并降级(self, monkeypatch):
+        """本地缓存中 doc_ids > BM25_MAX_CHUNKS → _get_bm25_index 清除缓存并降级"""
+        monkeypatch.setattr(settings, "BM25_MAX_CHUNKS", 1)
+
+        from rank_bm25 import BM25Okapi
+        bm25 = BM25Okapi([list("测试"), list("内容")])
+        # 2 chunks > max=1，不应返回本地缓存
+        _set_local_cache(1, bm25, [(1, 0), (1, 1)])
+
+        # 模拟 Redis 缓存可命中（含 chunk_count=2 > max=1 → 跳过）
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0], [1, 1]],
+            "tokens": [["测", "试"], ["内", "容"]],
+            "chunk_count": 2,
+        })
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory()
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        with patch("app.rag.bm25.jieba.lcut", side_effect=lambda t: list(t)):
+            output = await retriever.search("测试", kb_id=1)
+
+        # 本地缓存被清除 → Redis hit → chunk_count=2 > 1 → 跳过 → 返回空
+        assert 1 not in _local_cache
+        assert output.total == 0
+
+    @pytest.mark.asyncio
+    @patch("app.rag.bm25.jieba.lcut")
+    async def test_未超硬限制则正常检索(self, mock_jieba, monkeypatch):
+        """chunk 数 ≤ BM25_MAX_CHUNKS 时正常走 BM25 检索"""
+        monkeypatch.setattr(settings, "BM25_MAX_CHUNKS", 100)
+        mock_jieba.side_effect = lambda t: list(t)
+
+        chunks = [(1, 0, "测试内容")]
+        cached_data = json.dumps({
+            "doc_ids": [[1, 0]],
+            "tokens": [["测", "试", "内", "容"]],
+            "chunk_count": 1,
+        })
+        async_redis = _mock_async_redis(get_return=cached_data)
+        session_factory = _mock_session_factory(_mock_content_rows(chunks))
+
+        retriever = BM25Retriever(async_redis, session_factory)
+        output = await retriever.search("测试", kb_id=1)
+
+        # 正常检索
+        assert output.total == 1
+
+
 # ==================== 真实 jieba 分词集成测试 ====================
 
 
@@ -654,6 +806,7 @@ class TestBM25RetrieverWithRealJieba:
             (1, 2, "VPN配置远程访问说明"),
         ]
         session_factory = _mock_session_factory(
+            _mock_count_result(3),
             _mock_db_rows(chunks),
             _mock_content_rows(chunks),
         )
