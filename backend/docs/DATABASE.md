@@ -181,6 +181,7 @@ CREATE TABLE chunks (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_doc_id (doc_id),
     INDEX idx_kb_id (kb_id),
+    INDEX idx_chunks_doc_id_chunk_index (doc_id, chunk_index),
     FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE,
     FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
 );
@@ -423,6 +424,7 @@ CREATE TABLE traces (
 | documents | idx_kb_filename (kb_id, filename) | 复合索引 | 文档唯一性检查 + 同名查找 |
 | chunks | idx_doc_id | 普通索引 | 按文档列出分块 |
 | chunks | idx_kb_id | 普通索引 | 按知识库统计分块 |
+| chunks | idx_chunks_doc_id_chunk_index (doc_id, chunk_index) | 复合索引 | BM25 评分后按 (doc_id, chunk_index) 批量取 chunk 原文（tuple_.in_() 定位，避免回表） |
 | conversations | idx_uuid (uuid) | 唯一索引 | 外部暴露标识符，API/URL 查询 |
 | conversations | idx_user_id | 普通索引 | 按用户列出会话 |
 | conversations | idx_conversations_user_updated (user_id, updated_at) | 复合索引 | Phase 4：按用户列出会话并按更新时间倒序排列 |

@@ -12,6 +12,8 @@ Per-KB Collection 策略（Decision #29）：
 
 import asyncio
 import logging
+import threading
+import time
 from abc import ABC, abstractmethod
 
 from chromadb.api import ClientAPI, Collection
@@ -103,15 +105,12 @@ class ChromaVectorStore(BaseVectorStore):
         where: dict | None = None,
     ) -> dict:
         try:
-            import threading as _threading
-            import time as _time
-
             _inner_elapsed = 0.0
             _collection = self._get_kb_collection(kb_id)
 
             def _query_in_thread():
                 nonlocal _inner_elapsed
-                _t_inner = _time.perf_counter()
+                _t_inner = time.perf_counter()
                 # Per-KB collection：不再需要 where={"kb_id": kb_id}，metadata filter 仅用于 doc 级过滤
                 r = _collection.query(
                     query_embeddings=query_embeddings,
@@ -119,14 +118,14 @@ class ChromaVectorStore(BaseVectorStore):
                     where=where,
                     include=include,
                 )
-                _inner_elapsed = _time.perf_counter() - _t_inner
+                _inner_elapsed = time.perf_counter() - _t_inner
                 return r
 
-            _t0 = _time.perf_counter()
-            _threads_before = _threading.active_count()
+            _t0 = time.perf_counter()
+            _threads_before = threading.active_count()
             result = await asyncio.to_thread(_query_in_thread)
-            _elapsed = _time.perf_counter() - _t0
-            _threads_after = _threading.active_count()
+            _elapsed = time.perf_counter() - _t0
+            _threads_after = threading.active_count()
 
             _queue_time = _elapsed - _inner_elapsed
             logger.info(

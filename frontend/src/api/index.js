@@ -27,7 +27,7 @@ function processQueue(error, newToken) {
 }
 
 /** 清除本地 token 并跳转登录页 */
-function clearAndRedirect() {
+export function clearAndRedirect() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
   localStorage.removeItem('user')
@@ -38,8 +38,11 @@ function clearAndRedirect() {
 
 /** 执行 Token 刷新（独立调用，不经过拦截器循环）。
  *  刷新后同步更新 Pinia store，防止 store 内持过期/已吊销 refresh_token
- *  导致后续 store.refresh() 失败而踢下线。 */
-async function doRefresh() {
+ *  导致后续 store.refresh() 失败而踢下线。
+ *
+ *  统一入口：Axios 响应拦截器与 SSE 流式请求（utils/sse.js）共用此函数，
+ *  避免 SSE 路径单独实现刷新逻辑时漏同步 Pinia store（历史 bug）。 */
+export async function refreshToken() {
   const refreshToken = localStorage.getItem('refresh_token')
   if (!refreshToken) {
     throw new Error('无 refresh_token')
@@ -107,7 +110,7 @@ api.interceptors.response.use(
       originalConfig._retry = true
 
       try {
-        const newToken = await doRefresh()
+        const newToken = await refreshToken()
         // 刷新成功，重放原请求
         originalConfig.headers.Authorization = `Bearer ${newToken}`
         processQueue(null, newToken)

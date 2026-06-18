@@ -3,7 +3,7 @@
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.3 |
-| 最后更新 | 2026-06-18（第 3 轮人工评分完成 + E9 补充） |
+| 最后更新 | 2026-06-19（P1/P2 治理：query_rewriter 引号修复 + chunks 复合索引 + SSE Token 刷新统一 + vector_store 导入上提） |
 
 ---
 
@@ -529,6 +529,8 @@
 ### 5.13 前端 — SSE 解析工具测试
 
 > 2026-06-03：21 用例全部通过 ✅。覆盖 `parseSSEEvent`（meta/message/thinking/sources/finish/error 事件解析 + 心跳帧忽略 + 多行 data 拼接 + JSON 容错 + 空 data）与 `createSSEStream`（正常流 / HTTP 错误 / 非 JSON 错误 / AbortError / 网络异常 / 缓冲区残留 / 请求头校验 / abort 函数）。
+>
+> 2026-06-19：新增 3 个 401 Token 刷新回归用例（P3-UT1.21~1.23），共 24 用例全部通过 ✅。修复 SSE 路径 `refreshSSEToken` 未同步 Pinia store 的 bug——`sse.js` 改为复用 `@/api` 导出的共享 `refreshToken` / `clearAndRedirect`。
 
 | ID | 测试用例 | 被测模块 | 验证项 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
@@ -552,6 +554,9 @@
 | P3-UT1.18 | SSE-请求头 | `createSSEStream` | 有 token | Content-Type + Authorization 正确 | ✅ | 2026-06-03 | — |
 | P3-UT1.19 | SSE-无 token | `createSSEStream` | token=null | 不发送 Authorization 头 | ✅ | 2026-06-03 | — |
 | P3-UT1.20 | SSE-abort 函数 | `createSSEStream` | 调用 abort() | 不抛异常 | ✅ | 2026-06-03 | — |
+| P3-UT1.21 | SSE-401 刷新重试成功 | `createSSEStream` | 401 + E5003 → mock `refreshToken` 成功 | 调用共享 `refreshToken` 一次，重试 fetch 携带新 token，onDone 触发，不触发 clearAndRedirect | ✅ | 2026-06-19 | 修复 SSE 刷新不同步 store bug；mock `@/api` 隔离 |
+| P3-UT1.22 | SSE-401 刷新失败清 token | `createSSEStream` | 401 + E5003 → `refreshToken` 抛错 | 调用 `clearAndRedirect`，onError 含「认证已过期」，不重试 fetch | ✅ | 2026-06-19 | — |
+| P3-UT1.23 | SSE-401 非 E5003 不刷新 | `createSSEStream` | 401 + E5004 | 直接 `clearAndRedirect`，不调用 `refreshToken`，onError 含原 message | ✅ | 2026-06-19 | — |
 
 ### 5.14 前端 — Markdown 渲染工具测试
 

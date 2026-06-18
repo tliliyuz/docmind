@@ -1,7 +1,7 @@
 """分块表 — 存储分块文本和 ChromaDB 引用"""
 
 from datetime import datetime
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,6 +11,11 @@ from app.models._types import UTCDateTime
 
 class Chunk(Base):
     __tablename__ = "chunks"
+    # 复合索引：BM25 评分后按 (doc_id, chunk_index) 批量取 chunk 原文（tuple_.in_()），
+    # 单列 idx_doc_id 在该查询下退化为按 doc_id 过滤 + chunk_index 回表，复合索引可走覆盖定位
+    __table_args__ = (
+        Index("idx_chunks_doc_id_chunk_index", "doc_id", "chunk_index"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     doc_id: Mapped[int] = mapped_column(
