@@ -96,12 +96,12 @@ class VectorRetriever:
 
         query_vector = embed_result.embeddings[0]
 
-        # 2. 向量检索（通过抽象接口，where 过滤 kb_id）
+        # 2. 向量检索（Per-KB collection：kb_id 路由到专属 collection，无需 where 过滤）
         try:
             chroma_results = await self._vector_store.search(
                 query_embeddings=[query_vector],
                 n_results=top_k,
-                where={"kb_id": kb_id},
+                kb_id=kb_id,
                 include=["documents", "distances", "metadatas"],
             )
         except Exception as e:

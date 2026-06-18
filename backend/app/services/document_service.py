@@ -193,7 +193,7 @@ async def upload_document(
             # 清理旧向量（通过 VectorStore 抽象，内部已处理异步线程卸载）
             try:
                 store = get_vector_store()
-                await store.delete(where={"doc_id": doc.id})
+                await store.delete(kb_id=kb_id, where={"doc_id": doc.id})
             except Exception:
                 logger.warning("向量存储清理 doc=%d 失败，跳过", doc.id)
 
@@ -544,7 +544,7 @@ async def reprocess_document(
     # 清理旧向量（通过 VectorStore 抽象，内部已处理异步线程卸载）
     try:
         store = get_vector_store()
-        await store.delete(where={"doc_id": doc_id})
+        await store.delete(kb_id=kb_id, where={"doc_id": doc_id})
         logger.info("文档 %d reprocess 前向量存储旧向量已清理", doc_id)
     except Exception:
         logger.exception("文档 %d reprocess 前 ChromaDB 旧向量清理失败", doc_id)

@@ -121,7 +121,7 @@ docmind/
 │   │   │   ├── parser.py              # 文档解析器（PDF/DOCX/MD/TXT）
 │   │   │   ├── chunker.py             # 文本分块策略（RecursiveCharacterTextSplitter, 1000 字符 / 150 重叠）
 │   │   │   ├── embedder.py            # Embedding 封装（DashScope text-embedding-v3）
-│   │   │   ├── vector_store.py        # 向量存储抽象层（BaseVectorStore ABC + ChromaVectorStore，ADR-018）
+│   │   │   ├── vector_store.py        # 向量存储抽象层（BaseVectorStore ABC + ChromaVectorStore，Per-KB Collection 路由 kb_{kb_id}，ADR-018）
 │   │   │   ├── retriever.py           # 向量检索器（依赖 BaseVectorStore 抽象，ADR-018）
 │   │   │   ├── bm25.py                # BM25 关键词检索 + Redis 缓存
 │   │   │   ├── fusion.py              # RRF 多路融合算法
@@ -145,7 +145,7 @@ docmind/
 │   │   ├── core/                      # 基础设施
 │   │   │   ├── __init__.py
 │   │   │   ├── database.py            # 数据库连接 & async session
-│   │   │   ├── chroma_client.py       # ChromaDB 连接 + get_vector_store() 工厂函数
+│   │   │   ├── chroma_client.py       # ChromaDB PersistentClient 连接 + get_vector_store() 工厂；init_chroma() 仅创建 Client 不预创建 collection（各 KB collection 由 ChromaVectorStore 按需懒加载）
 │   │   │   ├── permissions.py         # KB 访问权限共享函数（require_kb_readable/writable/owner）
 │   │   │   ├── redis_client.py        # Redis 客户端（懒加载单例，Win/Linux 双模式）
 │   │   │   ├── security.py            # JWT & 密码哈希
@@ -162,6 +162,9 @@ docmind/
 │   │       ├── auth_middleware.py      # JWT 验证中间件
 │   │       ├── rate_limit_middleware.py # 限流中间件
 │   │       └── request_id_middleware.py # 请求 ID 追踪中间件
+│   │
+│   ├── scripts/                       # 运维脚本（迁移工具等）
+│   │   └── migrate_to_per_kb_collections.py  # Per-KB Collection 迁移脚本
 │   │
 │   ├── tests/                         # 后端测试（pytest + httpx）
 │   │   ├── __init__.py
@@ -448,6 +451,10 @@ RATE_LIMIT_UPLOAD_PER_MINUTE=20
 RATE_LIMIT_LOGIN_PER_MINUTE=10
 RATE_LIMIT_DEFAULT_PER_MINUTE=120
 RATE_LIMIT_WINDOW_SECONDS=60
+
+# BM25 限制
+BM25_MAX_CHUNKS=10000
+BM25_LOCAL_CACHE_MAX_CHUNKS=5000
 ```
 
 **注意事项**：
@@ -476,6 +483,7 @@ langchain-community==0.3.*
 langchain-openai==0.2.*
 jieba==0.42.*
 rank-bm25==0.2.*
+psutil==6.*
 PyPDF2==3.0.*
 python-docx==1.1.*
 markdown-it-py==3.0.*

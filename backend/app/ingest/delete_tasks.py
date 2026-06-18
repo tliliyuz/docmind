@@ -52,7 +52,7 @@ async def _delete_document_async(doc_id: int) -> dict:
         # 3. 清理向量存储
         try:
             store = get_vector_store()
-            await store.delete(where={"doc_id": doc_id})
+            await store.delete(kb_id=kb_id, where={"doc_id": doc_id})
             logger.info("文档 %d 向量存储向量已清理", doc_id)
         except Exception as e:
             logger.exception("文档 %d 向量存储向量清理失败", doc_id)
@@ -136,12 +136,11 @@ async def _delete_kb_async(kb_id: int) -> dict:
             doc_info = [(d.id, d.file_path) for d in docs]
             logger.info("知识库 %d 开始异步删除: %d 个文档", kb_id, len(doc_info))
 
-        # 3. 按 kb_id 批量清理向量存储（单次调用，避免逐文档逐个 delete 的效率问题
-        #    和中途失败导致的状态不一致）
+        # 3. 按 kb_id 删除整个 KB collection（O(1) 操作，比逐条 delete 快得多）
         store = get_vector_store()
         try:
-            await store.delete(where={"kb_id": kb_id})
-            logger.info("知识库 %d 向量存储已批量清理（%d 个文档）", kb_id, len(doc_info))
+            await store.delete(kb_id=kb_id)
+            logger.info("知识库 %d 向量存储 collection 已删除（%d 个文档）", kb_id, len(doc_info))
         except Exception as e:
             logger.exception("知识库 %d 向量存储批量清理失败", kb_id)
             return {"status": "error", "kb_id": kb_id, "error": f"向量存储批量清理失败: {e}"}

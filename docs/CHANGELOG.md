@@ -23,6 +23,24 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 ## [Unreleased] - 2026-06-18
 
 ### Changed
+- **ChromaDB Per-KB Collection 迁移（2026-06-18）**：
+  - **问题**：单 collection（`docmind`）+ `where={"kb_id": kb_id}` metadata 过滤导致向量查询耗时 16.4s vs 无过滤 35ms（~470× 差距）。根因：ChromaDB 的 metadata filter 做全扫描不利用 HNSW 索引
+  - **方案**：从「Single Collection + Metadata 隔离」迁移为 **Per-KB Collection**（`kb_{kb_id}`），每个知识库独立 ChromaDB collection，查询时通过 `kb_id` 路由直接命中对应 collection，完全消除 `where` 过滤
+  - **源码（5 文件）**：
+    - `rag/vector_store.py`：`BaseVectorStore` ABC 接口 `search`/`add`/`delete` 新增 `kb_id` 参数；`ChromaVectorStore` 改为多 collection 管理（`dict[int, Collection]` 懒加载路由），`delete(kb_id, where=None)` 直接 drop collection（O(1)），`search` 和 `add` 通过 `_get_kb_collection(kb_id)` 懒创建 `kb_{kb_id}` collection
+    - `core/chroma_client.py`：`init_chroma()` 简化为仅创建 `PersistentClient`，移除 `get_or_create_collection("docmind")` 预创建；`get_vector_store()` 传入 `ClientAPI` 给 `ChromaVectorStore`
+    - `rag/retriever.py`：`search()` 调用改为 `store.search(kb_id=kb_id, ...)` 替代 `store.search(where={"kb_id": kb_id}, ...)`
+    - `ingest/tasks.py`：向量 add/delete 调用同步更新签名（`store.add(kb_id=kb_id, ...)` / `store.delete(kb_id=kb_id, where={...})`）
+    - `ingest/delete_tasks.py`：KB 级删除改为 `store.delete(kb_id=kb_id)` drop collection；doc 级删除改为 `store.delete(kb_id=kb_id, where={"doc_id": doc_id})`
+    - `services/document_service.py`：doc 删除调用同步更新
+  - **测试（3 文件重写）**：
+    - `tests/unit/rag/test_vector_store.py`：完全重写——`ChromaVectorStore` 构造改为传 `ClientAPI` mock；新增 `_make_mock_client()` 辅助函数；12 个新测试覆盖 kb 路由/缓存/doc 级 where/drop collection/异常传播/线程池
+    - `tests/unit/rag/test_retriever.py`：4 处断言从 `call_kwargs["where"]` 改为 `call_kwargs["kb_id"]` + `"where" not in call_kwargs`
+    - `tests/unit/ingest/test_tasks.py`：delete 调用断言补 `kb_id` 参数
+  - **迁移脚本**：新增 `scripts/migrate_to_per_kb_collections.py`——分页读取旧 `docmind` collection → 按 `kb_id` 分组 → 批量写入 `kb_{kb_id}` collection → 验证计数 → 删除旧 collection。支持 `--dry-run` / `--batch-size` / `--skip-delete` CLI 选项
+  - **效果**：向量查询耗时从 16.4s 降至 ~35ms（~470× 提升），消除 ChromaDB metadata filter 全扫描瓶颈
+  - **验证**：1240/1240 后端测试通过（含 Per-KB 更新后 42 个 vector_store 专项测试）
+  - **文档**：RAG_PIPELINE.md §2.1 / ARCHITECTURE.md §6 §7.1 §10 / ADR-018 / ROADMAP.md §5.1 §5.6 / API.md §3 / TEST_CASES.md §5.1 同步更新
 - **BM25 缓存结构重构（ADR-023，2026-06-18）**：
   - **问题**：BM25 Redis 缓存和进程内缓存中存储了全库 chunk 原文（`contents`），对于 20000 chunk 的知识库，Python 内存开销达 300-500MB（tokenized_corpus ~230MB + BM25Okapi 内部结构 ~50MB + contents ~20MB），导致 `backend exited 137`（Linux OOM Kill）
   - **根因**：
@@ -83,6 +101,25 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ### Security
 - **批量上传数量限制（2026-06-18）**：新增 `BATCH_UPLOAD_MAX_COUNT=50`，`POST /documents/batch-upload` 单次最多上传 50 个文件。此前仅限制单文件 ≤50MB，无数量上限，恶意用户可通过单次请求提交大量文件导致 Celery 队列阻塞和数据库连接池耗尽。新增错误码 `E2014`。
+
+### Fixed
+- **文档同步审计修复（2026-06-18）**：14 处文档与代码不同步问题修复，覆盖 P0~P2 三个优先级：
+  - **P0（5 处）**：
+    - `RAG_PIPELINE.md` §1 管线图：`陈述/引用知识判断框架`→`宽松 Prompt 策略`（对齐 Phase 5.5 回退）
+    - `RAG_PIPELINE.md` §2.2：新增 `BM25_MAX_CHUNKS` 三层检查点文档（working tree 已有）
+    - `RAG_PIPELINE.md` §3：`SYSTEM_PROMPT_TEMPLATE` 更新（移除 STRICT 框架，含章节引用指令，working tree 已有）
+    - `TEST_CASES.md` §5.1b/§5.3b：新增 Per-KB Collection 15 测试 + BM25_MAX_CHUNKS 6 测试（working tree 已有）
+    - `ROADMAP.md` §5.1/§8.8：新增 `BM25_MAX_CHUNKS` 硬限制和 ADR-023 缓存重构记录
+  - **P1（5 处）**：
+    - `ARCHITECTURE.md` §5.2/§6：Prompt 描述更新 + BM25 行补充 `BM25_MAX_CHUNKS`/`BM25_LOCAL_CACHE_MAX_CHUNKS`
+    - `ARCHITECTURE.md` §5.3：新增 ADR-022 交叉引用（chat_service 三模块拆分）
+    - `DEVELOPMENT.md` §4：`.env` 示例新增 `BM25_MAX_CHUNKS`/`BM25_LOCAL_CACHE_MAX_CHUNKS`
+    - `DEVELOPMENT.md` §5：requirements 列表新增 `psutil==6.*`
+    - `DEVELOPMENT.md` §2：项目结构树新增 `scripts/` 目录，`vector_store.py`/`chroma_client.py` 描述更新为 Per-KB Collection 路由
+  - **P2（3 处）**：
+    - `PRD.md` §7：第 2 轮评分标注 Session 综合分 4.76 / 轮次均分 4.62，消除歧义
+    - `API.md` §1：错误码 E4004/E9004 补充限流具体数值（60/20/10/120 次/分钟）
+    - `ARCHITECTURE.md` §7.1：Per-KB Collection 策略描述更新（working tree 已有）
 
 ## [Unreleased] - 2026-06-17
 

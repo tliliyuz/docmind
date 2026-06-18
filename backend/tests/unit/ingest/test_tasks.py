@@ -90,8 +90,8 @@ class TestStageResume:
                         with patch("app.ingest.tasks.get_vector_store", return_value=mock_store):
                             result = await _ingest_document_async(1)
 
-        # 验证 ChromaDB 清理被调用
-        mock_store.delete.assert_called_with(where={"doc_id": 1})
+        # 验证 ChromaDB 清理被调用（Per-KB：传 kb_id + doc 级 where）
+        mock_store.delete.assert_called_with(kb_id=1, where={"doc_id": 1})
         assert result["status"] == "completed"
 
     @pytest.mark.asyncio

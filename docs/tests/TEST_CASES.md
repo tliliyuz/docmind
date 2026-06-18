@@ -292,7 +292,7 @@
 | ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
 |:---|:---|:---|:---|:---|:---|:---|:---|
 | P3-U7.1 | 向量检索-基本 | `vector_retriever.search()` | 正常查询 | 返回 top_k=10 结果，含 doc_id + score + content | ✅ | 2026-05-28 | Mock BaseVectorStore (AsyncMock) |
-| P3-U7.2 | 向量检索-kb_id 过滤 | `vector_retriever.search()` | 指定 kb_id | `where={"kb_id": kb_id}` 仅返回该 kb_id 结果 | ✅ | 2026-05-28 | metadata 保持 int 类型 |
+| P3-U7.2 | 向量检索-kb_id 路由 | `vector_retriever.search()` | 指定 kb_id | `kb_id` 路由到 `kb_{kb_id}` collection，仅返回该 kb 结果 | ✅ | 2026-06-18 | Per-KB Collection 迁移后更新 |
 | P3-U7.3 | 向量检索-结果不足 top_k | `vector_retriever.search()` | kb 文档数 < top_k | 返回实际可用数量，不补空 | ✅ | 2026-05-28 | ChromaDB 自然返回实际数量 |
 | P3-U7.4 | 向量检索-空结果 | `vector_retriever.search()` | kb 无匹配文档 | 返回空列表，不抛异常 | ✅ | 2026-05-28 | 含空查询/空白查询/embedding 空结果 |
 | P3-U7.5 | 向量检索-metadata 字段完整 | `vector_retriever.search()` | 正常查询 | 每条结果含 doc_id/kb_id/chunk_index/page/score | ✅ | 2026-05-28 | page 为后续补充字段 |
@@ -300,6 +300,28 @@
 | P3-U7.7 | 向量检索-ChromaDB 异常 | `vector_retriever.search()` | ChromaDB 不可用 | 抛出 `RetrievalServiceException(E4003)` | ✅ | 2026-05-28 | 含 embedding 异常场景 |
 | P3-U7.8 | 向量检索-metadata int 类型一致性 | `vector_retriever.search()` | metadata kb_id/doc_id/chunk_index 为 int | 入库/查询两端统一 int，显式 int() 转换保障 | ✅ | 2026-06-01 | 决策 #21，新增 test_metadata字段为int类型 测试 |
 | P3-U7.9 | 向量检索-章节元数据回填 | `vector_retriever.search()` | ChromaDB metadata 含 section_title/section_path | RetrievalResult 正确回填章节字段；无章节字段时默认 None；空章节字段正确处理 | ✅ | 2026-06-17 | 3 用例：含章节字段 / 无章节字段 / 空章节字段 |
+
+### 5.1b 后端 — 向量存储单元测试（ChromaVectorStore）
+
+> 2026-06-18 Per-KB Collection 迁移后完全重写。`test_vector_store.py`：`_make_mock_client()` 辅助函数构造 mock `ClientAPI`；12 个 ChromaVectorStore 测试覆盖 kb 路由/缓存/doc 级 where/drop collection/异常传播/线程池。
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| P3-VS.1 | BaseVectorStore-不可直接实例化 | `BaseVectorStore()` | 直接实例化 ABC | 抛出 `TypeError` | ✅ | 2026-06-18 | — |
+| P3-VS.2 | BaseVectorStore-子类必须实现抽象方法 | `BaseVectorStore` 子类 | 未实现 search/add/delete | 实例化抛出 `TypeError` | ✅ | 2026-06-18 | — |
+| P3-VS.3 | BaseVectorStore-完整子类可实例化 | `BaseVectorStore` 子类 | 实现全部抽象方法 | 实例化成功 | ✅ | 2026-06-18 | — |
+| P3-VS.4 | search-路由到正确的 kb collection | `ChromaVectorStore.search()` | 指定 kb_id=1 | 通过 `_get_kb_collection(1)` 获取 `kb_1` collection 并调用 `query()` | ✅ | 2026-06-18 | Per-KB Collection 路由 |
+| P3-VS.5 | search-doc 级 where 过滤 | `ChromaVectorStore.search()` | 传 `where={"doc_id": 42}` | where 传递给 collection.query()，不注入 kb_id | ✅ | 2026-06-18 | where 仅用于 doc 级过滤 |
+| P3-VS.6 | search-同一 kb 复用 collection 缓存 | `ChromaVectorStore.search()` | 两次 search 同一 kb_id | `get_or_create_collection` 仅调用一次，第二次复用缓存 | ✅ | 2026-06-18 | `dict[int, Collection]` 懒加载 |
+| P3-VS.7 | search-不同 kb 路由到不同 collection | `ChromaVectorStore.search()` | kb_id=1 和 kb_id=2 | 分别获取 `kb_1` 和 `kb_2` collection | ✅ | 2026-06-18 | — |
+| P3-VS.8 | search-异常传播 | `ChromaVectorStore.search()` | collection.query() 抛异常 | 异常原样向上传播 | ✅ | 2026-06-18 | — |
+| P3-VS.9 | search-线程池执行 | `ChromaVectorStore.search()` | 异步调用 | 通过 `asyncio.to_thread()` 执行，不阻塞事件循环 | ✅ | 2026-06-18 | — |
+| P3-VS.10 | add-委托给正确的 kb collection | `ChromaVectorStore.add()` | 指定 kb_id | 调用 `kb_{kb_id}.add()`，参数正确传递 | ✅ | 2026-06-18 | — |
+| P3-VS.11 | add-异常传播 | `ChromaVectorStore.add()` | collection.add() 抛异常 | 异常原样向上传播 | ✅ | 2026-06-18 | — |
+| P3-VS.12 | delete-带 where 委托给 collection | `ChromaVectorStore.delete()` | `where={"doc_id": 42}` | 调用 `kb_{kb_id}.delete(where=...)` | ✅ | 2026-06-18 | doc 级删除 |
+| P3-VS.13 | delete-不带 where 删除整个 collection | `ChromaVectorStore.delete()` | `where=None` | 调用 `client.delete_collection("kb_{kb_id}")`（O(1) drop） | ✅ | 2026-06-18 | KB 级删除 |
+| P3-VS.14 | delete-collection 不存在时静默忽略 | `ChromaVectorStore.delete()` | collection 不存在 | 不抛异常，静默忽略 | ✅ | 2026-06-18 | `ValueError` 捕获 |
+| P3-VS.15 | delete-异常传播 | `ChromaVectorStore.delete()` | 非 ValueError 异常 | 异常原样向上传播 | ✅ | 2026-06-18 | — |
 
 ### 5.2 后端 — BM25 检索器单元测试
 
@@ -333,6 +355,19 @@
 | P3-U7.26 | BM25Okapi 实例化性能 | `BM25Okapi(corpus)` | 1000 chunk 语料 | 构造时间 < 50ms（仅 NumPy 计算，不含分词） | ⏭️ | — | 性能测试，可选 |
 | P3-U7.29 | 缓存-异步清除 | `invalidate_bm25_cache_async()` | FastAPI 上下文 | 清除进程内缓存 + Redis 缓存 | ✅ | 2026-06-15 | 修复：patch 路径从定义处改为使用处 `app.rag.bm25.get_async_redis` |
 | P3-U7.30 | 缓存-同步清除 | `invalidate_bm25_cache()` | Celery 上下文 | 仅清除 Redis 缓存（进程内缓存由 FastAPI 管理） | ✅ | 2026-06-11 | 新增 TestInvalidateBM25Cache |
+
+### 5.3b 后端 — BM25_MAX_CHUNKS 硬限制测试
+
+> 2026-06-18 新增。`TestBM25MaxChunks` 类（5 用例）+ 空 KB COUNT 路径（1 用例）。超大 KB（>10000 chunks）完全跳过 BM25 检索，验证三层检查点的每个分支。
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| P3-MC.1 | 加载超限-返回空 | `_load_and_cache()` | COUNT > BM25_MAX_CHUNKS | 返回空结果 + Redis 缓存 `{"skipped": true, "chunk_count": N}`（短 TTL 60s） | ✅ | 2026-06-18 | 检查点 ① COUNT 先于 SELECT |
+| P3-MC.2 | Redis skipped 标记-跳过 | `_get_bm25_index()` | Redis 命中 `skipped=True` | 直接返回空，不构建 BM25Okapi | ✅ | 2026-06-18 | 检查点 ② skipped 标志 |
+| P3-MC.3 | Redis chunk_count 超限-跳过 | `_get_bm25_index()` | Redis 命中 `chunk_count > BM25_MAX_CHUNKS` | 跳过 BM25 构建，返回空 | ✅ | 2026-06-18 | 检查点 ② chunk_count 校验 |
+| P3-MC.4 | 本地缓存超限-清除降级 | `_get_bm25_index()` | L1 缓存 `len(doc_ids) > BM25_MAX_CHUNKS` | 清除缓存条目，降级到 Redis/MySQL 路径 | ✅ | 2026-06-18 | 检查点 ③ + 缓存自清理 |
+| P3-MC.5 | 未超限-正常检索 | `bm25_retriever.search()` | chunk 数 ≤ BM25_MAX_CHUNKS | 正常走 BM25 检索流程，返回结果 | ✅ | 2026-06-18 | 正向路径验证 |
+| P3-MC.6 | 空 KB COUNT 路径 | `_load_and_cache()` | KB 无文档（COUNT=0） | COUNT 返回 0 → 不触发 SELECT → 返回空 + 缓存空结果（短 TTL） | ✅ | 2026-06-18 | COUNT-before-SELECT 优化 |
 
 ### 5.4 后端 — RRF 融合算法测试
 
@@ -1271,7 +1306,8 @@
 | `api/knowledge_base.py` (public) | ≥ 90% | ✅ 100% | GET /public 端点 5 用例 + 权限变更回归 6 用例，Phase 2.5 |
 | `services/document_service.py` | ≥ 80% | ✅ 29 用例 | `test_document_service.py` 覆盖：`validate_file`(12) + `_build_document_response`(1) + `_check_kb_ownership`(5) + `list_documents`(4) + `get_document`(2) + `get_document_chunks`(2) + `delete_document`(3) + `reprocess_document`(2) + `upload_document`(3) |
 | `rag/retriever.py` | ≥ 80% | ✅ | Phase 3：向量检索（16 用例；适配 BaseVectorStore 抽象 + 章节元数据回填 3 用例） |
-| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2 + §8.8 + ADR-023：BM25 检索 + 三级缓存（去除 contents）+ 章节号检测与 boost + 按需取原文 + 大 KB 进程缓存跳过（97 用例，含 7 个真实 jieba 集成 + content fetch 测试 + 进程内缓存阈值测试） |
+| `rag/vector_store.py` | ≥ 80% | ✅ 15 用例 | Per-KB Collection 迁移后重写（P3-VS.1-P3-VS.15）：BaseVectorStore ABC 3 + ChromaVectorStore search/add/delete 12（kb 路由/缓存/doc 级 where/drop collection/异常传播/线程池） |
+| `rag/bm25.py` | ≥ 80% | ✅ | Phase 3 + P0-2 + §8.8 + ADR-023 + BM25_MAX_CHUNKS：BM25 检索 + 三级缓存（去除 contents）+ 章节号检测与 boost + 按需取原文 + 大 KB 进程缓存跳过 + 硬限制三层检查点 6 用例（P3-MC.1-P3-MC.6）（103 用例，含 7 个真实 jieba 集成 + content fetch 测试 + 进程内缓存阈值测试） |
 | `rag/fusion.py` | ≥ 80% | ✅ | Phase 3：RRF 多路融合已覆盖（12 用例） |
 | `rag/reranker.py` | ≥ 80% | ✅ | DashScopeReranker（24 用例，P55-RR.1-P55-RR.22 + 接口测试 2） |
 | `rag/prompt_builder.py` | ≥ 80% | ✅ 100% | Phase 3：Prompt 组装 + Token 预算（13 用例）+ Phase 4 history_messages 透传（4 用例）+ 章节信息展示（4 用例） |

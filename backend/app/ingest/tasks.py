@@ -195,7 +195,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
                         resume_batch = 0
                         try:
                             store = get_vector_store()
-                            await store.delete(where={"doc_id": doc_id})
+                            await store.delete(kb_id=kb_id, where={"doc_id": doc_id})
                             logger.info("文档 %d 清理向量存储残留向量（vector_storing 恢复）", doc_id)
                         except Exception:
                             logger.exception("文档 %d ChromaDB 残留向量清理失败，标记 FAILED", doc_id)
@@ -431,6 +431,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
 
                 await store.add(
                     ids=ids_batch,
+                    kb_id=kb_id,
                     documents=docs_batch,
                     embeddings=embs_batch,
                     metadatas=metas_batch,
@@ -446,7 +447,7 @@ async def _ingest_document_async(doc_id: int) -> dict:
         except Exception as e:
             logger.exception("文档 %d 向量存储批量写入失败，清理已写入向量", doc_id)
             try:
-                await store.delete(where={"doc_id": doc_id})
+                await store.delete(kb_id=kb_id, where={"doc_id": doc_id})
             except Exception:
                 logger.exception("文档 %d ChromaDB 清理也失败了，可能残留部分向量", doc_id)
 

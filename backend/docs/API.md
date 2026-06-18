@@ -102,9 +102,11 @@
 | E4001 | 400 | 知识库无可用文档（需先上传文档；仅统计 `completed` / `success_with_warnings` / `partial_failed` 状态） |
 | E4002 | 502 | LLM 调用失败 |
 | E4003 | 500 | 检索服务异常 |
-| E4004 | 429 | LLM 调用频率超限 |
+| E4004 | 429 | LLM 调用频率超限（默认 60 次/分钟，由 `RATE_LIMIT_CHAT_PER_MINUTE` 控制） |
 | E4005 | 400 | 问题内容为空 |
 | E4006 | 200 | 元问题，无需检索（自动分流，返回固定模板响应） |
+
+> **限流配置**：聊天接口 60 次/分钟（`RATE_LIMIT_CHAT_PER_MINUTE=60`→E4004），上传接口 20 次/分钟（`RATE_LIMIT_UPLOAD_PER_MINUTE=20`→E9004），登录接口 10 次/分钟（`RATE_LIMIT_LOGIN_PER_MINUTE=10`→E5008），全局默认 120 次/分钟（`RATE_LIMIT_DEFAULT_PER_MINUTE=120`→E9004）。`RATE_LIMIT_ENABLED=false` 可全局关闭限流。
 
 #### 认证错误（E5xxx）
 
@@ -560,7 +562,7 @@ kb.status = deleting（拒绝新的上传/检索/reprocess）
 ↓ 返回 202 Accepted
 ↓
 Celery Worker（异步）:
-  1. collection.delete(where={"kb_id": kb_id})  — 清理 ChromaDB 向量
+  1. store.delete(kb_id=kb_id)  — 删除整个 KB collection `kb_{kb_id}`（O(1) drop）
   2. 批量删除磁盘文件（uploads/{kb_id}/ 目录）
   3. DELETE FROM knowledge_bases WHERE id=?  — 物理删除 KB 记录
      └─ FK ON DELETE CASCADE 自动级联删除 documents → chunks
@@ -898,7 +900,7 @@ status = deleting
 ↓ 返回 202 Accepted
 ↓
 Celery Worker（异步）:
-  1. collection.delete(where={"doc_id": doc_id})  — 清理 ChromaDB 向量
+  1. store.delete(kb_id=kb_id, where={"doc_id": doc_id})  — 清理该 KB collection 中的文档向量
   2. 删除磁盘文件（uploads/{kb_id}/{doc_id}/ 目录）
   3. DELETE FROM documents WHERE id=?  — 物理删除文档记录
      └─ FK ON DELETE CASCADE 自动级联删除 chunks

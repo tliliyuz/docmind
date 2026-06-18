@@ -207,9 +207,10 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | 状态 | 任务 | 说明 | 依赖决策 |
 |:---|:---|:---|:---|
-| ✅ | 向量检索器 | `BaseVectorStore.search()` 语义检索，`where={"kb_id": kb_id}` 过滤，返回 top_k=10 | 决策 #15、#21 |
+| ✅ | 向量检索器 | `BaseVectorStore.search()` 语义检索，`kb_id` 路由到 `kb_{kb_id}` collection，返回 top_k=10 | 决策 #15、#21 |
 | ✅ | BM25 关键词检索器 | `rank-bm25` (BM25Okapi) + `jieba.lcut` 分词，每个 KB 独立索引 | 决策 #16 |
-| ✅ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建 | 决策 #16 |
+| ✅ | BM25 索引缓存 | Redis `bm25_tokens:{kb_id}` 存储 `tokenized_corpus` + `doc_ids` + `section_info`（JSON），TTL=300s；文档终态后 Celery 触发重建；查询时未命中则懒加载重建；`BM25_LOCAL_CACHE_MAX_CHUNKS=5000`（大 KB 跳过进程内缓存，ADR-023 重构） | 决策 #16 |
+| ✅ | BM25 超大 KB 保护 | `BM25_MAX_CHUNKS=10000` 硬限制：三层检查点（COUNT 先于 SELECT / Redis skipped+chunk_count 校验 / 进程内 len(doc_ids) 超限清除），超大 KB 完全跳过 BM25 检索仅依赖向量检索，512MB 容器不再 OOM | ADR-023 |
 | ✅ | RRF 多路融合 | `score(d) = Σ 1/(k+rank_i(d))`，k=60，单路为空时仅返回另一路结果 | 决策 #17 |
 | ❌ | NoopReranker | ~~占位实现：保持 RRF 融合排序（相关性降序），截取 top_k=5。~~ 已于 Phase 5.5 被 DashScopeReranker 完全替代，类已删除 | 决策 #18 |
 | ✅ | Prompt 组装 | 检索结果拼接 + 用户问题，软上限预算控制（超预算时跳过当前 chunk 尝试下一个），保持 RRF 相关性排序（相关性降序） | 决策 #19 |
@@ -294,9 +295,9 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 | # | 决策 | 文档位置 |
 |:---|:---|:---|
-| 15 | 向量检索：`BaseVectorStore.search()` + `where={"kb_id": kb_id}` metadata 过滤，top_k=10 | RAG_PIPELINE.md §2.1 |
+| 15 | 向量检索：`BaseVectorStore.search()` + `kb_id` 路由到 Per-KB collection `kb_{kb_id}`，top_k=10 | RAG_PIPELINE.md §2.1 |
 | 16 | BM25 索引生命周期：终态后 Celery 触发重建 + Redis 缓存 `tokenized_corpus` + 查询时懒加载 BM25Okapi 实例化 | RAG_PIPELINE.md §2.2, ARCHITECTURE.md §6.2 |
-| 17 | RRF 融合：k=60，单路为空时仅返回另一路 | ARCHITECTURE.md §6.3 |
+| 17 | RRF 融合：k=60，单路为空时仅返<br/>回另一路 | ARCHITECTURE.md §6.3 |
 | 18 | NoopReranker：保持 RRF 融合排序（相关性降序），截取 top_k=5 | ARCHITECTURE.md §7.3 |
 | 19 | Prompt 预算：软上限 + 相关性优先填充（保持 RRF 排序），超预算时跳过当前 chunk；chunking 阶段固定 chunk_size 不二次裁剪 | RAG_PIPELINE.md §3 |
 | 20 | LLM：DeepSeek API（OpenAI 兼容），流式 `chat/completions`，通过 `extra_body={"thinking":{"type":"enabled/disabled"}}` 控制思考开关；仅开启 thinking 时传 `reasoning_effort="high"` 控制强度。**注意**：DeepSeek 默认 thinking=enabled，关闭时须显式传 disabled 且不传 reasoning_effort | RAG_PIPELINE.md §5 |
@@ -628,6 +629,8 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 |:---|:---|:---|
 | ✅ | 章节号检测正则 | 检测用户提问中的章节号模式（「4.7」「8.2.1」「第四章」「§3.2」），支持 § 符号/中文章节/显式节编号/裸数字章节号四种模式 |
 | ✅ | BM25 boost 逻辑 | 匹配到章节号时，对 `section_title`/`section_path` 匹配的 chunk 做 BM25 分数加权（正分 ×2.0，负分 ÷2.0）；缓存结构扩展 `section_info`，向后兼容旧缓存 |
+| ✅ | BM25 缓存重构（ADR-023） | Redis/进程内缓存剔除 `contents` 字段（仅存 `tokens` + `doc_ids` + `section_info`）；新增 `_fetch_chunk_contents()` 按需批量取原文；`BM25_LOCAL_CACHE_MAX_CHUNKS=5000` 大 KB 跳过进程内缓存；新增 psutil 内存监控日志 |
+| ✅ | BM25_MAX_CHUNKS 硬限制 | `BM25_MAX_CHUNKS=10000`：三层检查点（COUNT 先于 SELECT + Redis skipped/chunk_count 校验 + 进程内超限清除），超大 KB 完全跳过 BM25 检索仅依赖向量检索，512MB 容器不再 OOM |
 
 ### 8.9 🚫 本阶段不做的
 

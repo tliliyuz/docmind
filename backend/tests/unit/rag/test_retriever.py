@@ -81,11 +81,12 @@ class TestVectorRetrieverSearch:
         # 验证 embed_chunks 以 text_type="query" 调用
         mock_embed.assert_called_once_with(["测试问题"], text_type="query")
 
-        # 验证 ChromaDB query 参数
+        # 验证 ChromaDB query 参数（Per-KB collection：传 kb_id 而非 where={"kb_id": ...}）
         mock_store.search.assert_called_once()
         call_kwargs = mock_store.search.call_args[1]
         assert call_kwargs["n_results"] == 10
-        assert call_kwargs["where"] == {"kb_id": 1}
+        assert call_kwargs["kb_id"] == 1
+        assert "where" not in call_kwargs  # Per-KB：不再传 kb_id 过滤
         assert "documents" in call_kwargs["include"]
         assert "distances" in call_kwargs["include"]
 
@@ -164,7 +165,7 @@ class TestVectorRetrieverSearch:
 
         call_kwargs = mock_store.search.call_args[1]
         assert call_kwargs["n_results"] == 5
-        assert call_kwargs["where"] == {"kb_id": 42}
+        assert call_kwargs["kb_id"] == 42
 
     @pytest.mark.asyncio
     async def test_kb_id为int类型(self):
@@ -178,7 +179,7 @@ class TestVectorRetrieverSearch:
             await retriever.search("问题", kb_id=99)
 
         call_kwargs = mock_store.search.call_args[1]
-        kb_id_value = call_kwargs["where"]["kb_id"]
+        kb_id_value = call_kwargs["kb_id"]
         assert isinstance(kb_id_value, int)
         assert kb_id_value == 99
 
