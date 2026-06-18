@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
+    BatchUploadCountExceededException,
     DocumentNameExistsException,
     DocumentNotFoundException,
     DocumentProcessingError,
@@ -30,6 +31,7 @@ from app.services.document_service import (
     ALLOWED_EXTENSIONS,
     _build_document_response,
     _check_kb_ownership,
+    batch_upload_documents,
     validate_file,
     delete_document,
     get_document,
@@ -574,3 +576,59 @@ class TestUploadDocument:
             await upload_document(mock_db, kb_id=1, user_id=1, role="user", file=f)
         # DB 不应被访问
         mock_db.execute.assert_not_called()
+
+
+# ============================================================
+# batch_upload_documents — 批量上传数量限制
+# ============================================================
+
+
+class TestBatchUploadCountLimit:
+    @pytest.mark.asyncio
+    async def test_超过数量限制抛E2014(self, mock_db):
+        """批量上传文件数超过 BATCH_UPLOAD_MAX_COUNT 时立即拒绝"""
+        kb = _make_kb(kb_id=1, user_id=1)
+        mock_db.execute = AsyncMock()
+        mock_db.execute.side_effect = [
+            _make_scalar_one_or_none_result(kb),
+            _make_scalar_result(0),
+        ]
+
+        # 构造超过限制数量的文件列表
+        too_many = [
+            _make_upload_file(f"doc_{i}.pdf", 1000)
+            for i in range(settings.BATCH_UPLOAD_MAX_COUNT + 1)
+        ]
+
+        with pytest.raises(BatchUploadCountExceededException) as exc:
+            await batch_upload_documents(
+                mock_db, kb_id=1, user_id=1, role="user", files=too_many
+            )
+        assert exc.value.error_code == "E2014"
+        assert str(settings.BATCH_UPLOAD_MAX_COUNT) in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_等于上限数量不抛异常(self, mock_db):
+        """恰好等于 BATCH_UPLOAD_MAX_COUNT 时放行（不抛 E2014）"""
+        kb = _make_kb(kb_id=1, user_id=1)
+        mock_db.execute = AsyncMock()
+        # 第一个调用是 _check_kb_ownership 查 KB
+        # 后面每个文件会调用 upload_document，但 upload_document 被 mock
+        mock_db.execute.side_effect = [
+            _make_scalar_one_or_none_result(kb),
+            _make_scalar_result(0),
+        ]
+
+        exact_limit = [
+            _make_upload_file(f"doc_{i}.pdf", 1000)
+            for i in range(settings.BATCH_UPLOAD_MAX_COUNT)
+        ]
+
+        # 不抛 BatchUploadCountExceededException（后续 upload_document 因缺少 mock 会抛异常，但不属于本测试范围）
+        with patch("app.services.document_service.upload_document", new_callable=AsyncMock) as mock_upload:
+            mock_upload.return_value = MagicMock(uuid="test-uuid", filename="test.pdf", status="uploaded")
+            result = await batch_upload_documents(
+                mock_db, kb_id=1, user_id=1, role="user", files=exact_limit
+            )
+            assert len(result.success) == settings.BATCH_UPLOAD_MAX_COUNT
+            assert len(result.failed) == 0

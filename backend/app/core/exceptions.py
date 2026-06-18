@@ -99,6 +99,14 @@ class DocumentNameExistsException(AppException):
         super().__init__("E2013", "文档名称已存在", 409, detail)
 
 
+class BatchUploadCountExceededException(AppException):
+    def __init__(self, actual: int, maximum: int):
+        super().__init__(
+            "E2014", "批量上传文件数超限", 400,
+            f"单次批量上传最多允许 {maximum} 个文件，实际收到 {actual} 个",
+        )
+
+
 # ==================== 会话错误 E3xxx ====================
 
 class ConversationNotFoundException(AppException):

@@ -17,6 +17,9 @@ dist/
 # ChromaDB
 chroma_data/
 
+# 测试样本（性能压测用，体积大，不纳入版本控制）
+knowledge_samples/
+
 # Uploads
 uploads/
 
@@ -35,3 +38,4 @@ Thumbs.db
 /CLAUDE.md
 /backend/knowledge_samples/
 /.workbuddy/
+/scripts/

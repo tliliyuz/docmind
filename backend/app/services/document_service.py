@@ -15,6 +15,7 @@ from app.core.chroma_client import get_vector_store
 from app.core.database import engine
 from app.core.exceptions import (
     AppException,
+    BatchUploadCountExceededException,
     DocumentNameExistsException,
     DocumentNotFoundException,
     DocumentProcessingError,
@@ -291,6 +292,12 @@ async def batch_upload_documents(
 ) -> DocumentBatchUploadResponse:
     """批量上传文档，部分成功返回"""
     await _check_kb_ownership(db, kb_id, user_id, role, owner_only=True)
+
+    # 批量上传数量限制（防止单次请求文件数过多导致 Celery 队列阻塞 + 连接池耗尽）
+    if len(files) > settings.BATCH_UPLOAD_MAX_COUNT:
+        raise BatchUploadCountExceededException(
+            actual=len(files), maximum=settings.BATCH_UPLOAD_MAX_COUNT
+        )
 
     success: list[DocumentBatchUploadItem] = []
     failed: list[DocumentBatchUploadFailedItem] = []

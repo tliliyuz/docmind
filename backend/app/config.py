@@ -128,6 +128,7 @@ class Settings(BaseSettings):
 
     # ── Document ──
     CHUNK_PREVIEW_LENGTH: int = 200
+    BATCH_UPLOAD_MAX_COUNT: int = 50  # 批量上传单次最大文件数
 
     # ── 限流（对齐 ARCHITECTURE.md §13.2）──
     RATE_LIMIT_ENABLED: bool = True          # 限流开关

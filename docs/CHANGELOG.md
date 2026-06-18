@@ -22,6 +22,9 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 ### Changed
 - **限流阈值调整（2026-06-18）**：`RATE_LIMIT_CHAT_PER_MINUTE` 从占位值 30 上调至 60（压测推算：20 用户 × 5 req/min × 0.7 安全系数）
 
+### Security
+- **批量上传数量限制（2026-06-18）**：新增 `BATCH_UPLOAD_MAX_COUNT=50`，`POST /documents/batch-upload` 单次最多上传 50 个文件。此前仅限制单文件 ≤50MB，无数量上限，恶意用户可通过单次请求提交大量文件导致 Celery 队列阻塞和数据库连接池耗尽。新增错误码 `E2014`。
+
 ## [Unreleased] - 2026-06-17
 
 ### Fixed
