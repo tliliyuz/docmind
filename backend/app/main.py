@@ -1,5 +1,6 @@
 """FastAPI 应用入口"""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
