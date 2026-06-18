@@ -80,13 +80,21 @@ class ChromaVectorStore(BaseVectorStore):
         include: list[str],
     ) -> dict:
         try:
-            return await asyncio.to_thread(
+            import time as _time
+            _t0 = _time.perf_counter()
+            result = await asyncio.to_thread(
                 self._collection.query,
                 query_embeddings=query_embeddings,
                 n_results=n_results,
                 where=where,
                 include=include,
             )
+            _elapsed = _time.perf_counter() - _t0
+            logger.info(
+                "CHROMA_QUERY time=%.3fs n_results=%d where=%s",
+                _elapsed, n_results, where,
+            )
+            return result
         except Exception:
             logger.exception("ChromaDB search 失败")
             raise
