@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     CHUNK_PREVIEW_LENGTH: int = 200
 
     # ── 限流（对齐 ARCHITECTURE.md §13.2）──
-    RATE_LIMIT_ENABLED: bool = True          # 限流开关
+    RATE_LIMIT_ENABLED: bool = False          # 限流开关
     RATE_LIMIT_CHAT_PER_MINUTE: int = 30     # 聊天接口（压测后修正，当前占位 30）
     RATE_LIMIT_UPLOAD_PER_MINUTE: int = 20   # 上传接口
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 10    # 登录接口

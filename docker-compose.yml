@@ -16,8 +16,8 @@
 # 快速启动：
 #   cp backend/.env.example backend/.env
 #   # 编辑 backend/.env 填入实际凭证
-#   docker-compose up -d --build
-#   docker-compose exec backend alembic upgrade head
+#   docker compose --env-file backend/.env up -d --build
+#   docker compose exec backend alembic upgrade head
 #
 # 停止：docker-compose down
 # 清理：docker-compose down -v  （⚠️ 删除所有持久化数据）
