@@ -58,38 +58,9 @@ DocMind
 ---
 
 ## 系统架构
+---
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    前端 (Vue 3 + Element Plus)                │
-│  ChatPage │ LoginPage │ AdminPages │ Sidebar │ SSE 解析      │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ HTTP + SSE
-┌──────────────────────────▼───────────────────────────────────┐
-│                    FastAPI 后端 (异步)                         │
-│                                                              │
-│  api/auth   api/kb   api/doc   api/chat   api/admin          │
-│     │          │        │         │          │               │
-│  services/  services/ services/ services/ services/          │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │        KnowledgePipeline（检索 + 上下文构建）          │    │
-│  │  Intent → Rewrite → Retriever → RRF → DashScope     │    │
-│  │  Rerank → 修辞过滤 → Evidence → Prompt → LLM       │    │
-│  │     三层证据审计（后验）/ BaseVectorStore / 共享权限    │    │
-│  └────────────────────────┬─────────────────────────────┘    │
-│                           │                                   │
-│  ┌──────────┬─────────────┼──────────────┬────────────────┐  │
-│  │ ChromaDB │   MySQL     │    Redis     │  File Storage  │  │
-│  │ (向量库)  │  (业务数据)  │  (缓存/队列) │  (文档文件)    │  │
-│  └──────────┴─────────────┴──────────────┴────────────────┘  │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │           Celery Worker（文档异步入库）                  │    │
-│  │  Parser → Chunker → Embedder → ChromaDB + MySQL      │    │
-│  └──────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────┘
-```
+![系统架构](resources/diagrams/系统架构.png)
 
 ---
 
@@ -130,6 +101,13 @@ DocMind
 
 ---
 
+---
+## 核心链路
+
+![核心链路](resources/diagrams/核心链路.png)
+
+---
+
 ## 界面预览
 
 ### 登录
@@ -137,32 +115,32 @@ DocMind 的入口，支持普通用户和管理员角色登录。
 
 | 页面 | 截图 |
 |:---|:---|
-| 登录 | ![登录页](resources/img/login.png) |
+| 登录 | ![登录页](resources/prototypes/login.png) |
 
 ### 知识问答
 核心交互界面：用户用自然语言提问，系统流式返回带来源引用的答案。
 
 | 页面 | 截图 |
 |:---|:---|
-| 问答首页 | ![主页](resources/img/chat_home.png) |
-| 问答对话 | ![聊天页](resources/img/chat_1.png) |
+| 问答首页 | ![主页](resources/prototypes/chat_home.png) |
+| 问答对话 | ![聊天页](resources/prototypes/chat_1.png) |
 
 ### 知识库管理
 管理文档资产：创建知识库、上传文档、查看处理状态和已有分块。
 
 | 页面 | 截图 |
 |:---|:---|
-| 知识库列表 | ![知识库列表](resources/img/kb_list.png) |
-| 知识库详情 | ![知识库详情](resources/img/kb_detail.png) |
+| 知识库列表 | ![知识库列表](resources/prototypes/kb_list.png) |
+| 知识库详情 | ![知识库详情](resources/prototypes/kb_detail.png) |
 
 ### 管理后台
 面向管理员的运维审计面板：系统统计、问答全链路追踪、用户管理。
 
 | 页面 | 截图 |
 |:---|:---|
-| 系统统计 | ![系统统计](resources/img/admin_stus_1.png) |
-| 链路追踪 | ![链路追踪列表](resources/img/admin_trace_list.png) |
-| 用户管理 | ![用户列表](resources/img/admin_user_list.png) |
+| 系统统计 | ![系统统计](resources/prototypes/admin_stus_1.png) |
+| 链路追踪 | ![链路追踪列表](resources/prototypes/admin_trace_list.png) |
+| 用户管理 | ![用户列表](resources/prototypes/admin_user_list.png) |
 
 ---
 
