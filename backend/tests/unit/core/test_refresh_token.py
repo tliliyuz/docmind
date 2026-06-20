@@ -253,7 +253,7 @@ class TestLogout:
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=_make_mock_execute(rt))
 
-        await logout(mock_db, token_str)
+        await logout(mock_db, token_str, user_id=1)
 
         assert rt.revoked_at is not None
 
@@ -270,7 +270,7 @@ class TestLogout:
         mock_db.execute = AsyncMock(return_value=_make_mock_execute(rt))
 
         # 已吊销的 token 再次 logout 不应报错
-        await logout(mock_db, token_str)
+        await logout(mock_db, token_str, user_id=1)
 
 
 class TestChangePassword:

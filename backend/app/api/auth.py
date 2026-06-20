@@ -49,8 +49,12 @@ async def refresh_token(req: RefreshRequest, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/logout", response_model=dict)
-async def logout_user(req: LogoutRequest, db: AsyncSession = Depends(get_db)):
-    await logout(db, req.refresh_token)
+async def logout_user(
+    req: LogoutRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    await logout(db, req.refresh_token, user["user_id"])
     return {"code": "0", "message": "已退出登录", "data": None}
 
 
