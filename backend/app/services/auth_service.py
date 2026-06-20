@@ -172,10 +172,11 @@ async def refresh(db: AsyncSession, refresh_token_str: str) -> TokenResponse:
     )
 
 
-async def logout(db: AsyncSession, refresh_token_str: str) -> None:
+async def logout(db: AsyncSession, refresh_token_str: str, user_id: int) -> None:
     """吊销指定 refresh_token。
 
     对齐 API.md §2 POST /api/auth/logout。
+    增加 user_id 校验：仅允许吊销属于当前用户的 refresh_token。
     """
     try:
         payload = decode_refresh_token(refresh_token_str)
@@ -184,7 +185,10 @@ async def logout(db: AsyncSession, refresh_token_str: str) -> None:
 
     token_hash = hash_token(refresh_token_str)
     result = await db.execute(
-        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.user_id == user_id,
+        )
     )
     rt = result.scalar_one_or_none()
 

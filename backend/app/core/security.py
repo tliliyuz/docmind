@@ -6,6 +6,7 @@
 """
 
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -49,16 +50,18 @@ def decode_access_token(token: str) -> dict:
 
 
 def create_refresh_token(user_id: int) -> str:
-    """签发 refresh_token（JWT，payload 含 sub + type='refresh' + exp 7天）。
+    """签发 refresh_token（JWT，payload 含 sub + type='refresh' + jti + exp 7天）。
 
     对齐 ARCHITECTURE.md §9.2.2：refresh_token 使用独立 JWT 签发，
     payload 中 type='refresh' 与 access_token 区分，防止混用。
+    jti（JWT ID）确保每次生成的 token 唯一，避免同一秒内 token 碰撞。
     """
     secret = settings.REFRESH_TOKEN_SECRET_KEY or settings.JWT_SECRET_KEY
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(user_id),
         "type": "refresh",
+        "jti": uuid.uuid4().hex,
         "exp": expire,
     }
     return jwt.encode(payload, secret, algorithm=settings.JWT_ALGORITHM)

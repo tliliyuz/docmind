@@ -20,7 +20,23 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
   - **测试**：新增 6 个测试（章节字段透传 ×2、旧 chunk 兼容 ×1、schema 序列化 ×2、section 样式展示 ×0 前端纯 UI）
   - **验证**：1222/1222 后端测试通过
 
-## [Unreleased] - 2026-06-18
+## [Unreleased] - 2026-06-21
+
+### Fixed
+- **S-02: get_current_user() 双重 DB session 问题（2026-06-21）**：
+  - **问题**：`get_current_user()` 使用独立的 `async_session_factory()` 打开额外 session，导致每个认证请求同时持有两个 DB session。同时 User 模型的 `knowledge_bases` / `conversations` relationship 默认 `lazy="select"` 存在隐式加载风险
+  - **源码**：
+    - `dependencies.py`：`get_current_user()` 改为 `Depends(get_db)` 复用路由 session（FastAPI 依赖缓存保证同一请求共享 session）
+    - `models/user.py`：`knowledge_bases` / `conversations` relationship 显式设置 `lazy="raise"`，禁止隐式加载，需显式 `selectinload()` / `joinedload()`
+- **S-03: logout() 未校验 access_token 与 refresh_token 用户一致性（2026-06-21）**：
+  - **问题**：`POST /api/auth/logout` 仅根据请求体中的 `refresh_token` 执行吊销，未检查 access_token 的 `user_id` 是否与 refresh_token 的 `user_id` 匹配。持有有效 access_token 的用户 A 可吊销用户 B 的 refresh_token
+  - **源码**：
+    - `api/auth.py`：logout 端点新增 `Depends(get_current_user)`，将 `user["user_id"]` 传入 service
+    - `services/auth_service.py`：`logout()` 新增 `user_id` 参数，WHERE 条件增加 `RefreshToken.user_id == user_id`
+    - `tests/unit/core/test_refresh_token.py`：logout 测试更新为传入 `user_id=1`
+- **N-01: RequestIDMiddleware 统一为纯 ASGI 实现（2026-06-21）**：
+  - **问题**：`RequestIDMiddleware` 使用 `BaseHTTPMiddleware`（存在流式响应和内存泄漏风险），与 `AuthMiddleware`、`RateLimitMiddleware`（纯 ASGI）不一致
+  - **源码**：`middleware/request_id_middleware.py` 重写为纯 ASGI 类（`__init__(self, app)` + `__call__(self, scope, receive, send)`），响应头注入通过包装 `send` 实现
 
 ### Changed
 - **ChromaDB Per-KB Collection 迁移（2026-06-18）**：
