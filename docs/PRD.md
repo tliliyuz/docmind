@@ -16,22 +16,22 @@
 ### 1.1 原型设计
 本项目用 Python 生态重新实现核心设计。
 主要原型图：
-![登录页](../resources/img/login.png)
-![注册页](../resources/img/register.png)
-![主页](../resources/img/chat_home.png)
-![聊天页1](../resources/img/chat_1.png)
-![聊天页2](../resources/img/chat_2.png)
-![知识库列表](../resources/img/kb_list.png)
-![知识库详情](../resources/img/kb_detail.png)
-![添加知识库](../resources/img/kb_add.png)
-![系统统计](../resources/img/admin_stus_1.png)
-![系统统计2](../resources/img/admin_stus_2.png)
-![链路追踪列表](../resources/img/admin_trace_list.png)
-![链路追踪详情](../resources/img/admin_trace_detail.png)
-![知识库管理](../resources/img/admin_kb_list.png)
-![文档管理](../resources/img/admin_doc_list.png)
-![用户列表](../resources/img/admin_user_list.png)
-![用户详情](../resources/img/admin_user_detail.png)
+![登录页](../resources/prototypes/login.png)
+![注册页](../resources/prototypes/register.png)
+![主页](../resources/prototypes/chat_home.png)
+![聊天页1](../resources/prototypes/chat_1.png)
+![聊天页2](../resources/prototypes/chat_2.png)
+![知识库列表](../resources/prototypes/kb_list.png)
+![知识库详情](../resources/prototypes/kb_detail.png)
+![添加知识库](../resources/prototypes/kb_add.png)
+![系统统计](../resources/prototypes/admin_stus_1.png)
+![系统统计2](../resources/prototypes/admin_stus_2.png)
+![链路追踪列表](../resources/prototypes/admin_trace_list.png)
+![链路追踪详情](../resources/prototypes/admin_trace_detail.png)
+![知识库管理](../resources/prototypes/admin_kb_list.png)
+![文档管理](../resources/prototypes/admin_doc_list.png)
+![用户列表](../resources/prototypes/admin_user_list.png)
+![用户详情](../resources/prototypes/admin_user_detail.png)
 
 
 ---

@@ -55,7 +55,7 @@ class RewriteResult:
     metadata: dict
 
 # 引号字符集（用于剥离 LLM 可能输出的引号包裹，含 ASCII 引号 + 中文双/单引号）
-_QUOTE_CHARS = "\"'\"“”‘’"
+_QUOTE_CHARS = "\"'“”‘’"
 
 
 def needs_rewrite(question: str, history: list[dict[str, str]] | None) -> bool:

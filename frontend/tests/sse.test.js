@@ -2,6 +2,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { parseSSEEvent, createSSEStream } from '@/utils/sse'
 
+// Mock @/api 的共享刷新函数，隔离 SSE 测试不依赖真实 axios 实例
+const apiMocks = vi.hoisted(() => ({
+  refreshToken: vi.fn(),
+  clearAndRedirect: vi.fn(),
+}))
+vi.mock('@/api', () => ({
+  refreshToken: apiMocks.refreshToken,
+  clearAndRedirect: apiMocks.clearAndRedirect,
+  default: {},
+}))
+
 describe('parseSSEEvent', () => {
   // ==================== 基本事件解析 ====================
 
@@ -374,5 +385,131 @@ describe('createSSEStream', () => {
 
     expect(stream).toHaveProperty('abort')
     expect(() => stream.abort()).not.toThrow()
+  })
+})
+
+describe('createSSEStream — 401 Token 刷新', () => {
+  let mockFetch
+  let mockReadableStream
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.refreshToken.mockReset()
+    apiMocks.clearAndRedirect.mockReset()
+    localStorage.clear()
+
+    mockReadableStream = { getReader: vi.fn() }
+    mockFetch = vi.fn()
+    global.fetch = mockFetch
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** 构造一次性 SSE 响应（finish 事件） */
+  function mockSSuccessResponse() {
+    const encoder = new TextEncoder()
+    const data = encoder.encode('event: finish\ndata: {"message_id":1}\n\n')
+    const reader = {
+      read: vi.fn(() => Promise.resolve({ done: false, value: data })),
+    }
+    // 第二次 read 返回结束
+    reader.read.mockReturnValueOnce(Promise.resolve({ done: false, value: data }))
+      .mockReturnValueOnce(Promise.resolve({ done: true }))
+    mockReadableStream.getReader.mockReturnValue(reader)
+    return {
+      ok: true,
+      status: 200,
+      body: mockReadableStream,
+      json: vi.fn().mockResolvedValue({ code: 'HTTP_200' }),
+    }
+  }
+
+  it('401 + E5003 → 调用共享 refreshToken 刷新并用新 token 重试成功', async () => {
+    apiMocks.refreshToken.mockResolvedValue('new-access-token')
+
+    // 第一次 fetch 返回 401 E5003，第二次（重试）返回正常 SSE 流
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      body: null,
+      json: vi.fn().mockResolvedValue({ code: 'E5003', message: 'Token 过期' }),
+    }).mockResolvedValueOnce(mockSSuccessResponse())
+
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
+    const onError = vi.fn()
+
+    createSSEStream('/api/chat', {
+      body: { kb_id: 1, question: '测试' },
+      onEvent,
+      onError,
+      onDone,
+    })
+
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalled())
+
+    // 共享 refreshToken 被调用一次（而非旧的本地 refreshSSEToken）
+    expect(apiMocks.refreshToken).toHaveBeenCalledTimes(1)
+    // 重试请求携带新 token
+    const retryCall = mockFetch.mock.calls[1][1]
+    expect(retryCall.headers.Authorization).toBe('Bearer new-access-token')
+    // 不应触发清除/跳转
+    expect(apiMocks.clearAndRedirect).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('401 + E5003 且 refreshToken 抛错 → 调用 clearAndRedirect 并报错', async () => {
+    apiMocks.refreshToken.mockRejectedValue(new Error('刷新失败'))
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      body: null,
+      json: vi.fn().mockResolvedValue({ code: 'E5003', message: 'Token 过期' }),
+    })
+
+    const onError = vi.fn()
+    const onDone = vi.fn()
+
+    createSSEStream('/api/chat', {
+      body: { kb_id: 1, question: '测试' },
+      onEvent: vi.fn(),
+      onError,
+      onDone,
+    })
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+
+    expect(apiMocks.refreshToken).toHaveBeenCalledTimes(1)
+    expect(apiMocks.clearAndRedirect).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0].message).toBe('认证已过期，请重新登录')
+    // 不应继续重试 fetch
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('401 + 非 E5003（如 E5004）→ 直接 clearAndRedirect 不刷新', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      body: null,
+      json: vi.fn().mockResolvedValue({ code: 'E5004', message: 'Token 无效' }),
+    })
+
+    const onError = vi.fn()
+
+    createSSEStream('/api/chat', {
+      body: { kb_id: 1, question: '测试' },
+      onEvent: vi.fn(),
+      onError,
+      onDone: vi.fn(),
+    })
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+
+    expect(apiMocks.refreshToken).not.toHaveBeenCalled()
+    expect(apiMocks.clearAndRedirect).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0].message).toBe('Token 无效')
   })
 })

@@ -9,6 +9,37 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ---
 
+## [Unreleased] - 2026-06-19
+
+### Fixed
+- **`query_rewriter.py` 引号字符集转义错误修复（2026-06-19）**：
+  - **问题**：`_QUOTE_CHARS = "\"'\""""''"` 被 Python 解析为 **7 个字符**（`0x22 0x27 0x22 0x201c 0x201d 0x2018 0x2019`），多出一个 ASCII 双引号 `"`。根因：字符串字面量 `"\"'\""` 末尾多写了一个 `\"`，使首段 token 产出 3 字符而非预期的 2 字符
+  - **影响**：`strip(_QUOTE_CHARS)` 会多剥离一个边界 ASCII 双引号。`strip()` 幂等故实际行为偏差极小，但属代码正确性缺陷
+  - **修复**：改为 `_QUOTE_CHARS = "\"'“”‘’"`，求值结果为预期的 6 字符（ASCII `"` `'` + 中文 `“` `”` ‘` ’`），用 `ast.literal_eval` 校验码点通过
+  - **验证**：`tests/unit/rag/test_query_rewriter.py` 40 用例全部通过
+
+- **前端 SSE 路径 Token 刷新未同步 Pinia store 修复（2026-06-19）**：
+  - **问题**：`utils/sse.js` 内的 `refreshSSEToken()` 与 `api/index.js` 的 `doRefresh()` 逻辑重复，且 SSE 版本仅写 localStorage **未同步 Pinia auth store**，导致 store 持有已吊销的旧 refresh_token，后续 `store.refresh()` 失败踢用户下线
+  - **修复**：`api/index.js` 将 `doRefresh` 重命名为 `refreshToken` 并导出（连同 `clearAndRedirect`）；`sse.js` 移除本地 `refreshSSEToken`，改为复用共享 `refreshToken` / `clearAndRedirect`，两处内联清 token+跳转逻辑也统一收敛
+  - **测试**：`tests/sse.test.js` 新增 3 个回归用例（401+E5003 刷新重试成功 / 刷新失败清 token / 非 E5003 直接清 token 不刷新）；前端 513 测试全通过
+
+### Changed
+- **chunks 表新增 `(doc_id, chunk_index)` 复合索引（2026-06-19）**：
+  - **问题**：`rag/bm25.py` `_fetch_chunk_contents` 使用 `tuple_(Chunk.doc_id, Chunk.chunk_index).in_(pairs)` 批量取 chunk 原文，chunks 表仅有单列 `idx_doc_id`，复合条件查询下 MySQL 仅能按 `doc_id` 过滤后回表比对 `chunk_index`，大 KB 场景退化为按 doc 扫描
+  - **方案**：新增复合索引 `idx_chunks_doc_id_chunk_index (doc_id, chunk_index)`，直接定位 `(doc_id, chunk_index)` 行
+  - **源码**：`models/chunk.py` `__table_args__` 增加复合索引；新增迁移 `alembic/versions/f5a6b7c8d9e0_chunks新增doc_id_chunk_index复合索引.py`（幂等 `_index_exists` 守卫，down_revision=`3bc9273cea34`，需执行 `alembic upgrade head`）；`DATABASE.md` §2.4 建表 DDL 与索引表同步更新
+  - **验证**：迁移链 head=`f5a6b7c8d9e0` 校验通过；后端 1240 测试全通过
+
+- **`vector_store.py` 标准库导入上提（2026-06-19）**：
+  - **问题**：`ChromaVectorStore.search()` 内部局部导入 `import threading as _threading` / `import time as _time`，违反 CLAUDE.md「标准库顶部导入」禁令（非循环依赖场景）
+  - **修复**：`threading` / `time` 上提到文件顶部，去除 `_threading` / `_time` 别名前缀
+  - **验证**：`tests/unit/rag/test_vector_store.py` 15 用例全部通过
+
+### Removed
+- **删除 `nul` 伪文件（2026-06-19）**：根目录 `nul`（`dir` 命令输出误重定向产物）与 `frontend/nul`（vitest 错误日志误重定向产物）为 shell 重定向到 Windows 保留名 `nul` 产生的垃圾文件，予以删除
+
+---
+
 ### Fixed
 - **章节元数据增强功能断链修复（2026-06-18）**：
   - **问题**：`_format_chunk_reference()` 虽已实现章节信息格式化，但 `ChatSourceChunk` schema 和 `build_sources()` 未传递 `section_title`/`section_path` 到前端，且 `SYSTEM_PROMPT_TEMPLATE` 未要求 LLM 引用时附带章节信息，导致前端 sources 面板和 LLM 回答中均无法看到章节信息

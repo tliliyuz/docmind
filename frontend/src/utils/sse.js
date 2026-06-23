@@ -4,7 +4,12 @@
  * 基于 fetch + ReadableStream 实现 SSE 读取（支持 POST 请求体）。
  * 事件类型：meta / thinking / message / sources / finish / error
  * 心跳帧（`: ping\n\n`）自动忽略。
+ *
+ * Token 刷新复用 @/api 的 refreshToken / clearAndRedirect，确保 SSE 路径
+ * 与 Axios 路径行为一致（刷新后同步 Pinia store，避免 store 持过期 token）。
  */
+
+import { refreshToken, clearAndRedirect } from '@/api'
 
 /**
  * 解析单个 SSE 原始文本块为结构化事件
@@ -39,26 +44,6 @@ export function parseSSEEvent(raw) {
   }
 
   return { event, data }
-}
-
-/** 执行 Token 刷新（SSE 专用，与 Axios 拦截器共享刷新逻辑） */
-async function refreshSSEToken() {
-  const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) throw new Error('无 refresh_token')
-
-  const res = await fetch('/api/auth/refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
-
-  if (!res.ok) throw new Error('Token 刷新失败')
-
-  const json = await res.json()
-  const { access_token, refresh_token: newRefreshToken } = json.data
-  localStorage.setItem('access_token', access_token)
-  localStorage.setItem('refresh_token', newRefreshToken)
-  return access_token
 }
 
 /**
@@ -100,7 +85,7 @@ export function createSSEStream(url, options) {
 
         if (errorData.code === 'E5003') {
           try {
-            const newToken = await refreshSSEToken()
+            const newToken = await refreshToken()
             // 重试请求
             response = await fetch(url, {
               method: 'POST',
@@ -113,23 +98,13 @@ export function createSSEStream(url, options) {
             })
           } catch (refreshErr) {
             // 刷新失败 → 清除 token → 跳转登录
-            localStorage.removeItem('access_token')
-            localStorage.removeItem('refresh_token')
-            localStorage.removeItem('user')
-            if (window.location.pathname !== '/login') {
-              window.location.href = '/login'
-            }
+            clearAndRedirect()
             onError?.(new Error('认证已过期，请重新登录'))
             return
           }
         } else {
           // 其他 401 错误
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          localStorage.removeItem('user')
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login'
-          }
+          clearAndRedirect()
           onError?.(new Error(errorData.message || '认证失败'))
           return
         }
