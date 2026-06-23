@@ -128,6 +128,8 @@ class TraceRecorder:
         fusion_ms: float | None = None,
         fusion_count: int = 0,
         fusion_method: str | None = None,
+        coarse_ms: float | None = None,
+        coarse_count: int = 0,
         match_sentence_ms: float | None = None,
         total_ms: float | None = None,
         t_span_start: float | None = None,
@@ -138,10 +140,12 @@ class TraceRecorder:
         - vector: duration_ms, result_count
         - bm25: duration_ms, redis_cache, tokenize_ms, score_ms, candidate_count, result_count
         - fusion: duration_ms, method, result_count
+        - coarse_rank: duration_ms, result_count（ADR-024 粗排）
         - match_sentence: duration_ms
         """
         retrieve_total = total_ms or (
-            (vector_ms or 0) + (bm25_ms or 0) + (fusion_ms or 0) + (match_sentence_ms or 0)
+            (vector_ms or 0) + (bm25_ms or 0) + (fusion_ms or 0)
+            + (coarse_ms or 0) + (match_sentence_ms or 0)
         )
         self._retrieve_data = {
             "span_name": "retrieve",
@@ -160,6 +164,10 @@ class TraceRecorder:
                 "duration_ms": int(fusion_ms) if fusion_ms is not None else 0,
                 "method": fusion_method,
                 "result_count": fusion_count,
+            },
+            "coarse_rank": {
+                "duration_ms": int(coarse_ms) if coarse_ms is not None else 0,
+                "result_count": coarse_count,
             },
             "match_sentence": {
                 "duration_ms": int(match_sentence_ms) if match_sentence_ms is not None else 0,

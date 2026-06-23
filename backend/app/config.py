@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     # ── RRF ──
     RRF_K: int = 60
 
+    # ── CoarseRank（ADR-024）──
+    COARSE_RANK_ENABLED: bool = True       # 粗排开关
+    COARSE_RANK_THRESHOLD: float = 0.05     # 余弦相似度最小阈值
+    COARSE_TOP_K: int = 10                 # 粗排后最大候选数
+
     # ── Reranker ──
     RERANK_TOP_K: int = 5
 

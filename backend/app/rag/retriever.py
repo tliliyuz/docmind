@@ -28,6 +28,9 @@ class RetrievalResult:
 
     section_title / section_path 从 ChromaDB metadata 回填（§8.7），
     用于 Prompt 章节信息展示 + 章节号 BM25 boost 匹配。
+
+    embedding 从向量检索阶段透传，用于粗排（ADR-024）余弦相似度计算。
+    BM25 检索结果的 embedding 为 None，粗排时分配中性分数不过滤。
     """
     doc_id: int
     chunk_index: int
@@ -39,6 +42,7 @@ class RetrievalResult:
     section_path: str | None = None
     matched_sentence: str | None = None
     matched_sentence_score: float | None = None
+    embedding: list[float] | None = None
 
 
 @dataclass
@@ -48,6 +52,7 @@ class RetrievalOutput:
     total: int = 0
     stats: dict = field(default_factory=dict)  # 检索性能统计（bm25 等）
     fusion_method: str | None = None  # 融合算法名称（如 "rrf"），由融合函数设置
+    query_embedding: list[float] | None = None  # 查询向量（ADR-024 粗排复用）
 
 
 class VectorRetriever:
@@ -97,19 +102,22 @@ class VectorRetriever:
         query_vector = embed_result.embeddings[0]
 
         # 2. 向量检索（Per-KB collection：kb_id 路由到专属 collection，无需 where 过滤）
+        # include "embeddings" 用于 ADR-024 粗排层复用 chunk embedding
         try:
             chroma_results = await self._vector_store.search(
                 query_embeddings=[query_vector],
                 n_results=top_k,
                 kb_id=kb_id,
-                include=["documents", "distances", "metadatas"],
+                include=["documents", "distances", "metadatas", "embeddings"],
             )
         except Exception as e:
             logger.exception("向量检索异常: kb_id=%d", kb_id)
             raise RetrievalServiceException(f"向量存储查询失败: {e}") from e
 
-        # 3. 解析向量存储返回结果
-        return self._parse_results(chroma_results)
+        # 3. 解析向量存储返回结果（含 chunk embedding 透传 + query_embedding）
+        output = self._parse_results(chroma_results)
+        output.query_embedding = query_vector
+        return output
 
     def _parse_results(self, chroma_results: dict) -> RetrievalOutput:
         """将 ChromaDB 原始返回解析为标准化 RetrievalResult 列表。
@@ -119,6 +127,7 @@ class VectorRetriever:
           documents: [[doc1, doc2, ...]]
           distances: [[dist1, dist2, ...]]   # cosine: dist = 1 - cosine_similarity
           metadatas: [[meta1, meta2, ...]]
+          embeddings: [[emb1, emb2, ...]]    # 可选，ADR-024 粗排复用
 
         空结果时 ids[0] 为空列表。
         """
@@ -126,6 +135,7 @@ class VectorRetriever:
         documents = chroma_results.get("documents", [[]])
         distances = chroma_results.get("distances", [[]])
         metadatas = chroma_results.get("metadatas", [[]])
+        embeddings = chroma_results.get("embeddings", [[]])
 
         # 取第一条 query 的结果（单 query 场景）
         if not ids or not ids[0]:
@@ -136,6 +146,7 @@ class VectorRetriever:
         result_docs = documents[0] if documents and documents[0] else [None] * len(result_ids)
         result_dists = distances[0] if distances and distances[0] else [0.0] * len(result_ids)
         result_metas = metadatas[0] if metadatas and metadatas[0] else [{}] * len(result_ids)
+        result_embeddings = embeddings[0] if embeddings and len(embeddings[0]) > 0 else [None] * len(result_ids)
 
         results: list[RetrievalResult] = []
         for i, chunk_id in enumerate(result_ids):
@@ -153,6 +164,9 @@ class VectorRetriever:
             section_path = meta.get("section_path") or None
             page = int(meta.get("page", 0)) if meta.get("page") is not None else None
 
+            # 提取 chunk embedding（ADR-024 粗排层复用）
+            chunk_embedding = result_embeddings[i] if result_embeddings[i] is not None else None
+
             results.append(RetrievalResult(
                 doc_id=doc_id,
                 chunk_index=chunk_index,
@@ -161,6 +175,7 @@ class VectorRetriever:
                 page=page,
                 section_title=section_title,
                 section_path=section_path,
+                embedding=chunk_embedding,
             ))
 
         logger.info("向量检索完成: %d 条结果", len(results))

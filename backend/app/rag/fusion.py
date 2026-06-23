@@ -97,7 +97,7 @@ def _do_rrf_fusion(
     results: list[RetrievalResult] = []
     for chunk_key, data in sorted_chunks:
         result = data["result"]
-        # 创建新的 RetrievalResult，使用 RRF 分数（保留 §8.7 章节元数据）
+        # 创建新的 RetrievalResult，使用 RRF 分数（保留 §8.7 章节元数据 + ADR-024 embedding）
         fused_result = RetrievalResult(
             doc_id=result.doc_id,
             chunk_index=result.chunk_index,
@@ -107,6 +107,7 @@ def _do_rrf_fusion(
             doc_name=result.doc_name,
             section_title=result.section_title,
             section_path=result.section_path,
+            embedding=result.embedding,
         )
         results.append(fused_result)
 

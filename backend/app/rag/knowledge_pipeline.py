@@ -1,4 +1,4 @@
-"""知识管线 — 查询重写 → 双路检索 → RRF 融合 → Rerank → 句子匹配 → Prompt 构建
+"""知识管线 — 查询重写 → 双路检索 → RRF 融合 → 粗排 → Rerank → 句子匹配 → Prompt 构建
 
 从 chat_service.py 解耦提取，专注检索+上下文构建管线。
 对齐 ARCHITECTURE.md §5.1 / ROADMAP.md §6.1。
@@ -16,9 +16,11 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import KnowledgeBaseEmptyException, RetrievalServiceException
 from app.models.document import Document
 from app.rag.bm25 import BM25Retriever
+from app.rag.coarse_ranker import CoarseRanker
 from app.rag.evidence_reviewer import EvidenceReviewResult, review_evidence
 from app.rag.fusion import rrf_fusion
 from app.rag.prompt_builder import PromptBuildResult, build_prompt
@@ -47,7 +49,7 @@ class KnowledgePipelineResult:
 
 
 class KnowledgePipeline:
-    """知识管线：查询重写 → 双路检索 → RRF 融合 → Rerank → 句子匹配 → Prompt 构建
+    """知识管线：查询重写 → 双路检索 → RRF 融合 → 粗排 → Rerank → 句子匹配 → Prompt 构建
 
     不包含意图分类（调用方在 chat_service 中已处理）、权限检查、会话管理。
     """
@@ -57,9 +59,11 @@ class KnowledgePipeline:
         vector_retriever: VectorRetriever | None = None,
         bm25_retriever_factory: Callable[[], Awaitable[BM25Retriever]] | None = None,
         reranker: BaseReranker | None = None,
+        coarse_ranker: CoarseRanker | None = None,
     ):
         self._vector_retriever = vector_retriever or VectorRetriever()
         self._reranker = reranker or DashScopeReranker()
+        self._coarse_ranker = coarse_ranker or CoarseRanker()
         self._bm25_retriever: BM25Retriever | None = None
         self._bm25_factory = bm25_retriever_factory
 
@@ -83,7 +87,7 @@ class KnowledgePipeline:
 
         1. 查询重写（多轮对话上下文触发）
         2. 检查 KB 是否有可检索文档
-        3. 向量+BM25 双路检索 → RRF 融合 → Rerank
+        3. 向量+BM25 双路检索 → RRF 融合 → CoarseRank 粗排 → Rerank
         4. 句级 Evidence 定位 → Prompt 构建
         5. 查询涉及的文档名映射
         6. Trace 记录
@@ -141,7 +145,7 @@ class KnowledgePipeline:
         if doc_count == 0:
             raise KnowledgeBaseEmptyException(kb_id)
 
-        # 3. 多路检索 → RRF 融合 → Rerank → 句子匹配 → Prompt 构建
+        # 3. 多路检索 → RRF 融合 → CoarseRank 粗排 → Rerank → 句子匹配 → Prompt 构建
         try:
             t_retrieve_start = t_rewrite
             vector_output = await self._vector_retriever.search(question, kb_id)
@@ -151,7 +155,28 @@ class KnowledgePipeline:
             t_bm25 = time.perf_counter()
             fused_output = rrf_fusion(vector_output, bm25_output)
             t_fusion = time.perf_counter()
-            reranked_output = await self._reranker.rerank(question, fused_output)
+
+            # ADR-024: 粗排（向量相似度过滤低分 chunk + top_k 截断）
+            # 复用向量检索阶段已生成的 query embedding，零额外 API 成本
+            query_embedding = vector_output.query_embedding
+            if query_embedding is not None:
+                coarse_output = self._coarse_ranker.rank(query_embedding, fused_output)
+            else:
+                coarse_output = fused_output
+                logger.warning("query_embedding 缺失，跳过粗排")
+            t_coarse = time.perf_counter()
+
+            # 下限保护：粗排后候选不足 RERANK_TOP_K 时跳过精排
+            coarse_input_count = len(fused_output.results)
+            coarse_output_count = len(coarse_output.results)
+            if coarse_output_count < settings.RERANK_TOP_K:
+                reranked_output = coarse_output
+                logger.info(
+                    "CoarseRank 后候选不足 RERANK_TOP_K（%d < %d），跳过精排",
+                    coarse_output_count, settings.RERANK_TOP_K,
+                )
+            else:
+                reranked_output = await self._reranker.rerank(question, coarse_output)
             t_rerank = time.perf_counter()
             # 句级修辞过滤：在 sentence_matcher 前过滤引用性句子，
             # 解决 Chunk 内部混合陈述句和引用句的污染问题
@@ -213,16 +238,18 @@ class KnowledgePipeline:
                         fusion_ms=(t_fusion - t_bm25) * 1000,
                         fusion_count=len(fused_output.results),
                         fusion_method=fused_output.fusion_method,
+                        coarse_ms=(t_coarse - t_fusion) * 1000,
+                        coarse_count=coarse_output_count,
                         match_sentence_ms=(t_match_done - t_rerank) * 1000,
                         total_ms=(t_retrieval_done - t_retrieve_start) * 1000,
                         t_span_start=t_retrieve_start,
                     )
                     recorder.record_rerank(
-                        input_count=len(fused_output.results),
+                        input_count=coarse_output_count,
                         output_count=len(reranked_output.results),
-                        duration_ms=(t_rerank - t_fusion) * 1000,
+                        duration_ms=(t_rerank - t_coarse) * 1000,
                         reranker=self._reranker.name,
-                        t_span_start=t_fusion,
+                        t_span_start=t_coarse,
                     )
                 return KnowledgePipelineResult(
                     reranked_output=reranked_output,
@@ -251,16 +278,18 @@ class KnowledgePipeline:
                     fusion_ms=(t_fusion - t_bm25) * 1000,
                     fusion_count=len(fused_output.results),
                     fusion_method=fused_output.fusion_method,
+                    coarse_ms=(t_coarse - t_fusion) * 1000,
+                    coarse_count=coarse_output_count,
                     match_sentence_ms=(t_match_done - t_rerank) * 1000,
                     total_ms=(t_retrieval_done - t_retrieve_start) * 1000,
                     t_span_start=t_retrieve_start,
                 )
                 recorder.record_rerank(
-                    input_count=len(fused_output.results),
+                    input_count=coarse_output_count,
                     output_count=len(reranked_output.results),
-                    duration_ms=(t_rerank - t_fusion) * 1000,
+                    duration_ms=(t_rerank - t_coarse) * 1000,
                     reranker=self._reranker.name,
-                    t_span_start=t_fusion,
+                    t_span_start=t_coarse,
                 )
         except Exception as e:
             logger.exception("检索链路异常")
@@ -276,7 +305,7 @@ class KnowledgePipeline:
             doc_map = {row.id: row.filename for row in doc_rows.all()}
 
         logger.info(
-            "KNOWLEDGE_PIPELINE 重写=%.3fs 向量=%.3fs BM25=%.3fs 融合+Rerank=%.3fs 总计=%.3fs",
+            "KNOWLEDGE_PIPELINE 重写=%.3fs 向量=%.3fs BM25=%.3fs 融合+粗排+Rerank=%.3fs 总计=%.3fs",
             t_rewrite - t_rewrite_start,
             t_vector - t_rewrite,
             t_bm25 - t_vector,
