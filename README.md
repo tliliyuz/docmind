@@ -44,9 +44,9 @@
 
 **文档入库**：支持 PDF / DOCX / Markdown / TXT 四种格式上传，Celery 异步流水线完成解析、智能分块（RecursiveCharacterTextSplitter）、DashScope Embedding 向量化、ChromaDB 入库，前端实时展示入库进度和状态。
 
-**多路检索与融合**：向量语义检索（ChromaDB）与 BM25 关键词检索（rank-bm25 + jieba 中文分词）双路并行，通过 RRF（Reciprocal Rank Fusion）算法融合排序后，再由 DashScope Rerank（qwen3-rerank）做语义精排，兼顾语义理解和精确关键词匹配。BM25 支持章节号检测与加权，用户提问包含章节号时自动提升对应章节的检索权重。离线评估 Recall@5 达到 1.000。
+**多路检索与融合**：向量语义检索（ChromaDB）与 BM25 关键词检索（rank-bm25 + jieba 中文分词）双路并行，通过 RRF（Reciprocal Rank Fusion）算法融合排序后，经向量相似度粗排过滤低分候选，再由 DashScope Rerank（qwen3-rerank）做语义精排，兼顾语义理解和精确关键词匹配。BM25 支持章节号检测与加权，用户提问包含章节号时自动提升对应章节的检索权重。离线评估 Recall@5 达到 1.000。
 
-**智能问答链路**：意图识别（知识查询 / 闲聊 / 元问题三分类，规则快速通道 + Flash 模型兜底）→ 问题重写（多轮上下文补全）→ 多路检索 → RRF 融合 → DashScope Rerank 语义精排 → 句级修辞过滤 → Evidence Highlight（句级 BM25 定位证据句）→ Prompt 组装 → DeepSeek LLM 流式生成 → 三层证据审计 → SSE 实时推送答案（含置信度评分）。检索与上下文构建由独立的 KnowledgePipeline 管线封装，与 ChatService 职责分离。
+**智能问答链路**：意图识别（知识查询 / 闲聊 / 元问题三分类，规则快速通道 + Flash 模型兜底）→ 问题重写（多轮上下文补全）→ 多路检索 → RRF 融合 → 粗排（向量相似度过滤 + top_k 截断，ADR-024）→ DashScope Rerank 语义精排 → 句级修辞过滤 → Evidence Highlight（句级 BM25 定位证据句）→ Prompt 组装 → DeepSeek LLM 流式生成 → 三层证据审计 → SSE 实时推送答案（含置信度评分）。检索与上下文构建由独立的 KnowledgePipeline 管线封装，与 ChatService 职责分离。
 
 **多轮对话与记忆**：支持完整的多轮对话上下文管理，Token 预算四池子分拆独立截断（History / Retrieval / System / User），滑动窗口保留最近对话，问题重写自动消解代词指代和省略主语。
 
@@ -56,7 +56,7 @@
 
 **可溯源引用**：每个答案附带引用来源卡片，展示文档名称、页码、证据句高亮，用户可以一键展开查看原始分块内容。
 
-**知识库质量治理**：句级修辞过滤自动剔除引用性文本（示例、说明等），三层证据审计（引用存在性 → 来源一致性 → 句级证据回溯）对答案进行后验质量检查，输出 high / medium / low 三级置信度，前端实时展示置信度警告。DashScope Rerank（qwen3-rerank）对检索结果做语义精排，Chunk 元数据增强支持章节标题/路径感知，BM25 章节号加权进一步提升结构化文档的检索精度。
+**知识库质量治理**：句级修辞过滤自动剔除引用性文本（示例、说明等），三层证据审计（引用存在性 → 来源一致性 → 句级证据回溯）对答案进行后验质量检查，输出 high / medium / low 三级置信度，前端实时展示置信度警告。Ragas 自动化评估框架（Faithfulness 0.8436 / Answer Relevancy 0.9210 / Context Precision 0.8556 / Context Recall 0.9702，四项均 ≥ 0.80 达标）持续监控生成质量，与人工评分形成互补。DashScope Rerank（qwen3-rerank）对检索结果做语义精排，Chunk 元数据增强支持章节标题/路径感知，BM25 章节号加权进一步提升结构化文档的检索精度。
 
 ---
 
@@ -78,6 +78,7 @@
 | Rerank | DashScope qwen3-rerank | RRF 融合后语义精排，API 异常降级为 RRF 排序 |
 | 向量数据库 | ChromaDB | 嵌入式运行，零配置，BaseVectorStore 抽象层支持替换 |
 | 关键词检索 | rank-bm25 + jieba | BM25Okapi + 中文分词，三级缓存（进程内 → Redis → 懒加载） |
+| 评估框架 | Ragas + datasets | RAG 生成质量自动化评估（Faithfulness / Answer Relevancy / Context Precision / Context Recall） |
 | 关系数据库 | MySQL 8.0 | SQLAlchemy 2.0 async ORM + Alembic 迁移 |
 | 缓存/队列 | Redis 7.0 + Celery | 异步任务队列 + 分布式锁 + BM25 索引缓存 |
 | 前端框架 | Vue 3 + Vite | Composition API + `<script setup>` |
@@ -96,11 +97,11 @@
 | 后端应用代码 | 12,173 行 Python | `backend/app/` |
 | 后端测试代码 | 24,567 行 | 测试 ≈ 应用代码 ×2.0 |
 | 前端代码 | 11,945 行 | Vue SFC + JS |
-| 设计文档 | 12,577 行 | 含 23 份 ADR |
-| 架构决策记录 | 23 份 ADR | `ADR-001` ~ `ADR-023` |
-| 后端测试文件 | 53 个 | 覆盖 api / core / ingest / rag / schemas / services 全层 |
+| 设计文档 | 12,577 行 | 含 24 份 ADR |
+| 架构决策记录 | 24 份 ADR | `ADR-001` ~ `ADR-024` |
+| 后端测试文件 | 59 个 | 覆盖 api / core / ingest / rag / schemas / services 全层 |
 | 前端测试文件 | 30 个 | 覆盖全部 view / store / util |
-| 测试用例总数 | ~1,240 后端 + 513 前端 | 100% 通过 |
+| 测试用例总数 | ~1,285 后端 + 513 前端 | 100% 通过 |
 
 ---
 
@@ -212,7 +213,7 @@ npm run dev     # http://localhost:5173，/api 自动代理到后端 8000 端口
 docmind/
 ├── docs/                        # 公用设计文档（PRD / 架构 / 排期 / 变更日志 / 开发指南）
 │   ├── tests/                   # 测试文档（测试策略 / 用例跟踪 / 评估集）
-│   └── decisions/               # 架构决策记录（ADR，23 篇，ADR-001 ~ ADR-023）
+│   └── decisions/               # 架构决策记录（ADR，24 篇，ADR-001 ~ ADR-024）
 ├── backend/
 │   ├── alembic/                 # 数据库迁移脚本
 │   ├── docs/                    # 后端设计文档（API / 数据库 / RAG 管线）
@@ -224,12 +225,12 @@ docmind/
 │   │   ├── services/            # 业务逻辑层
 │   │   │   ├── chat_service.py / chat_helpers.py / sse_stream.py   # 问答三模块（ADR-022，chat 委托 KnowledgePipeline）
 │   │   │   └── auth / conversation / document / knowledge_base / admin / trace
-│   │   ├── rag/                 # RAG 核心（18 个模块，管线各阶段独立可测）
-│   │   │   ├── knowledge_pipeline.py  # 知识管线协调者：重写→检索→RRF→Rerank→修辞过滤→句子匹配→Prompt
+│   │   ├── rag/                 # RAG 核心（19 个模块，管线各阶段独立可测）
+│   │   │   ├── knowledge_pipeline.py  # 知识管线协调者：重写→检索→RRF→粗排→Rerank→修辞过滤→句子匹配→Prompt
 │   │   │   ├── vector_store.py        # 向量存储抽象（BaseVectorStore ABC + ChromaVectorStore，Per-KB Collection）
 │   │   │   ├── evidence_auditor.py    # 三层证据审计（引用存在性 / 来源一致性 / 句级证据回溯）
 │   │   │   ├── evidence_reviewer.py   # Evidence Review 门控
-│   │   │   ├── retriever.py / bm25.py / fusion.py / reranker.py  # 检索链路（双路检索 + RRF + qwen3-rerank）
+│   │   │   ├── retriever.py / bm25.py / fusion.py / coarse_ranker.py / reranker.py  # 检索链路（双路检索 + RRF + 粗排 + qwen3-rerank）
 │   │   │   ├── intent.py / query_rewriter.py / sentence_matcher.py  # 意图 / 重写 / 修辞过滤 + 证据定位
 │   │   │   └── trace_recorder.py / prompt_builder.py / chunker.py / embedder.py / parser.py
 │   │   ├── ingest/              # Celery 异步入库（tasks / delete_tasks / lock / celery_app）
@@ -239,7 +240,7 @@ docmind/
 │       ├── unit/                # 单元测试（api / core / ingest / rag / schemas / services）
 │       ├── integration/         # 集成测试（chat_trace）
 │       ├── regression/          # 回归测试（单轮 + 多轮 RAG 保活）
-│       ├── eval/                # 检索评估（阶段评估集 + 多轮评估集）
+│       ├── eval/                # 检索评估 + Ragas 生成质量评估（阶段评估集 + 多轮评估集 + Ragas 自动化评估脚本）
 │       └── performance/         # 性能测试（locustfile + 压测报告 + run 脚本）
 ├── frontend/
 │   ├── docs/                    # 前端设计文档（交互规范 / UI 设计规范）
@@ -274,6 +275,7 @@ docmind/
 | 答案综合评分 | ≥ 4.0/5.0 | **4.71/5.0**（最终评分） |
 | 回归测试通过率 | 100% | **100%**（后端 800+ / 前端 230+）          |
 | 多轮 RAG 保活性 | 无退化 | **5.0/5.0** 满分（23 轮均有 sources）       |
+| Ragas 生成质量 | 四项均 ≥ 0.80 | **Faithfulness 0.8436 / AR 0.9210 / CP 0.8556 / CR 0.9702**（全部达标） |
 
 测试覆盖 6 个层次：单元测试、接口测试、前端组件测试、离线检索评估、人工答案评分、回归测试。完整的测试策略和评分标准见 [测试策略文档](docs/tests/TESTING.md)。
 
@@ -295,7 +297,7 @@ docmind/
 | [UIDESIGN.md](frontend/docs/UIDESIGN.md) | UI 设计规范 — Design Token（CSS 变量）、组件样式规范 |
 | [FRONTEND.md](frontend/docs/FRONTEND.md) | 前端交互文档 — 页面布局、交互流程、组件行为规范 |
 | [CHANGELOG.md](docs/CHANGELOG.md) | 变更日志 — 遵循 Keep a Changelog 格式 |
-| [decisions/](docs/decisions/) | 架构决策记录（ADR）— 23 篇关键设计决策的详细记录与背景分析（ADR-001 ~ ADR-023） |
+| [decisions/](docs/decisions/) | 架构决策记录（ADR）— 24 篇关键设计决策的详细记录与背景分析（ADR-001 ~ ADR-024） |
 
 ---
 

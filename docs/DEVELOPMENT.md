@@ -49,7 +49,7 @@ docmind/
 │   │   ├── TESTING.md                 # 测试策略
 │   │   └── TEST_CASES.md              # 测试用例跟踪
 │   ├── CHANGELOG.md                   # 变更日志
-│   └── decisions/                     # 架构决策记录（ADR）
+│   └── decisions/                     # 架构决策记录（ADR，24 篇，ADR-001 ~ ADR-024）
 │
 ├── backend/
 │   ├── .env                           # 环境变量（在 backend/ 下，不在根目录！）
@@ -125,6 +125,7 @@ docmind/
 │   │   │   ├── retriever.py           # 向量检索器（依赖 BaseVectorStore 抽象，ADR-018）
 │   │   │   ├── bm25.py                # BM25 关键词检索 + Redis 缓存
 │   │   │   ├── fusion.py              # RRF 多路融合算法
+│   │   │   ├── coarse_ranker.py       # 粗排（向量相似度过滤 + top_k 截断，ADR-024）
 │   │   │   ├── reranker.py            # DashScope Rerank API 语义精排
 │   │   │   ├── evidence_reviewer.py   # PRE-LLM 证据审查（chunk 分类 ASSERTIVE/REJECTED，ADR-021）
 │   │   │   ├── knowledge_pipeline.py  # 知识管线：查询重写→双路检索→RRF→Rerank→句级修辞过滤→句子匹配→Prompt 构建
@@ -187,7 +188,7 @@ docmind/
 │   │   │   │   └── test_uuid_api.py
 │   │   │   ├── core/                  # 核心模块测试（10 文件）
 │   │   │   ├── ingest/                # 入库流水线测试（2 文件）
-│   │   │   ├── rag/                   # RAG 管线测试（16 文件）
+│   │   │   ├── rag/                   # RAG 管线测试（17 文件，含 test_coarse_ranker.py）
 │   │   │   ├── schemas/               # Pydantic Schema 测试（3 文件）
 │   │   │   └── services/             # Service 层测试（10 文件）
 │   │   │
@@ -199,6 +200,8 @@ docmind/
 │   │   ├── eval/                      # 评估脚本
 │   │   │   ├── __init__.py
 │   │   │   ├── eval_retrieval.py      # 离线检索评估
+│   │   │   ├── eval_ragas.py          # Ragas 生成质量自动化评估（Faithfulness / AR / CP / CR）
+│   │   │   ├── test_eval_ragas.py     # Ragas 评估脚本单元测试
 │   │   │   ├── eval_test_set.py       # 30 题固定测试集
 │   │   │   ├── eval_multi_turn_test_set.py  # 多轮对话测试集
 │   │   │   └── human_eval_template.md       # 人工评分记录模板
@@ -455,6 +458,11 @@ RATE_LIMIT_WINDOW_SECONDS=60
 # BM25 限制
 BM25_MAX_CHUNKS=10000
 BM25_LOCAL_CACHE_MAX_CHUNKS=5000
+
+# 粗排（CoarseRank，ADR-024）
+COARSE_RANK_ENABLED=true
+COARSE_RANK_THRESHOLD=0.3
+COARSE_TOP_K=20
 ```
 
 **注意事项**：
@@ -491,6 +499,10 @@ redis==5.2.*
 celery==5.4.*
 httpx==0.28.*
 alembic==1.14.*
+
+# 评估
+ragas==0.2.*
+datasets>=3.0
 
 # 测试
 pytest==8.*
