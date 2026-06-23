@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
@@ -22,7 +22,54 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
 
 ## [Unreleased] - 2026-06-21
 
+### Added
+- **Ragas 自动化评估框架集成（2026-06-22）**：
+  - **背景**：现有评估体系覆盖检索质量（Recall@K/MRR/Precision）和人工评分，但缺少自动化的端到端生成质量评估
+  - **新依赖**：`ragas==0.2.*`、`datasets>=3.0` 添加到 `backend/requirements.txt`
+  - **评估脚本**：新增 `backend/tests/eval/eval_ragas.py`（CLI 评估脚本，~500 行），支持 Faithfulness / Answer Relevancy / Context Precision / Context Recall 四项指标
+  - **中文适配**：Answer Relevancy 通过 `question_generation` 注入中文反推问题 Prompt（`ResponseRelevancePrompt` 中文子类），judge LLM 使用 deepseek-v4-pro（通过 ragas LangchainLLMWrapper）；Faithfulness 沿用 ragas 默认 Prompt + pro judge
+  - **上下文指标**：Context Precision / Context Recall 使用 `expected_docs` 作为文档级 ground truth 自定义计算
+  - **报告输出**：支持控制台汇总表 + 逐题明细表 + JSON/Markdown 导出
+  - **测试**：新增 `backend/tests/eval/test_eval_ragas.py`（14 个测试用例）
+  - **数据流**：复用 `eval_test_set.py` 的 30 题（28 题参与评估，排除 2 题 out-of-scope），直接调用 `KnowledgePipeline` + `chat_completion()` 捕获答案和上下文
+- **检索粗排层（Coarse Ranking，2026-06-23）**：
+  - **背景**：Ragas 评估暴露 Context Precision 不达标（CPdoc=0.52, CPragas=0.73 vs 目标 0.80），根因是 RRF 融合后 ≤20 条候选池中约 60% 噪声直接送入 Rerank API，精排在高噪声比下精度受限
+  - **方案**：RRF 融合后、Rerank 精排前插入向量相似度粗排（CoarseRanker），复用 query embedding + 候选 chunk embedding 做余弦相似度过滤（阈值 `COARSE_RANK_THRESHOLD=0.3`）+ top_k 截断（`COARSE_TOP_K=15`），将候选池缩至 ~15 条再送精排。零额外 API 成本，<1ms 延迟
+  - **配置**：新增 `COARSE_RANK_ENABLED` / `COARSE_RANK_THRESHOLD` / `COARSE_TOP_K` 配置项
+  - **降级**：粗排异常 → 跳过粗排直接送精排；过滤后不足 `RERANK_TOP_K` → 跳过精排直接返回粗排结果
+  - **文档**：新增 ADR-024；ARCHITECTURE.md §7.3 / RAG_PIPELINE.md §1.1+§2.4 / ROADMAP.md §8.6 / TEST_CASES.md 同步更新
+  - **代码**：新增 `backend/app/rag/coarse_ranker.py`；`knowledge_pipeline.py` 集成粗排步骤
+  - **测试**：新增 `backend/tests/unit/rag/test_coarse_ranker.py`（21 用例全部通过）：正常过滤 ×2 / 降级回退 ×5 / 边界值 ×3 / 数据完整性 ×3 / 配置项 ×2 / 余弦相似度基础计算 ×6
+
+### Changed
+- **Context Precision 升级为 ragas 原生 LLM-based 指标（2026-06-22）**：
+  - **背景**：原有上下文精度（CP）使用自定义文档级算法（`expected_docs` 匹配），分数聚类在 0.4/0.6（因 RERANK_TOP_K=5 且管线未传递 top_k），无法真正衡量检索上下文对生成答案的有用性
+  - **方案**（并存策略）：
+    - **主指标**：接入 ragas 原生 `ContextPrecision`（LLM-based），使用 `SingleTurnSample(user_input, retrieved_contexts, reference)`，需参考答案
+    - **诊断列**：原自定义算法重命名为 `Context Precision Doc`（`compute_context_precision_doc`），作为辅助诊断列保留
+    - **中文 prompt**：新增 `_build_context_precision_cn_prompt()`，覆盖默认英文 `ContextPrecisionPrompt`（与 AnswerRelevancy 中文 prompt 同理）
+  - **测试集增强**：`eval_test_set.py` 每题新增 `reference` 字段，基于 `knowledge_samples/samples_1/` 文档内容编写 28 道参考答案，忠实于原文
+  - **源码（`backend/tests/eval/eval_ragas.py`）**：
+    - `_init_ragas()`：新增 `ContextPrecision` 指标初始化，注入中文 prompt
+    - `_score_ragas_metrics()`：新增 `reference` 参数，为 CP 构造独立 `SingleTurnSample`
+    - `RagasQuestionResult`：新增 `context_precision_doc` 字段（诊断列）
+    - `RagasEvalSummary`：新增 `context_precision_doc_mean` 字段
+    - 报告输出：汇总表/逐题表/JSON/Markdown 同步增加 CPdoc 列
+  - **测试**：`test_eval_ragas.py` 同步更新（类名 `TestComputeContextPrecisionDoc`、mock 返回值含 `context_precision`），24/24 通过
+  - **文档**：`TESTING.md` §5a.2 更新 CP 定义，移除「测试集未提供参考答案」说明
+
 ### Fixed
+- **Ragas Answer Relevancy 系统性低分修复（2026-06-22）**：
+  - **问题**：Ragas 评估中 Answer Relevancy 均值 0.5858（目标 ≥ 0.70），与三轮人工评分严重背离。逐题明细显示 28 题中 9 题 AR=0.0000（如 Q17 Faithfulness=1.0 但 AR=0.0），剔除后实际均值 ≈ 0.86。根因有二：
+    1. **judge 模型过弱**：评估 LLM 使用 flash，Answer Relevancy 要求严格输出结构化反推问题，flash 在中文 hard 题上易把合理答案误判为 noncommittal。ragas 0.2.x 的 `_calculate_score` 中 `score = cosine_sim.mean() * int(not committal)`——只要 3 次反推任意一次判 noncommittal，整题归零
+    2. **中文 prompt 是死代码**：`FAITHFULNESS_CN_INSTRUCTION`/`ANSWER_RELEVANCY_CN_INSTRUCTION` 定义后从未接入 metric，ragas 跑默认英文 prompt；且 AR 常量语义写错（「从原问题生子问题」而非「从答案反推问题」）
+  - **源码（`backend/tests/eval/eval_ragas.py`）**：
+    - `_init_ragas`：judge LLM 从 `LLM_FLASH_MODEL` 改为 `LLM_MODEL`（pro），专门用于 AR/Faithfulness 判定
+    - 新增 `_build_answer_relevancy_cn_prompt()`（懒加载 ragas）：构造 `ResponseRelevancePrompt` 中文子类，正确语义为「从答案反推问题」，通过 `question_generation` 参数注入 `AnswerRelevancy`；删除错误的死代码常量
+    - `RagasQuestionResult` 新增 `ar_flagged`（AR=0.0 复核标记）；`RagasEvalSummary` 新增 `answer_relevancy_adjusted_mean`（排除 0 分题均值）与 `ar_zero_count`
+    - 控制台/JSON/Markdown 报告同步输出调整均值与 0 分题数，逐题表对 0 分题标注 ⚑，避免「成功 28/失败 0」掩盖 judge 误判
+  - **测试**：`test_eval_ragas.py` 新增 `test_evaluate_all_AR零分标记与调整均值`，24/24 通过
+  - **说明**：原始 AR 均值仍如实保留作为达标判定依据；调整均值仅供诊断 judge 是否仍存在系统性误判
 - **S-02: get_current_user() 双重 DB session 问题（2026-06-21）**：
   - **问题**：`get_current_user()` 使用独立的 `async_session_factory()` 打开额外 session，导致每个认证请求同时持有两个 DB session。同时 User 模型的 `knowledge_bases` / `conversations` relationship 默认 `lazy="select"` 存在隐式加载风险
   - **源码**：
@@ -39,6 +86,14 @@ DocMind 项目所有重要变更。格式遵循 [Keep a Changelog](https://keepa
   - **源码**：`middleware/request_id_middleware.py` 重写为纯 ASGI 类（`__init__(self, app)` + `__call__(self, scope, receive, send)`），响应头注入通过包装 `send` 实现
 
 ### Changed
+- **Ragas 目标阈值校准（2026-06-23）**：
+  - **背景**：首轮 Ragas 全量评估（28 题）四项主指标全部达标，初始阈值（Faithfulness/AR/CtxRecall ≥ 0.70）过于宽松，失去筛选意义
+  - **校准**：四项主指标统一上调至 ≥ 0.80（兼顾可行性和区分度）；Context Precision Doc（诊断列）设为 ≥ 0.60 参考值（首轮均值 0.60，粗排落地后从 0.52 升至 0.60）
+  - **实际达成**：Faithfulness 0.8436 / AR 0.9210 / CPragas 0.8556 / CtxRecall 0.9702，全部达标
+  - **源码（2 文件）**：
+    - `backend/tests/eval/eval_ragas.py`：`TARGETS` 字典 + docstring 阈值更新
+    - `docs/tests/TESTING.md`：§5a.2 目标值更新 + §5a.5 新增校准说明
+  - **文档同步**：`ROADMAP.md` §8.5 标记 Ragas 评估回归已完成
 - **ChromaDB Per-KB Collection 迁移（2026-06-18）**：
   - **问题**：单 collection（`docmind`）+ `where={"kb_id": kb_id}` metadata 过滤导致向量查询耗时 16.4s vs 无过滤 35ms（~470× 差距）。根因：ChromaDB 的 metadata filter 做全扫描不利用 HNSW 索引
   - **方案**：从「Single Collection + Metadata 隔离」迁移为 **Per-KB Collection**（`kb_{kb_id}`），每个知识库独立 ChromaDB collection，查询时通过 `kb_id` 路由直接命中对应 collection，完全消除 `where` 过滤

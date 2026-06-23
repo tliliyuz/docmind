@@ -3,7 +3,7 @@
 | 属性 | 值          |
 |:---|:-----------|
 | 文档版本 | v1.0       |
-| 最后更新 | 2026-06-18 |
+| 最后更新 | 2026-06-23 |
 
 本文档描述 DocMind 问答管线（RAG Pipeline）的完整设计，涵盖多路检索、Prompt 组装、问题重写、意图识别、句级修辞过滤、Evidence Review 门控、Evidence Highlight、三层证据审计、Trace 链路追踪、SSE 事件流等核心模块。
 
@@ -25,6 +25,8 @@
 [Retrieval] 多路检索 → 向量检索 + BM25 关键词检索       ← [Implemented]
 	    ↓
 [Fusion] RRF 融合排序 → 合并两路结果                     ← [Implemented]
+	    ↓
+[CoarseRank] 粗排 → 向量相似度过滤低分 chunk + top_k 截断 ← [Phase 5.5 ADR-024]
 	    ↓
 [Rerank] 重排序 → DashScope Rerank API 精排              ← [Phase 5.5 ✅]
 	    ↓
@@ -151,6 +153,63 @@ score(doc) = Σ 1 / (k + rank_i(doc))   # k=60
 ```
 
 其中 `k=60` 是平滑常数，降低单一排序中的极端排名对最终结果的过度影响。
+
+---
+
+### 2.4 向量相似度粗排（CoarseRank）
+
+> **架构决策**：[ADR-024](../../docs/decisions/ADR-024-粗排层.md)（2026-06-23 采纳）
+
+**背景**：RRF 融合后直接送入 DashScope Rerank API 做精排，候选池 ≤20 条中有约 60% 噪声（BM25 关键词匹配噪声 + 向量语义近邻噪声），高噪声比限制了精排精度。Ragas 评估显示 Context Precision Doc 仅 0.52（目标参考值 ≥ 0.60），最终 top-5 中有 40-60% chunk 来自非期望文档。
+
+**方案**：在 RRF 融合与 Rerank 精排之间插入廉价向量相似度粗排，过滤明显不相关的 chunk，缩候选池后送精排。
+
+| 要点 | 决策 | 原因 |
+|:---|:---|:---|
+| 位置 | RRF → CoarseRank → Rerank | 先粗排减噪再精排提纯 |
+| 算法 | query embedding 与每条 candidate chunk embedding 的余弦相似度（L2 归一化点积） | 复用 query embedding（向量检索时已生成），零额外 API 成本 |
+| 阈值 | `COARSE_RANK_THRESHOLD=0.3` | 余弦相似度 < 0.3 的 chunk 大概率不相关，直接丢弃 |
+| 上限 | `COARSE_TOP_K=15` | 即使全部通过阈值，最多保留 15 条（节省 Rerank API 输入 ~25% Token） |
+| 下限保护 | 粗排后候选 < RERANK_TOP_K（5）→ 跳过精排，直接返回粗排结果 | 避免粗排过激导致候选不足 |
+| 降级策略 | 任何异常 → 跳过粗排，直接传递原始融合结果到精排 | 粗排是质量增强，不应阻断管线 |
+| 性能 | ≤20 次点积运算，<1ms | 可忽略不计（vs Rerank API ~200ms） |
+
+#### 数据流
+
+```
+RRF Fusion 结果（≤20 candidates，含 chunk embedding）
+    ↓
+query_vector ⊗ candidate_i.embedding → cosine_sim_i  （i = 1..N）
+    ↓
+过滤：cosine_sim_i < COARSE_RANK_THRESHOLD → 丢弃
+    ↓
+排序：按 cosine_sim 降序，取 top COARSE_TOP_K
+    ↓
+送入 DashScope Rerank API 精排
+```
+
+#### 降级路径
+
+```
+coarse_ranker.rank()
+  ├─ 正常 → 返回过滤+截断后的候选列表
+  ├─ 异常 → 返回原始融合结果（不阻断管线）
+  ├─ 过滤后为空 → 返回原始融合结果的前 COARSE_TOP_K
+  └─ 过滤后不足 RERANK_TOP_K → 返回过滤结果，跳过精排
+```
+
+#### 配置项
+
+```python
+# backend/app/config.py
+COARSE_RANK_ENABLED: bool = True       # 粗排开关
+COARSE_RANK_THRESHOLD: float = 0.3     # 余弦相似度最小阈值
+COARSE_TOP_K: int = 15                 # 粗排后最大候选数
+```
+
+#### 候选池 embedding 传递
+
+向量检索阶段 `RetrievalResult` 已携带 `embedding` 字段（`chunk.embedding`），无需额外存储或查询。RRF 融合和粗排均保持 `embedding` 字段透传。
 
 ---
 
@@ -589,7 +648,8 @@ async def chat(question, conversation_id, kb_id, deep_thinking, db, current_user
         vector_results = await vector_retriever.search(query_vec, kb_id, top_k=10)
         bm25_results = await bm25_retriever.search(question, kb_id, top_k=10)
         merged = rrf_fusion(vector_results, bm25_results, k=60)
-        reranked = await reranker.rerank(question, merged, top_k=5)
+        coarse_ranked = self._coarse_ranker.rank(query_vec, merged)  # ADR-024
+        reranked = await reranker.rerank(question, coarse_ranked, top_k=5)
         # 句级修辞过滤（Phase 5.5 ADR-019）→ 返回 FilterStats 统计
         filter_stats_map = {}
         for r in reranked.results:
@@ -721,6 +781,7 @@ BM25 分数加权：
 | `backend/app/rag/retriever.py` | 向量检索 |
 | `backend/app/rag/bm25.py` | BM25 关键词检索 + 三级缓存 |
 | `backend/app/rag/fusion.py` | RRF 融合排序 |
+| `backend/app/rag/coarse_ranker.py` | 粗排（向量相似度过滤 + top_k 截断，ADR-024） |
 | `backend/app/rag/reranker.py` | Rerank（DashScope Rerank API 精排） |
 | `backend/app/rag/prompt_builder.py` | Prompt 组装 |
 | `backend/app/rag/trace_recorder.py` | Trace 上下文管理器 |

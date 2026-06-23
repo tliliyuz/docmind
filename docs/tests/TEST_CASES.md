@@ -1,9 +1,9 @@
-# TEST_CASES — 测试用例跟踪
+﻿# TEST_CASES — 测试用例跟踪
 
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.3 |
-| 最后更新 | 2026-06-18（第 3 轮人工评分完成 + E9 补充） |
+| 最后更新 | 2026-06-23（CoarseRanker 测试用例新增 + ADR-024） |
 
 ---
 
@@ -420,6 +420,25 @@
 | P55-RR.20 | DashScopeReranker-API URL | `DashScopeReranker.api_url` | — | 正确的 DashScope Rerank 端点 | ✅ | 2026-06-15 | — |
 | P55-RR.21 | DashScopeReranker-base_url | `DashScopeReranker._base_url` | base_url 带尾部斜杠 | __init__ 中 rstrip 处理 | ✅ | 2026-06-15 | — |
 | P55-RR.22 | DashScopeReranker-接口一致性 | 类继承 | — | issubclass(DashScopeReranker, BaseReranker) | ✅ | 2026-06-15 | — |
+
+### 5.5c 后端 — CoarseRanker 测试（Phase 5.5 ADR-024）
+
+> 2026-06-23 新增。CoarseRanker 在 RRF 融合后、DashScope Rerank 精排前做向量相似度粗排，过滤低分 chunk + top_k 截断。详见 [ADR-024](../../docs/decisions/ADR-024-粗排层.md)。
+
+| ID | 测试用例 | 被测函数 | 场景 | 预期行为 | 状态 | 最后运行 | 备注 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| P55-CR.1 | CoarseRanker-正常过滤 | `CoarseRanker.rank()` | 10 候选，部分低于阈值 | 过滤低分 + 按相似度降序排列 + top_k 截断 | ✅ | 2026-06-23 | — |
+| P55-CR.2 | CoarseRanker-全通过 | `CoarseRanker.rank()` | 全部高于阈值 | 全部保留，按相似度降序排列 | ✅ | 2026-06-23 | — |
+| P55-CR.3 | CoarseRanker-全拒绝 | `CoarseRanker.rank()` | 全部低于阈值 | 降级返回原始结果的前 COARSE_TOP_K | ✅ | 2026-06-23 | 回退策略 |
+| P55-CR.4 | CoarseRanker-空候选 | `CoarseRanker.rank()` | 输入 [] | 返回 []，不抛异常 | ✅ | 2026-06-23 | — |
+| P55-CR.5 | CoarseRanker-候选不足 top_k | `CoarseRanker.rank()` | 3 候选，COARSE_TOP_K=15 | 返回全部 3 条，不过滤 | ✅ | 2026-06-23 | — |
+| P55-CR.6 | CoarseRanker-阈值=0 | `CoarseRanker.rank()` | THRESHOLD=0 | 只做 top_k 截断，不过滤 | ✅ | 2026-06-23 | 边界值 |
+| P55-CR.7 | CoarseRanker-相似度排序验证 | `CoarseRanker.rank()` | 多个候选含不同相似度 | 输出严格按 cosine_sim 降序 | ✅ | 2026-06-23 | — |
+| P55-CR.8 | CoarseRanker-异常降级 | `CoarseRanker.rank()` | embedding 为 None 或格式错误 | 返回原始候选列表，不抛异常 | ✅ | 2026-06-23 | 降级策略 |
+| P55-CR.9 | CoarseRanker-不足 rerank_top_k | `CoarseRanker.rank()` | 过滤后仅剩 3 条（< RERANK_TOP_K=5） | 返回过滤结果 | ✅ | 2026-06-23 | 下限保护 |
+| P55-CR.10 | CoarseRanker-embedding 传递 | `CoarseRanker.rank()` | 正常过滤后 | 输出结果的 embedding 字段正确透传，未被修改 | ✅ | 2026-06-23 | 数据完整性 |
+| P55-CR.11 | CoarseRanker-配置项一致性 | `CoarseRanker` 类 | 读取 settings | `COARSE_RANK_ENABLED`/`COARSE_RANK_THRESHOLD`/`COARSE_TOP_K` 从 config 读取 | ✅ | 2026-06-23 | — |
+| P55-CR.12 | CoarseRanker-管线集成 | `knowledge_pipeline.execute_knowledge()` | 正常流程 | RRF→Coarse→Rerank 顺序，粗排的输入为 RRF 融合结果，输出为 Rerank 输入 | ⬜ | — | 集成测试 |
 
 ### 5.6 后端 — Prompt 模板测试
 
@@ -1252,6 +1271,34 @@
 | E3 | RRF 融合 Recall@5 | Recall@5 | ≥ 0.90 | 1.000 | ✅ | 2026-06-04 | 见 §5.20 E3 |
 | E4 | 向量检索 MRR | MRR | ≥ 0.70 | — | ✅ | 2026-06-04 | 见 §5.20 E4 |
 | E5 | RRF 融合 Precision@5 | Precision@5 | ≥ 0.60 | — | ✅ | 2026-06-04 | 见 §5.20 E5 |
+
+### 8.1a Ragas 自动化评估（Phase 6 新增，2026-06-22）
+
+| ID | 测试用例 | 被测对象 | 验证项 | 预期行为 | 状态 | 最后运行 |
+|:---|:---|:---|:---|:---|:---|:---|
+| R1 | `test_所有结果来自期望文档` | `compute_context_precision_doc` | 全匹配场景 | 精度 1.0 | ✅ | 2026-06-22 |
+| R2 | `test_部分结果来自期望文档` | `compute_context_precision_doc` | 混合来源 | 精度 = 2/3 | ✅ | 2026-06-22 |
+| R3 | `test_期望文档为空` | `compute_context_precision_doc` | 空 ground truth | 精度 0.0 | ✅ | 2026-06-22 |
+| R4 | `test_检索结果为空` | `compute_context_precision_doc` | 空检索结果 | 精度 0.0 | ✅ | 2026-06-22 |
+| R5 | `test_top_k截断` | `compute_context_precision_doc` | top-K 截断 | 仅评估前 K 个 | ✅ | 2026-06-22 |
+| R6 | `test_全部期望文档被检索到` | `compute_context_recall` | 全部召回 | 召回率 1.0 | ✅ | 2026-06-22 |
+| R7 | `test_部分期望文档未检索到` | `compute_context_recall` | 部分召回 | 召回率 = 1/3 | ✅ | 2026-06-22 |
+| R8 | `test_期望文档为空` | `compute_context_recall` | 空 ground truth | 召回率 0.0 | ✅ | 2026-06-22 |
+| R9 | `test_默认模型为flash` | `RagasEvaluator.__init__` | 默认配置 | flash 模型 | ✅ | 2026-06-22 |
+| R10 | `test_pro模型选择` | `RagasEvaluator.__init__` | pro 模型 | LLM_MODEL | ✅ | 2026-06-22 |
+| R11 | `test_自定义指标列表` | `RagasEvaluator.__init__` | 指标筛选 | 仅启用指定指标 | ✅ | 2026-06-22 |
+| R12 | `test_capture_answer正常流程` | `capture_answer_and_contexts` | 管线+LLM | 返回答案和上下文 | ✅ | 2026-06-22 |
+| R13 | `test_capture_answer_REJECT路径` | `capture_answer_and_contexts` | 证据拒绝 | 空答案，不调 LLM | ✅ | 2026-06-22 |
+| R14 | `test_evaluate_all基本流程` | `evaluate_all` | 全量评估 | 28 题全评估 | ✅ | 2026-06-22 |
+| R15 | `test_evaluate_all_单题LLM异常不崩溃` | `evaluate_all` | 异常恢复 | 单题失败继续 | ✅ | 2026-06-22 |
+| R16 | `test_ragas_metrics空答案返回None` | `_score_ragas_metrics` | 空答案兜底 | 返回 None | ✅ | 2026-06-22 |
+| R17 | `test_print_summary_table不抛异常` | `print_summary_table` | 控制台输出 | 含指标名称和数值 | ✅ | 2026-06-22 |
+| R18 | `test_print_per_question_table不抛异常` | `print_per_question_table` | 逐题明细 | 含题目 ID 和分数 | ✅ | 2026-06-22 |
+| R19 | `test_export_json文件内容正确` | `export_json` | JSON 导出 | 字段完整 | ✅ | 2026-06-22 |
+| R20 | `test_export_markdown文件内容正确` | `export_markdown` | MD 导出 | 含表格 | ✅ | 2026-06-22 |
+| R21 | `test_全部指标有阈值定义` | `TARGETS` | 阈值覆盖 | 无遗漏 | ✅ | 2026-06-22 |
+| R22 | `test_阈值范围合理` | `TARGETS` | 阈值范围 | 0 ≤ value ≤ 1 | ✅ | 2026-06-22 |
+| R23 | `test_evaluate_all_AR零分标记与调整均值` | `evaluate_all` | AR=0.0 复核诊断 | ar_flagged 标记 / 调整均值排除 0 分题 / ar_zero_count 计数 | ✅ | 2026-06-22 |
 
 ### 8.2 回归测试（每次提交运行）
 

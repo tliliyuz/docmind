@@ -3,7 +3,7 @@
 | 属性 | 值 |
 |:---|:---|
 | 文档版本 | v1.2 |
-| 最后更新 | 2026-06-18 |
+| 最后更新 | 2026-06-23 |
 
 ---
 
@@ -158,6 +158,66 @@ describe('LoginPage', () => {
 ### 5.2 评估流程
 
 > 实现脚本：`backend/tests/eval/eval_retrieval.py`。流程：遍历测试集 → 调用检索器（向量/BM25/RRF，通过 `get_vector_store()` 工厂获取向量存储实例）→ 计算 Recall@5/MRR/Precision@5 → 输出对比报告。Phase 3 检索管线完成后执行。
+
+---
+
+## 5a. Ragas 自动化评估（生成质量）
+
+### 5a.1 概述
+
+Ragas（RAG Assessment）是 RAG 领域的标准自动化评估框架，用于量化**生成质量**（检索评估仅衡量检索效果，不衡量答案质量）。集成 Ragas 后，DocMind 的评估体系覆盖：
+
+```
+检索质量（eval_retrieval.py）→ 生成质量（eval_ragas.py）→ 人工评分（human_eval）
+```
+
+### 5a.2 评估指标
+
+| 指标 | 类型 | 说明 | 目标值 |
+|:---|:---|:---|:---|
+| **Faithfulness**（忠实度） | LLM-based | 答案中的陈述是否可由检索上下文支持。逐句分解 → NLI 验证 → 计算支持率 | ≥ 0.80 |
+| **Answer Relevancy**（答案相关性） | LLM-based | 答案是否充分覆盖用户问题的各个方面。生成子问题变体 → 判断覆盖率 | ≥ 0.80 |
+| **Context Precision**（上下文精度） | LLM-based（ragas 原生） | ragas `ContextPrecision` 指标：对每个检索上下文，用 LLM 判断该上下文是否对得出参考答案有用，计算 Average Precision。需 `reference`（参考答案），使用中文 prompt 覆盖默认英文 prompt | ≥ 0.80 |
+| **Context Precision Doc**（文档级 CP） | 自定义计算（诊断列） | top-K 检索结果中来自期望文档的 chunk 占比。使用 `expected_docs` 作为文档级 ground truth，作为辅助诊断指标 | ≥ 0.60（参考值） |
+| **Context Recall**（上下文召回率） | 自定义计算 | 期望文档中有多少被检索到至少一个 chunk。使用 `expected_docs` 作为文档级 ground truth | ≥ 0.80 |
+
+> **注意**：Faithfulness、Answer Relevancy、Context Precision 使用 ragas 内置指标（LLM-based），其中 Context Precision 需要参考答案（`reference`），测试集已根据 `knowledge_samples/samples_1/` 文档为每题编写了参考答案（`eval_test_set.py` 中 `reference` 字段）。Context Precision Doc 和 Context Recall 为自定义文档级实现，前者作为辅助诊断列与 ragas 原生 CP 并存。
+
+### 5a.3 评估流程
+
+> 实现脚本：`backend/tests/eval/eval_ragas.py`。流程：遍历测试集（排除 out-of-scope）→ 调用 `KnowledgePipeline` 获取检索上下文 → 调用 `chat_completion()` 生成答案 → Faithfulness/Answer Relevancy 使用 ragas LLM-based 评分 → Context Precision 使用 ragas 原生 LLM-based 评分（需 reference）→ Context Precision Doc/Context Recall 使用自定义文档级计算 → 输出汇总报告。
+
+**评估 LLM**：使用 `deepseek-v4-flash`（通过 `LangchainLLMWrapper(ChatOpenAI(...))` 包装），以降低评估成本。
+
+**中文适配**：Faithfulness 和 Answer Relevancy 的评估 Prompt 已翻译为中文，并针对企业知识库场景（HR 制度、IT 流程）优化了示例。
+
+### 5a.4 CLI 用法
+
+```bash
+cd backend
+python tests/eval/eval_ragas.py --kb-id 1                          # 基础运行
+python tests/eval/eval_ragas.py --kb-id 1 --model pro              # 使用 pro 模型生成答案
+python tests/eval/eval_ragas.py --kb-id 1 --output json --output md  # 导出报告
+python tests/eval/eval_ragas.py --kb-id 1 --metrics faithfulness,answer_relevancy  # 选择性指标
+```
+
+### 5a.5 目标阈值
+
+阈值经 **2026-06-23 Ragas 全量评估**（28 题，含粗排层）校准，对齐 `backend/ragas_eval.md` 汇总表：
+
+| 指标 | 目标 | 实际均值 | 状态 |
+|:---|:---|:---|:---|
+| Faithfulness（忠实度） | ≥ 0.80 | 0.8436 | ✅ |
+| Answer Relevancy（答案相关性） | ≥ 0.80 | 0.9210 | ✅ |
+| Context Precision（ragas 原生） | ≥ 0.80 | 0.8556 | ✅ |
+| Context Recall（上下文召回率） | ≥ 0.80 | 0.9702 | ✅ |
+
+> **校准说明**：
+> - **首轮阈值（评估框架初建时）**：Faithfulness / Answer Relevancy / Context Recall 初始设为 ≥ 0.70（对标人工评分 4/5），Context Precision 初始设为 ≥ 0.80（检索精度语义升级）。首轮 28 题全量跑通后，Answer Relevancy 均值 0.9210、Context Recall 均值 0.9702 远超标称值，初始 0.70 阈值过于宽松，失去筛选意义。
+> - **校准后**：四项主指标统一上调至 ≥ 0.80，兼顾可行性（均已达标）和区分度（首轮 Faithfulness 最低分 0.23 的 Q4、AR 最低分 0.67 的 Q30，阈值上调后可有效暴露质量波动）。
+> - **Context Precision Doc**（文档级 CP，诊断列）：首轮均值 0.60（top-5 中 40-60% chunk 来自非期望文档），设为 ≥ 0.60 参考值。该指标受检索策略影响大（粗排落地后已从 0.52 升至 0.60），作为检索精度辅助诊断，不纳入主指标达标判断。
+>
+> **实现位置**：`backend/tests/eval/eval_ragas.py` `TARGETS` 字典。
 
 ---
 
@@ -530,6 +590,8 @@ Phase 5.5 新增的修辞过滤和证据审计是 RAG 管线中的"质量增强"
 | Phase 5.5 | 三层证据审计测试 | 单元测试 | 引用存在性 5 + 来源一致性 5 + 句级证据 7 + 置信度 4 + 集成 4 = 25 用例（P5.5-EA.1-EA.14） | ✅ 已完成 |
 | Phase 5.5 | 前端置信度展示测试 | 组件测试 | MessageItem.vue 置信度警告组件渲染 + confidence/confidence_note 字段展示 | ✅ 已完成（2026-06-16） |
 | Phase 5.5 | DashScope Reranker 测试 | 单元测试 | 精排正确性 + API 异常降级 + 空/单输入边界 + top_k 截取（P5.5-RR.1-P5.5-RR.22） | ✅ 已完成（2026-06-16） |
+| Phase 5.5 | CoarseRanker 单元测试 | 单元测试 | 阈值过滤/边界/降级/管线集成（P55-CR.1-P55-CR.12） | ⬜ 待编写（2026-06-23） |
+| Phase 5.5 | Ragas 评估回归 | 评估 | 粗排落地后 CPdoc/CP 新基线跑分 | ⬜ 待执行（2026-06-23） |
 | Phase 5.5 | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用）验证治理效果 | ✅ 已完成（2026-06-16） |
 | Phase 6 | 高级功能测试 | 按需 | 结构感知分块 / LLM 摘要压缩等 8 项（详见 TEST_CASES.md §8.4） | 不设时限 |
 

@@ -1,9 +1,9 @@
-# ROADMAP — 开发排期
+﻿# ROADMAP — 开发排期
 
 | 属性 | 值          |
 |:---|:-----------|
 | 文档版本 | v1.1 |
-| 最后更新 | 2026-06-18 |
+| 最后更新 | 2026-06-23 |
 
 > **编号规范**
 >
@@ -561,7 +561,7 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 
 **目标**：系统性治理知识库污染问题——RAG 系统将示例/测试/接口说明等引用性文本误认为事实答案返回。通过句级修辞过滤 + 三层证据审计 + DashScope Rerank 精排 + Chunk 元数据增强 + Evidence Review 门控，预计消除 85%+ 的污染问题。
 
-> **架构决策**：详见 [ADR-019](decisions/ADR-019-句级修辞过滤.md) / [ADR-020](decisions/ADR-020-三层证据审计.md) / [ADR-021](decisions/ADR-021-EvidenceReview门控.md)。
+> **架构决策**：详见 [ADR-019](decisions/ADR-019-句级修辞过滤.md) / [ADR-020](decisions/ADR-020-三层证据审计.md) / [ADR-021](decisions/ADR-021-EvidenceReview门控.md) / [ADR-024](decisions/ADR-024-粗排层.md)。
 
 ### 8.1 [后端] Prompt 陈述知识 vs 引用知识原则 ❌ 已移除
 
@@ -601,12 +601,18 @@ Week 1            Week 2           Week 2-3         Week 3-5           Week 5-6 
 | ✅ | 句级修辞过滤测试 | 单元测试 | `filter_chunk_sentences()` 6 用例（`TestFilterChunkSentences`）：全陈述保留 / 混合过滤 / 全引用回退 / API 文档示例过滤 / 空内容 / 无句末标点 |
 | ✅ | 三层证据审计测试 | 单元测试 | `test_evidence_auditor.py` 19 用例：引用存在性 5（`TestCitationExists`）+ 来源一致性 5（`TestSourceConsistency`）+ 句级证据回溯 7（`TestSentenceEvidence`）+ 置信度计算 4（`TestComputeConfidence`）+ 集成 4（`TestAuditEvidenceIntegration`） |
 | ✅ | 污染问题回归测试 | 回归测试 | 使用已知失败案例（SSE 示例/测试用例/PRD 背景引用等）验证治理效果 | 2026-06-16 |
+| ✅ | CoarseRanker 单元测试 | 单元测试 | 正常过滤/阈值边界/全通过/全拒绝/空候选/候选不足/降级（21 用例全部通过） | 2026-06-23 |
+| ⬜ | CoarseRanker 集成测试 | 集成测试 | RRF→Coarse→Rerank 串联/粗排后不足 rerank_top_k/粗排失败降级 | 2026-06-23 |
+| ✅ | Ragas 评估回归（粗排后新基线） | 评估 | 28 题全量跑通：Faithfulness 0.8436 / AR 0.9210 / CPragas 0.8556 / CtxRecall 0.9702，四项主指标全部达标（≥ 0.80）。CPdoc 从 0.52 升至 0.60（粗排效果验证）。报告：`backend/ragas_eval.md`。阈值已同步至 TESTING.md §5a.5 | 2026-06-23 |
 
-### 8.6 [后端] DashScope Rerank API 接入
+### 8.6 [后端] 多阶段排序（CoarseRank + DashScope Rerank）
 
 | 状态 | 任务 | 说明 |
 |:---|:---|:---|
-| ✅ | `DashScopeReranker(BaseReranker)` 实现 | 调用 DashScope Rerank API，对 RRF 融合结果做语义精排。支持指数退避重试（默认 3 次）、API 异常时内部降级为 RRF 排序截取。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项 |
+| ✅ | `coarse_ranker.py` 实现 | CoarseRanker 类：复用 query embedding 与候选 chunk embedding 做余弦相似度粗排，阈值过滤 + top_k 截断。零额外 API 成本，<1ms 延迟。详见 [ADR-024](decisions/ADR-024-粗排层.md) |
+| ✅ | `config.py` 新增配置 | `COARSE_RANK_ENABLED` / `COARSE_RANK_THRESHOLD` / `COARSE_TOP_K` |
+| ✅ | `knowledge_pipeline.py` 集成 | RRF 融合后、Rerank 前插入 `self._coarse_ranker.rank()` 步骤，粗排异常或候选不足时降级 |
+| ✅ | `DashScopeReranker(BaseReranker)` 实现 | 调用 DashScope Rerank API，对粗排后结果做语义精排。支持指数退避重试（默认 3 次）、API 异常时内部降级为 RRF 排序截取。`config.py` 新增 `RERANK_BASE_URL`/`RERANK_MODEL`/`RERANK_MAX_RETRIES`/`RERANK_TIMEOUT` 配置项 |
 | ✅ | `knowledge_pipeline.py` 固化 | `DashScopeReranker()` 为唯一 Reranker，已移除 `NoopReranker` 类及诊断开关 |
 | ✅ | Reranker 测试 | 单元测试：API 响应解析（8 用例）+ 集成测试（12 用例）+ 配置测试（2 用例）+ 接口测试（2 用例）= 24 用例全部通过 |
 
